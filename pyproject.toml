@@ -29,3 +29,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["checkpoint*"]
+
+[tool.setuptools.package-data]
+"checkpoint" = ["init_templates/*"]

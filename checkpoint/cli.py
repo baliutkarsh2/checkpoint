@@ -380,6 +380,33 @@ def _print_summary(results: list[RunResult]) -> None:
 # =============================================================================
 
 
+@main.command("init")
+@click.argument("target_dir", required=False, type=click.Path(file_okay=False), default=".")
+def init_cmd(target_dir):
+    """CLI-04: scaffold a Checkpoint integration in TARGET_DIR (default cwd)."""
+    from . import init as _init
+
+    try:
+        result = _init.scaffold(target_dir)
+    except FileNotFoundError as e:
+        console.print(f"[red]init failed: {e}[/red]")
+        sys.exit(1)
+
+    if result.created:
+        t = Table(box=box.SIMPLE_HEAD)
+        t.add_column("", style="dim", width=2)
+        t.add_column("File")
+        for p in result.created:
+            t.add_row("[green]+[/green]", p)
+        for p in result.skipped:
+            t.add_row("[yellow]=[/yellow]", f"{p} (already exists, kept)")
+        console.print(t)
+    else:
+        console.print("[yellow]All scaffold files already exist; nothing to do.[/yellow]")
+
+    console.print(Panel.fit(result.banner, border_style="green", title="checkpoint init"))
+
+
 @main.command()
 def doctor():
     """CLI-03: check environment readiness."""
