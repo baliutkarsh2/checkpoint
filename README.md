@@ -1,64 +1,91 @@
 # checkpoint
 
-Minimum-viable clone of Archal. Stateful SaaS twins + scenario runner + LLM judge.
+**Test your AI agent against stateful synthetic GitHub / Slack / Stripe — score it 0-100 with deterministic + LLM checks. No real-API credits burned.**
 
-## What works (v0)
-
-- `checkpoint run scenario.md --harness "python harness.py"` end-to-end
-- One twin: GitHub (issues, comments, labels, repos — REST subset)
-- Scenario format: drop-in compatible with Archal's markdown spec (Title, Setup, Prompt, Success Criteria with `[D]` / `[P]`, Config)
-- `[D]` deterministic checks via regex + state inspection (small built-in pattern set; unhandled criteria fall through to LLM judge)
-- `[P]` LLM judge via OpenAI (batched per run, `gpt-4o-mini` default)
-- Multi-run satisfaction (`runs:` config or `--runs N`)
-- Trace dump (`--trace-out trace.json`)
-
-## What's deliberately missing vs Archal
-
-- **No TLS proxy.** Harness reads `CHECKPOINT_GITHUB_URL` env var and points its HTTP client at the twin directly. Adding mitmproxy interception is the obvious v1 upgrade (~1-2 days).
-- **No Docker mode.** Harness runs as a plain subprocess.
-- **No seeds-from-English.** Twin starts empty. Set up via tool calls inside the scenario prompt or pre-seed via direct HTTP.
-- **One clone per run.** No multi-service scenarios.
-- **No dashboard, no auth, no metrics file, no IDE skills, no `init` scaffolding.**
+Drop a markdown scenario in your repo, point Checkpoint at your harness, run `checkpoint run scenario.md`, get a graded report. Works with any agent — LangChain, OpenAI SDK, Anthropic tools, raw `requests` — Checkpoint doesn't care what's inside.
 
 ## Install
 
 ```bash
-cd /Users/aadityagaur/projects/agent-startup/checkpoint
-python -m venv .venv && source .venv/bin/activate
 pip install -e .
+pip install mitmproxy docker fastapi uvicorn
+export OPENAI_API_KEY=sk-...
 ```
 
-## Run the demo
+## Quickstart
 
 ```bash
-export OPENAI_API_KEY=sk-...
-checkpoint run example/scenario.md --harness "python example/harness.py"
+# 1. Scaffold a Checkpoint integration in your repo (creates harness.py,
+#    .checkpoint.json, .claude/skills/checkpoint/SKILL.md, scenario.md):
+checkpoint init
+
+# 2. Edit harness.py to wire in your agent. Skip this on first run to use
+#    the stub harness for a smoke test.
+
+# 3. Run the starter scenario:
+checkpoint run scenario.md
+
+# 4. Or run the bundled multi-clone demo (GitHub + Slack + Stripe in one run):
+checkpoint run example/scenarios/multi-clone-demo.md
 ```
 
-## Layout
+Output looks like this:
 
 ```
-checkpoint/
-├── pyproject.toml
-├── checkpoint/
-│   ├── cli.py          # `checkpoint run ...`
-│   ├── scenario.py     # markdown parser
-│   ├── runner.py       # subprocess + twin lifecycle + evaluation
-│   ├── checker.py      # [D] regex + state checks
-│   ├── judge.py        # [P] LLM judge
-│   └── twins/
-│       └── github.py   # FastAPI GitHub twin (in-memory state, trace endpoint)
-└── example/
-    ├── scenario.md     # Create-an-issue demo
-    └── harness.py      # OpenAI agent using the twin
+checkpoint run — scenario.md
+clone: github
+runs:  1
+judge: gpt-4o-mini (default)
+
+Run 1/1
+  ✓ [D] An issue titled "Add login button" exists
+  ✓ [P] The agent's final answer references the issue number
+Score: 100/100  (2 API call(s))
 ```
 
-## Env vars the harness receives
+## Mental model
 
-| Var | Source |
-|-----|--------|
-| `CHECKPOINT_TASK` | Scenario `## Prompt` or `--task` |
-| `CHECKPOINT_BASE_URL` | URL of the running twin |
-| `CHECKPOINT_GITHUB_URL` | Same as base, namespaced by clone |
-| `ARCHAL_ENGINE_TASK` | Alias for drop-in Archal harness compatibility |
-| `ARCHAL_ENGINE_MODE` | Always `"local"` |
+A **twin** is a stateful synthetic version of a SaaS API (GitHub / Slack /
+Stripe), running locally. A **scenario** is a markdown file with `## Setup`
+(plain-English starting state), `## Prompt` (the task for the agent), and
+`## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged checks). A
+**harness** is your agent in a script that reads `CHECKPOINT_<CLONE>_URL`
+env vars and prints `{"text": "final answer"}` to stdout. Checkpoint spins
+up the twins, runs the harness, grades against the criteria, returns a
+score.
+
+For Docker-isolated runs with TLS interception so your agent calls
+`https://api.github.com` directly:
+
+```bash
+checkpoint run scenario.md --docker
+```
+
+## CLI reference
+
+| Command | Purpose |
+|---|---|
+| `checkpoint init` | Scaffold the integration in the current repo. |
+| `checkpoint run <scenario.md>` | Run a scenario, get a score. |
+| `checkpoint run <dir/> --tag smoke` | Filter scenarios by tag. |
+| `checkpoint doctor` | Verify environment (docker, ports, API key). |
+| `checkpoint scenario list` | Enumerate scenarios in cwd. |
+| `checkpoint clone start github` | Spin up a long-lived twin session. |
+| `checkpoint traces detail` | Inspect the last run. |
+
+## More
+
+- **5 bundled scenarios** under [`scenarios/`](scenarios/) — GitHub happy
+  path, GitHub adversarial, Slack incident response, Stripe refunds,
+  multi-clone cross-system.
+- **JS test suite?** See [`checkpoint-vitest/`](checkpoint-vitest/) for the
+  `@checkpoint/vitest` package.
+- **Docker sandbox?** See [`checkpoint/sandbox/`](checkpoint/sandbox/) for
+  the pre-baked image with the TLS sidecar attached.
+- **Architecture, scope, and the why?** See
+  [`../.planning/PROJECT.md`](../.planning/PROJECT.md) and
+  [`../archal-docs/SCOPE.md`](../archal-docs/SCOPE.md).
+
+## License
+
+MIT

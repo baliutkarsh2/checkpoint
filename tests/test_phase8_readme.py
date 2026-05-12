@@ -1,0 +1,54 @@
+"""Phase 8 / Plan 04: README quickstart shape.
+
+Covers DIST-04 — README must be under 120 lines with the required sections.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+
+README = Path(__file__).resolve().parent.parent / "README.md"
+
+
+def test_readme_under_120_lines() -> None:
+    lines = README.read_text().splitlines()
+    assert len(lines) < 120, f"README is {len(lines)} lines, must be < 120"
+
+
+def test_readme_has_install_section() -> None:
+    text = README.read_text()
+    assert "\n## Install\n" in text, "README missing `## Install`"
+
+
+def test_readme_has_quickstart_section() -> None:
+    text = README.read_text()
+    assert "\n## Quickstart\n" in text, "README missing `## Quickstart`"
+
+
+def test_readme_has_mental_model_section() -> None:
+    text = README.read_text()
+    assert "\n## Mental model\n" in text, "README missing `## Mental model`"
+
+
+def test_readme_mentions_checkpoint_init() -> None:
+    text = README.read_text()
+    assert "checkpoint init" in text
+
+
+def test_readme_mentions_first_scenario_command() -> None:
+    text = README.read_text()
+    assert "checkpoint run" in text
+
+
+def test_readme_one_line_pitch_present() -> None:
+    """First non-header non-empty line should be a single-line pitch."""
+    body = [
+        line for line in README.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    # The pitch is the first non-header body line; assert it mentions
+    # core value props (testing + agents + a SaaS name).
+    pitch = body[0]
+    lowered = pitch.lower()
+    assert "agent" in lowered or "test" in lowered
+    assert any(s in lowered for s in ("github", "slack", "stripe", "saas"))
