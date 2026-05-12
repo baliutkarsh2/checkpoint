@@ -76,7 +76,11 @@ class RouteMode:
         flow.request.headers["Host"] = host
 
         # Header swap: caller's Authorization (whatever it is) -> twin bootstrap token.
-        flow.request.headers["Authorization"] = f"token {route.bootstrap_token}"
+        # GitHub uses `token <…>`; Slack/Stripe use `Bearer <…>`.
+        if host == "api.github.com":
+            flow.request.headers["Authorization"] = f"token {route.bootstrap_token}"
+        else:
+            flow.request.headers["Authorization"] = f"Bearer {route.bootstrap_token}"
 
         log.info(
             "route: %s -> %s://%s:%d%s",

@@ -1,0 +1,55 @@
+{
+  "state": {
+    "channels": {
+      "C00000001": {"id": "C00000001", "name": "general", "is_channel": true, "num_members": 80},
+      "C00000002": {"id": "C00000002", "name": "engineering", "is_channel": true, "num_members": 35},
+      "C00000003": {"id": "C00000003", "name": "backend", "is_channel": true, "num_members": 15},
+      "C00000004": {"id": "C00000004", "name": "frontend", "is_channel": true, "num_members": 12},
+      "C00000005": {"id": "C00000005", "name": "infra", "is_channel": true, "num_members": 8},
+      "C00000006": {"id": "C00000006", "name": "security", "is_channel": true, "num_members": 6},
+      "C00000007": {"id": "C00000007", "name": "data", "is_channel": true, "num_members": 9},
+      "C00000008": {"id": "C00000008", "name": "ml", "is_channel": true, "num_members": 11},
+      "C00000009": {"id": "C00000009", "name": "design", "is_channel": true, "num_members": 7},
+      "C00000010": {"id": "C00000010", "name": "product", "is_channel": true, "num_members": 14},
+      "C00000011": {"id": "C00000011", "name": "marketing", "is_channel": true, "num_members": 10},
+      "C00000012": {"id": "C00000012", "name": "sales", "is_channel": true, "num_members": 18},
+      "C00000013": {"id": "C00000013", "name": "support", "is_channel": true, "num_members": 22},
+      "C00000014": {"id": "C00000014", "name": "random", "is_channel": true, "num_members": 75},
+      "C00000015": {"id": "C00000015", "name": "announcements", "is_channel": true, "num_members": 80}
+    },
+    "users": {
+      "U00000001": {"id": "U00000001", "name": "user01", "real_name": "User One", "profile": {"real_name": "User One", "display_name": "user01", "email": "u01@acme.com"}},
+      "U00000002": {"id": "U00000002", "name": "user02", "real_name": "User Two", "profile": {"real_name": "User Two", "display_name": "user02", "email": "u02@acme.com"}},
+      "U00000003": {"id": "U00000003", "name": "user03", "real_name": "User Three", "profile": {"real_name": "User Three", "display_name": "user03", "email": "u03@acme.com"}},
+      "U00000004": {"id": "U00000004", "name": "user04", "real_name": "User Four", "profile": {"real_name": "User Four", "display_name": "user04", "email": "u04@acme.com"}},
+      "U00000005": {"id": "U00000005", "name": "user05", "real_name": "User Five", "profile": {"real_name": "User Five", "display_name": "user05", "email": "u05@acme.com"}},
+      "U00000006": {"id": "U00000006", "name": "user06", "real_name": "User Six", "profile": {"real_name": "User Six", "display_name": "user06", "email": "u06@acme.com"}},
+      "U00000007": {"id": "U00000007", "name": "user07", "real_name": "User Seven", "profile": {"real_name": "User Seven", "display_name": "user07", "email": "u07@acme.com"}},
+      "U00000008": {"id": "U00000008", "name": "user08", "real_name": "User Eight", "profile": {"real_name": "User Eight", "display_name": "user08", "email": "u08@acme.com"}},
+      "U00000009": {"id": "U00000009", "name": "user09", "real_name": "User Nine", "profile": {"real_name": "User Nine", "display_name": "user09", "email": "u09@acme.com"}},
+      "U00000010": {"id": "U00000010", "name": "user10", "real_name": "User Ten", "profile": {"real_name": "User Ten", "display_name": "user10", "email": "u10@acme.com"}},
+      "U00000011": {"id": "U00000011", "name": "user11", "real_name": "User Eleven", "profile": {"real_name": "User Eleven", "display_name": "user11", "email": "u11@acme.com"}},
+      "U00000012": {"id": "U00000012", "name": "user12", "real_name": "User Twelve", "profile": {"real_name": "User Twelve", "display_name": "user12", "email": "u12@acme.com"}},
+      "U00000013": {"id": "U00000013", "name": "user13", "real_name": "User Thirteen", "profile": {"real_name": "User Thirteen", "display_name": "user13", "email": "u13@acme.com"}},
+      "U00000014": {"id": "U00000014", "name": "user14", "real_name": "User Fourteen", "profile": {"real_name": "User Fourteen", "display_name": "user14", "email": "u14@acme.com"}},
+      "U00000015": {"id": "U00000015", "name": "user15", "real_name": "User Fifteen", "profile": {"real_name": "User Fifteen", "display_name": "user15", "email": "u15@acme.com"}},
+      "U00000016": {"id": "U00000016", "name": "user16", "real_name": "User Sixteen", "profile": {"real_name": "User Sixteen", "display_name": "user16", "email": "u16@acme.com"}},
+      "U00000017": {"id": "U00000017", "name": "user17", "real_name": "User Seventeen", "profile": {"real_name": "User Seventeen", "display_name": "user17", "email": "u17@acme.com"}},
+      "U00000018": {"id": "U00000018", "name": "user18", "real_name": "User Eighteen", "profile": {"real_name": "User Eighteen", "display_name": "user18", "email": "u18@acme.com"}},
+      "U00000019": {"id": "U00000019", "name": "user19", "real_name": "User Nineteen", "profile": {"real_name": "User Nineteen", "display_name": "user19", "email": "u19@acme.com"}},
+      "U00000020": {"id": "U00000020", "name": "user20", "real_name": "User Twenty", "profile": {"real_name": "User Twenty", "display_name": "user20", "email": "u20@acme.com"}}
+    },
+    "messages": {
+      "C00000002": [
+        {"type": "message", "user": "U00000003", "text": "Standup in 5", "ts": "1714521600.000001", "channel": "C00000002"},
+        {"type": "message", "user": "U00000005", "text": "Deploy went out clean", "ts": "1714521700.000002", "channel": "C00000002"},
+        {"type": "message", "user": "U00000007", "text": "Reviewing the migration PR now", "ts": "1714521800.000003", "channel": "C00000002"}
+      ],
+      "C00000014": [
+        {"type": "message", "user": "U00000010", "text": "Anyone tried the new lunch place?", "ts": "1714525000.000004", "channel": "C00000014"}
+      ]
+    },
+    "_counters": {"channel_id": 15, "user_id": 20, "ts_seq": 200, "requests": 0}
+  },
+  "config": {}
+}

@@ -19,7 +19,7 @@ def test_register_overwrites_twin_url():
     assert r.bootstrap_token.startswith("ghp_")
 
 
-def test_phase1_only_has_github():
-    # Slack and Stripe land in Phase 3 — make sure we didn't pre-add them.
+def test_phase3_has_github_slack_stripe():
+    # Phase 3 registered slack.com + api.stripe.com.
     domains = set(all_domains())
-    assert domains == {"api.github.com"}
+    assert domains == {"api.github.com", "slack.com", "api.stripe.com"}
