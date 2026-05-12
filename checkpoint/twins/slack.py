@@ -108,7 +108,10 @@ def _slack_headers() -> dict:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX):
+    # Introspection and the mounted MCP transport bypass token auth.
+    # MCP tool bodies stamp the bootstrap token back on when shimming
+    # into the REST surface.
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     token = _extract_token(request.headers.get("authorization"))
@@ -127,7 +130,7 @@ async def auth_middleware(request: Request, call_next):
 @app.middleware("http")
 async def trace_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX):
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     body_bytes = await request.body()
@@ -439,3 +442,12 @@ def _find_message(channel_id: str, ts: str) -> dict | None:
         if m["ts"] == ts:
             return m
     return None
+
+
+# --- MCP transport -------------------------------------------------------
+# Mount the Slack MCP server at /mcp on this same FastAPI app so REST and
+# MCP share the same STATE dict (Phase 6, MCP-01/MCP-02).
+
+from checkpoint.mcp_servers.slack_mcp import mount_on as _mount_mcp  # noqa: E402
+
+_mount_mcp(app)

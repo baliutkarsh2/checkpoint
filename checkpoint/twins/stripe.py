@@ -168,7 +168,10 @@ async def _parse_body(request: Request) -> dict:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX):
+    # Introspection and the mounted MCP transport bypass token auth.
+    # MCP tool bodies stamp the bootstrap token back on when shimming
+    # into the REST surface.
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     token = _extract_token(request.headers.get("authorization"))
@@ -200,7 +203,7 @@ async def auth_middleware(request: Request, call_next):
 @app.middleware("http")
 async def trace_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX):
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     body_bytes = await request.body()
@@ -975,3 +978,12 @@ def list_payment_links(limit: int = 10):
         return _strict_404()
     items = list(STATE["payment_links"].values())
     return {"object": "list", "url": "/v1/payment_links", "has_more": False, "data": items[:limit]}
+
+
+# --- MCP transport -------------------------------------------------------
+# Mount the Stripe MCP server at /mcp on this same FastAPI app so REST and
+# MCP share the same STATE dict (Phase 6, MCP-01/MCP-02).
+
+from checkpoint.mcp_servers.stripe_mcp import mount_on as _mount_mcp  # noqa: E402
+
+_mount_mcp(app)
