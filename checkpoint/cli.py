@@ -556,5 +556,74 @@ def _print_run_record(record: dict) -> None:
             console.print(f"  keys: {sorted(state.keys())[:20]}")
 
 
+# =============================================================================
+# Phase 7 / Task 2: clone start / inspect / stop
+# =============================================================================
+
+
+@main.group()
+def clone():
+    """Manage long-lived local twin sessions."""
+
+
+@clone.command("start")
+@click.argument("clone_id")
+def clone_start(clone_id):
+    """CLI-07: start a long-lived twin session (github/slack/stripe)."""
+    from . import clone_manager
+    try:
+        entry = clone_manager.start(clone_id)
+    except (ValueError, RuntimeError) as e:
+        console.print(f"[red]clone start {clone_id}: {e}[/red]")
+        sys.exit(1)
+    console.print(Panel.fit(
+        f"[bold]Clone {clone_id} started[/bold]\n"
+        f"[dim]URL:[/dim]      {entry['url']}\n"
+        f"[dim]MCP URL:[/dim]  {entry['mcp_url']}\n"
+        f"[dim]Token:[/dim]    {entry['token']}\n"
+        f"[dim]PID:[/dim]      {entry['pid']}",
+        border_style="green",
+    ))
+
+
+@clone.command("inspect")
+@click.argument("clone_id")
+def clone_inspect(clone_id):
+    """CLI-07: show running clone metadata + state/request counts."""
+    from . import clone_manager
+    info = clone_manager.inspect(clone_id)
+    if info is None:
+        console.print(f"[yellow]No registered clone for {clone_id!r}.[/yellow]")
+        sys.exit(1)
+    if not info.get("alive"):
+        console.print(f"[yellow]Clone {clone_id!r} is registered but the "
+                      f"process is gone. Registry purged.[/yellow]")
+        sys.exit(1)
+    body = (
+        f"[bold]Clone {clone_id}[/bold] (alive)\n"
+        f"[dim]URL:[/dim]            {info['url']}\n"
+        f"[dim]MCP URL:[/dim]        {info['mcp_url']}\n"
+        f"[dim]PID:[/dim]            {info['pid']}\n"
+        f"[dim]Started:[/dim]        {info.get('started_at', '?')}\n"
+        f"[dim]Request count:[/dim]  {info.get('request_count', 0)}\n"
+        f"[dim]State size:[/dim]     {info.get('state_size', 0)} bytes\n"
+        f"[dim]State keys:[/dim]     {info.get('state_keys', [])}"
+    )
+    console.print(Panel.fit(body, border_style="cyan"))
+
+
+@clone.command("stop")
+@click.argument("clone_id")
+def clone_stop(clone_id):
+    """CLI-07: stop a running twin session."""
+    from . import clone_manager
+    was_running = clone_manager.stop(clone_id)
+    if was_running:
+        console.print(f"[green]Stopped clone {clone_id}.[/green]")
+    else:
+        console.print(f"[yellow]Clone {clone_id!r} was not running "
+                      f"(registry cleared).[/yellow]")
+
+
 if __name__ == "__main__":
     main()
