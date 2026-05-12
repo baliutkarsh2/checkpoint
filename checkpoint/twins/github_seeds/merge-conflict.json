@@ -1,0 +1,39 @@
+{
+  "state": {
+    "repos": {
+      "acme/webapp": {
+        "id": 1, "name": "webapp", "full_name": "acme/webapp",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": false,
+        "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
+        "html_url": "http://localhost/acme/webapp",
+        "branches": {
+          "main":    {"name": "main",    "sha": "main0000000000000000000000000000000000a", "protected": false},
+          "feature": {"name": "feature", "sha": "feat0000000000000000000000000000000000b", "protected": false}
+        },
+        "commits": [
+          {"sha": "main0000000000000000000000000000000000a", "commit": {"message": "main: edit config.yml", "author": {"name": "alice", "date": "2026-05-10T00:00:00Z"}}, "files": [{"filename": "config.yml", "status": "modified", "sha": "main-cfg"}]},
+          {"sha": "feat0000000000000000000000000000000000b", "commit": {"message": "feature: also edit config.yml", "author": {"name": "bob",   "date": "2026-05-09T00:00:00Z"}}, "files": [{"filename": "config.yml", "status": "modified", "sha": "feat-cfg"}]}
+        ],
+        "files": {"config.yml": {"content": "version: main\n", "sha": "main-cfg"}}
+      }
+    },
+    "pulls": {
+      "acme/webapp#1": {
+        "number": 1, "title": "Update config", "body": "edits config.yml differently",
+        "state": "open", "merged": false, "draft": false,
+        "head": {"ref": "feature", "sha": "feat0000000000000000000000000000000000b"},
+        "base": {"ref": "main",    "sha": "main0000000000000000000000000000000000a"},
+        "user": {"login": "bob", "id": 2, "type": "User"},
+        "created_at": "2026-05-09T00:00:00Z", "updated_at": "2026-05-10T00:00:00Z",
+        "merged_at": null, "html_url": "http://localhost/acme/webapp/pull/1",
+        "mergeable": false, "mergeable_state": "dirty",
+        "_commits": [], "_reviews": [],
+        "_files": [{"filename": "config.yml", "status": "modified", "sha": "feat-cfg"}],
+        "_comments": [], "_status": {"state": "pending", "statuses": []}
+      }
+    },
+    "_counters": {"issue_number_per_repo": {}, "pull_number_per_repo": {"acme/webapp": 1}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 0, "sha_seq_per_repo": {"acme/webapp": 3}, "requests": 0}
+  },
+  "config": {"rate_limit": null, "permissions_denied": false}
+}

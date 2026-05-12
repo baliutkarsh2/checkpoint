@@ -1,0 +1,25 @@
+{
+  "state": {
+    "repos": {
+      "acme/webapp": {
+        "id": 1, "name": "webapp", "full_name": "acme/webapp",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": false,
+        "created_at": "2024-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
+        "html_url": "http://localhost/acme/webapp",
+        "branches": {"main": {"name": "main", "sha": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0", "protected": false}},
+        "commits": [],
+        "files": {}
+      }
+    },
+    "issues": {
+      "acme/webapp#1": {"number": 1, "title": "Old: refactor auth", "body": "Tracked since forever.", "state": "open", "labels": [{"name": "stale", "color": "ccc"}], "comments": 0, "user": {"login": "dave", "id": 4, "type": "User"}, "created_at": "2024-02-01T00:00:00Z", "updated_at": "2024-02-01T00:00:00Z", "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/1"},
+      "acme/webapp#2": {"number": 2, "title": "Old: docs typo", "body": "see screenshot", "state": "open", "labels": [{"name": "stale", "color": "ccc"}], "comments": 0, "user": {"login": "eve", "id": 5, "type": "User"}, "created_at": "2024-03-01T00:00:00Z", "updated_at": "2024-03-01T00:00:00Z", "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/2"},
+      "acme/webapp#3": {"number": 3, "title": "Old: flaky test", "body": "test_login flakes", "state": "open", "labels": [{"name": "stale", "color": "ccc"}, {"name": "bug", "color": "ee0701"}], "comments": 0, "user": {"login": "frank", "id": 6, "type": "User"}, "created_at": "2024-04-01T00:00:00Z", "updated_at": "2024-04-01T00:00:00Z", "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/3"},
+      "acme/webapp#4": {"number": 4, "title": "Old: bump dep", "body": "lodash to latest", "state": "open", "labels": [{"name": "stale", "color": "ccc"}], "comments": 0, "user": {"login": "grace", "id": 7, "type": "User"}, "created_at": "2024-05-01T00:00:00Z", "updated_at": "2024-05-01T00:00:00Z", "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/4"},
+      "acme/webapp#5": {"number": 5, "title": "Old: ignore me", "body": "won't fix", "state": "open", "labels": [{"name": "stale", "color": "ccc"}], "comments": 0, "user": {"login": "henry", "id": 8, "type": "User"}, "created_at": "2024-06-01T00:00:00Z", "updated_at": "2024-06-01T00:00:00Z", "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/5"}
+    },
+    "_counters": {"issue_number_per_repo": {"acme/webapp": 5}, "pull_number_per_repo": {}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 0, "sha_seq_per_repo": {}, "requests": 0}
+  },
+  "config": {"rate_limit": null, "permissions_denied": false}
+}

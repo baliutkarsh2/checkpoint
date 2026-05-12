@@ -1,0 +1,41 @@
+{
+  "state": {
+    "repos": {
+      "bigco/monolith": {
+        "id": 100, "name": "monolith", "full_name": "bigco/monolith",
+        "owner": {"login": "bigco", "id": 100, "type": "Organization"},
+        "default_branch": "main", "private": true,
+        "created_at": "2024-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
+        "html_url": "http://localhost/bigco/monolith",
+        "branches": {
+          "main":    {"name": "main",    "sha": "1111111111111111111111111111111111111111", "protected": true},
+          "develop": {"name": "develop", "sha": "2222222222222222222222222222222222222222", "protected": true},
+          "release/v2.4": {"name": "release/v2.4", "sha": "3333333333333333333333333333333333333333", "protected": true}
+        },
+        "commits": [
+          {"sha": "1111111111111111111111111111111111111111",
+           "commit": {"message": "Bump version to 2.4.1", "author": {"name": "release-bot", "date": "2026-05-12T00:00:00Z"}},
+           "files": [{"filename": "VERSION", "status": "modified", "sha": "ff00"}]},
+          {"sha": "4444444444444444444444444444444444444444",
+           "commit": {"message": "feat: payments retry", "author": {"name": "carol", "date": "2026-05-10T00:00:00Z"}},
+           "files": [{"filename": "src/payments.py", "status": "modified", "sha": "aa01"}]}
+        ],
+        "files": {
+          "README.md": {"content": "# monolith\nInternal-only.\n", "sha": "aa01aa01aa01aa01aa01aa01aa01aa01aa01aa01"},
+          "VERSION":   {"content": "2.4.1\n", "sha": "ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00"}
+        }
+      }
+    },
+    "users": {
+      "bigco": {"login": "bigco", "id": 100, "type": "Organization"},
+      "carol": {"login": "carol", "id": 101, "type": "User"},
+      "release-bot": {"login": "release-bot", "id": 102, "type": "Bot"}
+    },
+    "_counters": {
+      "issue_number_per_repo": {}, "pull_number_per_repo": {},
+      "comment_id": 0, "review_id": 0, "repo_id": 100, "run_id": 0,
+      "sha_seq_per_repo": {"bigco/monolith": 5}, "requests": 0
+    }
+  },
+  "config": {"rate_limit": null, "permissions_denied": false}
+}
