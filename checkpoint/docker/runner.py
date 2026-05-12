@@ -54,16 +54,24 @@ from ..proxy.routes import register, all_domains
 from .harness_image import build_harness_image, HarnessImageError
 
 
+_DOCKER_TWIN_APPS = {
+    "github": "checkpoint.twins.github:app",
+    "slack": "checkpoint.twins.slack:app",
+    "stripe": "checkpoint.twins.stripe:app",
+}
+
+
 def _start_twin_for_docker(clone: str, port: int) -> subprocess.Popen:
     """Start the twin bound to 0.0.0.0 so docker containers can reach it via
     host.docker.internal:<port>. The v0 _start_twin binds to 127.0.0.1, which
     is correct for local-mode but unreachable from docker bridge."""
-    if clone != "github":
-        raise ValueError(f"docker runner only supports clone=github (got {clone!r})")
+    app = _DOCKER_TWIN_APPS.get(clone)
+    if app is None:
+        raise ValueError(f"docker runner: unsupported clone={clone!r}")
     return subprocess.Popen(
         [
             sys.executable, "-m", "uvicorn",
-            "checkpoint.twins.github:app",
+            app,
             "--host", "0.0.0.0",
             "--port", str(port),
             "--log-level", "warning",
@@ -231,10 +239,13 @@ def docker_run_once(
 ) -> DockerRunResult:
     clones = scenario.clones or ["github"]
     if len(clones) > 1:
-        return DockerRunResult("", "", -1, [], {}, error=f"Multi-clone not supported in Phase 1: {clones}")
+        # Multi-clone in docker mode requires extending the sidecar's routes
+        # to bridge multiple netns-shared twin containers. Local mode already
+        # supports this in Phase 4 — docker-mode multi-clone is deferred.
+        return DockerRunResult("", "", -1, [], {}, error=f"Docker-mode multi-clone is deferred to a later phase (got: {clones}). Use local mode (drop --docker) for now.")
     clone = clones[0]
-    if clone != "github":
-        return DockerRunResult("", "", -1, [], {}, error=f"Phase 1 only supports clone=github (got {clone!r})")
+    if clone not in _DOCKER_TWIN_APPS:
+        return DockerRunResult("", "", -1, [], {}, error=f"Docker runner: unknown clone={clone!r}")
 
     client = docker.from_env()
     try:

@@ -328,6 +328,29 @@ def load_seed(name: str):
     return {"ok": True, "seed": name, "config": STATE["_config"]}
 
 
+@app.post("/_seed-file")
+async def load_seed_file(request: Request):
+    """Apply an inline JSON seed payload (same shape as the named seed files
+    under github_seeds/). Used by `seed-file:` in scenario config."""
+    data = await request.json()
+    if not isinstance(data, dict):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
+    STATE.clear()
+    STATE.update(_fresh_state())
+    TRACE.clear()
+    for k, v in (data.get("state") or {}).items():
+        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
+            STATE[k].update(v)
+        else:
+            STATE[k] = v
+    cfg = data.get("config") or {}
+    if "rate_limit" in cfg:
+        STATE["_config"]["rate_limit"] = cfg["rate_limit"]
+    if "permissions_denied" in cfg:
+        STATE["_config"]["permissions_denied"] = bool(cfg["permissions_denied"])
+    return {"ok": True, "config": STATE["_config"]}
+
+
 # --- repos ---------------------------------------------------------------
 
 @app.post("/user/repos", status_code=201)

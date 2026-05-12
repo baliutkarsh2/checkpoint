@@ -128,6 +128,40 @@ def _fetch_state(port: int) -> dict:
         return {}
 
 
+_CLONE_BOOTSTRAP_TOKEN_ENV = {
+    "github": ("GITHUB_TOKEN", "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"),
+    "slack": ("SLACK_TOKEN", "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
+    "stripe": ("STRIPE_API_KEY", "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"),
+}
+
+
+def _merge_state_for_clones(per_clone_state: dict[str, dict]) -> dict:
+    """Build the `state` field on RunResult for multi-clone runs.
+
+    Single-clone runs keep the legacy flat shape (top-level keys are twin state
+    keys like `repositories`, `pull_requests`, etc.) so deterministic checks
+    against existing scenarios keep working. Multi-clone runs use a nested
+    `{clone_id: state}` shape and the deterministic checker walks both.
+    """
+    if len(per_clone_state) == 1:
+        return next(iter(per_clone_state.values()))
+    return dict(per_clone_state)
+
+
+def _merge_trace_for_clones(per_clone_trace: dict[str, list]) -> list:
+    """Concatenate per-clone traces. Each entry is tagged with `_clone` so
+    callers can filter when needed."""
+    if len(per_clone_trace) == 1:
+        return next(iter(per_clone_trace.values()))
+    out: list = []
+    for clone, entries in per_clone_trace.items():
+        for e in entries:
+            if isinstance(e, dict) and "_clone" not in e:
+                e = {**e, "_clone": clone}
+            out.append(e)
+    return out
+
+
 def run_once(
     scenario: Scenario,
     harness_cmd: list[str],
@@ -135,44 +169,54 @@ def run_once(
     judge_model: str = "gpt-4o-mini",
 ) -> RunResult:
     clones = scenario.clones or ["github"]
-    if len(clones) > 1:
-        return RunResult("", "", -1, [], {}, error=f"Multi-clone not supported in v0: {clones}")
-    clone = clones[0]
-    port = _free_port()
-    twin = _start_twin(clone, port)
+    unknown = [c for c in clones if c not in TWIN_APPS]
+    if unknown:
+        return RunResult("", "", -1, [], {}, error=f"Unknown clones: {unknown}")
 
+    # Phase-4: start one twin per clone, on its own free port.
+    twins: list[tuple[str, int, subprocess.Popen]] = []
     try:
-        if not _wait_healthy(port):
-            return RunResult("", "", -1, [], {}, error="Twin failed to start")
+        for clone in clones:
+            port = _free_port()
+            proc = _start_twin(clone, port)
+            twins.append((clone, port, proc))
 
-        # Optional named seed load (Phase 3 plan 05; Phase 4 will generalize).
-        seed = scenario.config.get("seed") or scenario.config.get("seed_name")
-        if seed:
-            try:
-                r = httpx.post(f"http://127.0.0.1:{port}/_seed/{seed}", timeout=5)
-                if r.status_code != 200:
-                    return RunResult(
-                        "", "", -1, [], {},
-                        error=f"Seed {seed!r} failed: {r.status_code} {r.text[:200]}",
-                    )
-            except Exception as e:
-                return RunResult("", "", -1, [], {}, error=f"Seed {seed!r} request failed: {e}")
+        for clone, port, _ in twins:
+            if not _wait_healthy(port):
+                return RunResult("", "", -1, [], {}, error=f"Twin {clone!r} failed to start on :{port}")
 
-        base_url = f"http://127.0.0.1:{port}"
+        # Apply seeds. Format options:
+        #   seed: small-project                  -> applies to first clone only (legacy)
+        #   seed: github=small-project, slack=engineering-team
+        #   seed-file: ./seed.json               -> applies to first clone (raw state)
+        #   seed-file: github=./gh.json, slack=./sl.json
+        # `seed:` and `seed-file:` may both be present; seed-file wins per-clone.
+        seed_map = _parse_seed_spec(scenario.config.get("seed") or scenario.config.get("seed_name"), clones)
+        seed_file_map = _parse_seed_spec(scenario.config.get("seed-file") or scenario.config.get("seed_file"), clones)
+
+        for clone, port, _ in twins:
+            sf = seed_file_map.get(clone)
+            sn = seed_map.get(clone)
+            if sf:
+                err = _apply_seed_file(port, sf, scenario.source_path)
+                if err:
+                    return RunResult("", "", -1, [], {}, error=err)
+            elif sn:
+                err = _apply_named_seed(port, sn)
+                if err:
+                    return RunResult("", "", -1, [], {}, error=err)
+
         env = dict(os.environ)
         env["CHECKPOINT_TASK"] = scenario.prompt
-        env["CHECKPOINT_BASE_URL"] = base_url
-        env[f"CHECKPOINT_{clone.upper()}_URL"] = base_url
         env["ARCHAL_ENGINE_TASK"] = scenario.prompt
         env["ARCHAL_ENGINE_MODE"] = "local"
-        # Inject per-twin bootstrap tokens so harnesses talking directly to
-        # the local twin (non-Docker, no TLS sidecar) authenticate cleanly.
-        if clone == "github":
-            env["GITHUB_TOKEN"] = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
-        elif clone == "slack":
-            env["SLACK_TOKEN"] = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
-        elif clone == "stripe":
-            env["STRIPE_API_KEY"] = "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"
+        first_clone, first_port, _ = twins[0]
+        env["CHECKPOINT_BASE_URL"] = f"http://127.0.0.1:{first_port}"
+        for clone, port, _ in twins:
+            env[f"CHECKPOINT_{clone.upper()}_URL"] = f"http://127.0.0.1:{port}"
+            tok = _CLONE_BOOTSTRAP_TOKEN_ENV.get(clone)
+            if tok:
+                env[tok[0]] = tok[1]
 
         try:
             proc = subprocess.run(
@@ -184,21 +228,25 @@ def run_once(
                 timeout=scenario.timeout,
             )
         except subprocess.TimeoutExpired as e:
+            per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
+            per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
             return RunResult(
                 final_answer="",
                 stderr=(e.stderr or "")[-4000:] if isinstance(e.stderr, (bytes, str)) else "",
                 exit_code=-1,
-                trace=_fetch_trace(port),
-                state=_fetch_state(port),
+                trace=_merge_trace_for_clones(per_trace),
+                state=_merge_state_for_clones(per_state),
                 error=f"Harness exceeded timeout of {scenario.timeout}s",
             )
 
+        per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
+        per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
         result = RunResult(
             final_answer=_extract_final_answer(proc.stdout),
             stderr=(proc.stderr or "")[-4000:],
             exit_code=proc.returncode,
-            trace=_fetch_trace(port),
-            state=_fetch_state(port),
+            trace=_merge_trace_for_clones(per_trace),
+            state=_merge_state_for_clones(per_state),
         )
 
         if proc.returncode != 0:
@@ -208,11 +256,83 @@ def run_once(
         _evaluate(scenario, result, judge_model)
         return result
     finally:
-        twin.terminate()
-        try:
-            twin.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            twin.kill()
+        for _, _, proc in twins:
+            proc.terminate()
+        for _, _, proc in twins:
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
+    """Parse `seed:` / `seed-file:` config into a {clone: value} map.
+
+    Single value (no `=`) applies to the first clone only (legacy v0 behavior).
+    Comma-separated `clone=value` pairs apply per-clone. Unknown clones are
+    ignored silently — they may be intentionally excluded from a run.
+    """
+    if not raw:
+        return {}
+    raw = raw.strip()
+    if "=" not in raw:
+        # Single value: apply to first clone (legacy behavior).
+        return {clones[0]: raw} if clones else {}
+    out: dict[str, str] = {}
+    for piece in raw.split(","):
+        piece = piece.strip()
+        if "=" not in piece:
+            continue
+        k, _, v = piece.partition("=")
+        k = k.strip().lower()
+        v = v.strip()
+        if k and v:
+            out[k] = v
+    return out
+
+
+def _apply_named_seed(port: int, name: str) -> str | None:
+    try:
+        r = httpx.post(f"http://127.0.0.1:{port}/_seed/{name}", timeout=5)
+    except Exception as e:
+        return f"Seed {name!r} request failed on :{port}: {e}"
+    if r.status_code != 200:
+        return f"Seed {name!r} failed on :{port}: {r.status_code} {r.text[:200]}"
+    return None
+
+
+def _apply_seed_file(port: int, file_path: str, scenario_source: str | None) -> str | None:
+    """Load a JSON file and POST it to the twin.
+
+    File format options:
+      1. `{"state": {...}}` — same shape `/_seed/<name>` JSON files use.
+      2. `{...}` — treated as a raw state replacement.
+
+    Relative paths resolve against the scenario file's directory if known,
+    else against cwd.
+    """
+    from pathlib import Path
+
+    p = Path(file_path)
+    if not p.is_absolute() and scenario_source:
+        base = Path(scenario_source).parent
+        candidate = (base / p).resolve()
+        if candidate.exists():
+            p = candidate
+    if not p.exists():
+        return f"seed-file not found: {file_path}"
+    try:
+        data = json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        return f"seed-file {file_path}: {e}"
+    payload = data if "state" in data else {"state": data}
+    try:
+        r = httpx.post(f"http://127.0.0.1:{port}/_seed-file", json=payload, timeout=5)
+    except Exception as e:
+        return f"seed-file POST failed on :{port}: {e}"
+    if r.status_code != 200:
+        return f"seed-file POST failed on :{port}: {r.status_code} {r.text[:200]}"
+    return None
 
 
 def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:

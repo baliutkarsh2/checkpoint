@@ -224,6 +224,26 @@ def load_seed(name: str):
     return {"ok": True, "seed": name, "config": STATE["_config"]}
 
 
+@app.post("/_seed-file")
+async def load_seed_file(request: Request):
+    """Apply an inline JSON seed payload (same shape as slack_seeds/*.json)."""
+    data = await request.json()
+    if not isinstance(data, dict):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
+    STATE.clear()
+    STATE.update(_fresh_state())
+    TRACE.clear()
+    for k, v in (data.get("state") or {}).items():
+        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
+            STATE[k].update(v)
+        else:
+            STATE[k] = v
+    cfg = data.get("config") or {}
+    for ck, cv in cfg.items():
+        STATE["_config"][ck] = cv
+    return {"ok": True, "config": STATE["_config"]}
+
+
 # --- chat.postMessage / reply_to_thread ---------------------------------
 
 @app.post("/api/chat.postMessage")

@@ -40,7 +40,27 @@ def check(criterion_text: str, state: dict, trace: list) -> CheckResult:
 
 
 def _issues(state: dict) -> list[dict]:
-    return list(state.get("issues", {}).values())
+    issues = state.get("issues")
+    if isinstance(issues, dict):
+        return list(issues.values())
+    # Multi-clone shape: {clone: {issues: {...}, ...}}. Look inside the
+    # github sub-state if present, else flatten across all sub-states.
+    if isinstance(state.get("github"), dict):
+        return list((state["github"].get("issues") or {}).values())
+    out: list[dict] = []
+    for v in state.values():
+        if isinstance(v, dict) and isinstance(v.get("issues"), dict):
+            out.extend(v["issues"].values())
+    return out
+
+
+def _labels(state: dict) -> dict:
+    labels = state.get("labels")
+    if isinstance(labels, dict):
+        return labels
+    if isinstance(state.get("github"), dict):
+        return state["github"].get("labels") or {}
+    return {}
 
 
 def _apply(kind: str, m: re.Match, state: dict, trace: list) -> CheckResult:
@@ -94,7 +114,7 @@ def _apply(kind: str, m: re.Match, state: dict, trace: list) -> CheckResult:
 
     if kind == "label_exists":
         label = m.group(1)
-        found = any(lab.get("name") == label for lab in state.get("labels", {}).values())
+        found = any(lab.get("name") == label for lab in _labels(state).values())
         return CheckResult(found, f"Label '{label}' {'found' if found else 'not found'}.", True)
 
     if kind == "no_new_issues":
