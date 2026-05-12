@@ -14,12 +14,17 @@ from pathlib import Path
 
 import requests
 
-GITHUB_BASE = "https://api.github.com"
+# Talk to the twin directly when CHECKPOINT_GITHUB_URL is exported (non-Docker
+# smoke); otherwise hit api.github.com (Docker / TLS-sidecar path).
+GITHUB_BASE = os.environ.get("CHECKPOINT_GITHUB_URL") or "https://api.github.com"
 TASK = os.environ.get("ARCHAL_ENGINE_TASK") or os.environ.get("CHECKPOINT_TASK") or ""
 ARCHAL_OUT = Path(os.environ.get("ARCHAL_OUT_DIR", "/archal-out"))
 
+# Token comes from the runner (non-Docker) or from the TLS sidecar swap (Docker).
+# The Bearer placeholder is kept for Docker mode where the sidecar overrides it.
+_TOKEN = os.environ.get("GITHUB_TOKEN", "ignored-fake-user-token")
 HEADERS = {
-    "Authorization": "Bearer ignored-fake-user-token",
+    "Authorization": f"token {_TOKEN}" if _TOKEN.startswith("ghp_") else f"Bearer {_TOKEN}",
     "Accept": "application/vnd.github+json",
     "User-Agent": "checkpoint-fake-harness/0.1",
 }

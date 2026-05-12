@@ -144,6 +144,10 @@ def run_once(
         env[f"CHECKPOINT_{clone.upper()}_URL"] = base_url
         env["ARCHAL_ENGINE_TASK"] = scenario.prompt
         env["ARCHAL_ENGINE_MODE"] = "local"
+        # Inject per-twin bootstrap tokens so harnesses talking directly to
+        # the local twin (non-Docker, no TLS sidecar) authenticate cleanly.
+        if clone == "github":
+            env["GITHUB_TOKEN"] = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
 
         try:
             proc = subprocess.run(
