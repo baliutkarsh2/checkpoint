@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "mitmproxy>=10.0",
     "docker>=7.0",
+    "mcp>=1.27",
 ]
 
 [project.optional-dependencies]

@@ -178,7 +178,10 @@ async def auth_and_limits_middleware(request: Request, call_next):
     method = request.method
 
     # Introspection bypasses all auth/limits/headers logic.
-    if path.startswith(INTROSPECTION_PREFIX):
+    # The mounted MCP transport also bypasses — MCP clients don't speak
+    # the bootstrap-token contract; the MCP tool bodies stamp the token
+    # back on when they shim into the REST surface.
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     # 1. Auth gate
@@ -224,7 +227,7 @@ async def auth_and_limits_middleware(request: Request, call_next):
 @app.middleware("http")
 async def trace_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX):
+    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
         return await call_next(request)
 
     body_bytes = await request.body()
@@ -1036,3 +1039,12 @@ def search_issues(q: str = "", per_page: int = 30, page: int = 1):
         "incomplete_results": False,
         "items": items[start:start + per_page],
     }
+
+
+# --- MCP transport -------------------------------------------------------
+# Mount the GitHub MCP server at /mcp on this same FastAPI app so REST and
+# MCP share the same STATE dict (Phase 6, MCP-01/MCP-02).
+
+from checkpoint.mcp_servers.github_mcp import mount_on as _mount_mcp  # noqa: E402
+
+_mount_mcp(app)
