@@ -73,10 +73,14 @@ def test_scenario_list_json_returns_all_five() -> None:
     assert proc.returncode == 0, f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
     rows = json.loads(proc.stdout)
     names = {Path(r["path"]).name for r in rows}
-    assert names == set(EXPECTED), f"scenario list returned: {names}"
-    # Every row should have non-empty tags.
+    # The 5 bundled scenarios must all be listed. Allow extras (e.g. the
+    # Phase 8 Plan 05 archal-verbatim scenario added in the same dir).
+    missing = set(EXPECTED) - names
+    assert not missing, f"scenario list missing: {missing}"
+    # Every bundled-library row should have non-empty tags.
     for r in rows:
-        assert r["tags"], f"{r['path']} missing tags in `scenario list` output"
+        if Path(r["path"]).name in EXPECTED:
+            assert r["tags"], f"{r['path']} missing tags in `scenario list` output"
 
 
 def test_tag_filter_skips_non_matching() -> None:
