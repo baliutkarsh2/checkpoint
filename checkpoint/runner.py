@@ -205,9 +205,12 @@ def run_once(
                 err = _apply_named_seed(port, sn)
                 if err:
                     return RunResult("", "", -1, [], {}, error=err)
-            elif scenario.setup and scenario.setup.strip():
+            elif _setup_seed_enabled(scenario) and scenario.setup and scenario.setup.strip():
                 # SCN-08: derive a JSON seed from the `## Setup` prose. Soft-fail
                 # if OPENAI_API_KEY is missing — twin keeps its default fresh state.
+                # Opt-in via `setup-seed: true` in the scenario config (or
+                # `setup-seed: auto`) so existing Phase 1-3 scenarios with
+                # descriptive ## Setup prose don't suddenly get LLM-generated state.
                 err = _apply_setup_derived_seed(port, clone, scenario.setup)
                 if err:
                     # Log but don't abort: a missing key is the most common case.
@@ -306,6 +309,15 @@ def _apply_named_seed(port: int, name: str) -> str | None:
     if r.status_code != 200:
         return f"Seed {name!r} failed on :{port}: {r.status_code} {r.text[:200]}"
     return None
+
+
+_SETUP_SEED_TRUTHY = {"true", "1", "yes", "auto", "on"}
+
+
+def _setup_seed_enabled(scenario: Scenario) -> bool:
+    """SCN-08 opt-in flag: `setup-seed: true` in `## Config`."""
+    val = (scenario.config.get("setup-seed") or scenario.config.get("setup_seed") or "").strip().lower()
+    return val in _SETUP_SEED_TRUTHY
 
 
 def _apply_setup_derived_seed(port: int, clone: str, setup_text: str) -> str | None:

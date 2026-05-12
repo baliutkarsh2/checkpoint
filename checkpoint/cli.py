@@ -110,9 +110,24 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         if not scenario.clones:
             scenario.config["clones"] = "github"
 
-        # Default named seeds from .checkpoint.json (per-twin map) when scenario has none.
-        if "seed" not in scenario.config and "seed_name" not in scenario.config and ckpt_cfg.seeds:
-            scenario.config["seed"] = ", ".join(f"{k}={v}" for k, v in ckpt_cfg.seeds.items())
+        # Default named seeds from .checkpoint.json apply only when the
+        # scenario gives the runtime no other guidance:
+        #   - no `seed:` / `seed-file:` already set, AND
+        #   - no `## Setup` prose (which would otherwise derive its own seed).
+        # This keeps scenarios with their own seeding story (`fresh workspace`,
+        # `incident-active`, etc.) reproducible regardless of repo-root config.
+        has_explicit_seed = (
+            "seed" in scenario.config
+            or "seed_name" in scenario.config
+            or "seed-file" in scenario.config
+            or "seed_file" in scenario.config
+        )
+        has_setup_prose = bool((scenario.setup or "").strip())
+        if not has_explicit_seed and not has_setup_prose and ckpt_cfg.seeds:
+            # Apply only the seeds for clones the scenario actually uses.
+            applicable = {k: v for k, v in ckpt_cfg.seeds.items() if k in scenario.clones}
+            if applicable:
+                scenario.config["seed"] = ", ".join(f"{k}={v}" for k, v in applicable.items())
 
         if runs is not None:
             scenario.config["runs"] = str(runs)
