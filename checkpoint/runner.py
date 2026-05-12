@@ -77,6 +77,16 @@ def _start_twin(clone: str, port: int) -> subprocess.Popen:
     )
 
 
+def twin_mcp_url(port: int | str, host: str = "127.0.0.1") -> str:
+    """Return the MCP endpoint URL for a twin started on `port`.
+
+    Every twin's FastAPI app mounts a FastMCP streamable-HTTP server at
+    `/mcp` (Phase 6). This helper exists so the CLI and run records can
+    surface the URL without each caller hard-coding the suffix.
+    """
+    return f"http://{host}:{port}/mcp/"
+
+
 def _wait_healthy(port: int, timeout: float = 15.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
