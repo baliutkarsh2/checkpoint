@@ -145,6 +145,19 @@ def run_once(
         if not _wait_healthy(port):
             return RunResult("", "", -1, [], {}, error="Twin failed to start")
 
+        # Optional named seed load (Phase 3 plan 05; Phase 4 will generalize).
+        seed = scenario.config.get("seed") or scenario.config.get("seed_name")
+        if seed:
+            try:
+                r = httpx.post(f"http://127.0.0.1:{port}/_seed/{seed}", timeout=5)
+                if r.status_code != 200:
+                    return RunResult(
+                        "", "", -1, [], {},
+                        error=f"Seed {seed!r} failed: {r.status_code} {r.text[:200]}",
+                    )
+            except Exception as e:
+                return RunResult("", "", -1, [], {}, error=f"Seed {seed!r} request failed: {e}")
+
         base_url = f"http://127.0.0.1:{port}"
         env = dict(os.environ)
         env["CHECKPOINT_TASK"] = scenario.prompt
