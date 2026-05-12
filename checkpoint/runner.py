@@ -205,6 +205,13 @@ def run_once(
                 err = _apply_named_seed(port, sn)
                 if err:
                     return RunResult("", "", -1, [], {}, error=err)
+            elif scenario.setup and scenario.setup.strip():
+                # SCN-08: derive a JSON seed from the `## Setup` prose. Soft-fail
+                # if OPENAI_API_KEY is missing — twin keeps its default fresh state.
+                err = _apply_setup_derived_seed(port, clone, scenario.setup)
+                if err:
+                    # Log but don't abort: a missing key is the most common case.
+                    print(f"[checkpoint] seed-from-setup skipped for {clone}: {err}", flush=True)
 
         env = dict(os.environ)
         env["CHECKPOINT_TASK"] = scenario.prompt
@@ -298,6 +305,31 @@ def _apply_named_seed(port: int, name: str) -> str | None:
         return f"Seed {name!r} request failed on :{port}: {e}"
     if r.status_code != 200:
         return f"Seed {name!r} failed on :{port}: {r.status_code} {r.text[:200]}"
+    return None
+
+
+def _apply_setup_derived_seed(port: int, clone: str, setup_text: str) -> str | None:
+    """SCN-08: generate a seed from `## Setup` prose and POST to /_seed-file.
+
+    Returns an error string on failure (caller decides whether to abort or
+    soft-skip). Cache hits avoid any LLM call.
+    """
+    try:
+        # Fetch twin's current state so the LLM has a schema sample.
+        twin_state = _fetch_state(port)
+        from .scenario_seed_gen import generate_seed
+
+        seed = generate_seed(clone, setup_text, twin_state)
+    except RuntimeError as e:
+        return str(e)
+    except Exception as e:
+        return f"seed-from-setup failed for {clone}: {e}"
+    try:
+        r = httpx.post(f"http://127.0.0.1:{port}/_seed-file", json=seed, timeout=5)
+    except Exception as e:
+        return f"seed-from-setup POST failed on :{port}: {e}"
+    if r.status_code != 200:
+        return f"seed-from-setup POST rejected on :{port}: {r.status_code} {r.text[:200]}"
     return None
 
 
