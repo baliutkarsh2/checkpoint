@@ -38,7 +38,9 @@ def main():
 @click.option("--timeout", type=int, default=None, help="Override harness timeout (seconds).")
 @click.option("--cwd", type=click.Path(exists=True, file_okay=False), default=None, help="Working dir for the harness.")
 @click.option("--trace-out", type=click.Path(dir_okay=False), default=None, help="Save all-runs trace+state JSON to file.")
-def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out):
+@click.option("--docker/--no-docker", default=False, help="Run the harness inside Docker with the TLS sidecar.")
+@click.option("--harness-dir", type=click.Path(exists=True, file_okay=False), default=None, help="Harness directory containing Dockerfile / requirements.txt (docker mode).")
+def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, docker, harness_dir):
     """Run a scenario or inline --task against the agent harness."""
     if not scenario_path and not task:
         console.print("[red]Provide a scenario file or --task[/red]")
@@ -78,7 +80,12 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
     results: list[RunResult] = []
     for i in range(scenario.runs):
         console.print(f"\n[bold]Run {i + 1}/{scenario.runs}[/bold]")
-        r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=model)
+        if docker:
+            from .docker.runner import docker_run_once
+            hdir = Path(harness_dir or cwd or ".").resolve()
+            r = docker_run_once(scenario, harness_cmd, hdir, cwd=cwd, judge_model=model)
+        else:
+            r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=model)
         results.append(r)
         _print_run(r)
 
@@ -94,7 +101,7 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
 
 
 def _dump(r: RunResult) -> dict:
-    return {
+    out = {
         "final_answer": r.final_answer,
         "exit_code": r.exit_code,
         "error": r.error,
@@ -103,6 +110,14 @@ def _dump(r: RunResult) -> dict:
         "state": r.state,
         "criteria": [c.__dict__ for c in r.criteria],
     }
+    # DockerRunResult superset — preserve metrics + agent_trace if present.
+    metrics = getattr(r, "metrics", None)
+    agent_trace = getattr(r, "agent_trace", None)
+    if metrics is not None:
+        out["metrics"] = metrics
+    if agent_trace is not None:
+        out["agent_trace"] = agent_trace
+    return out
 
 
 def _print_run(r: RunResult) -> None:
@@ -128,6 +143,11 @@ def _print_run(r: RunResult) -> None:
     if not r.complete:
         line += "  [red]INCOMPLETE[/red]"
     console.print(line)
+
+    metrics = getattr(r, "metrics", None)
+    if metrics:
+        keys = ", ".join(sorted(k for k in metrics.keys()))
+        console.print(f"[dim]metrics:[/dim] {keys}")
 
 
 def _print_summary(results: list[RunResult]) -> None:

@@ -8,17 +8,48 @@ For every TLS request whose SNI matches a registered route:
      bootstrap-token auth (Phase 2 GH-02) accepts the request — even if
      the caller used the wrong/missing token. This is what makes the
      "agent runs unmodified" claim true.
+
+The runner (checkpoint.docker.runner) seeds the in-container routes registry
+via the CHECKPOINT_ROUTES env var (JSON: {"api.github.com": "http://host.docker.internal:54123"}).
+This is necessary because routes.py state in the orchestrator's Python process
+does NOT propagate into the sidecar container — they're separate runtimes.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 from urllib.parse import urlparse
 
 from mitmproxy import http
 
-from .routes import lookup
+# mitmproxy loads this file as a top-level script (not as a package member),
+# so relative imports fail with ModuleNotFoundError. Use the absolute import.
+from checkpoint.proxy.routes import lookup, register
 
 log = logging.getLogger("checkpoint.proxy")
+
+
+def _seed_routes_from_env() -> None:
+    """Read CHECKPOINT_ROUTES env (JSON dict of domain -> twin_url) and register each."""
+    raw = os.environ.get("CHECKPOINT_ROUTES", "").strip()
+    if not raw:
+        log.warning("CHECKPOINT_ROUTES not set; addon will passthrough every request")
+        return
+    try:
+        mapping = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.error("CHECKPOINT_ROUTES is not valid JSON: %s", e)
+        return
+    for domain, twin_url in mapping.items():
+        try:
+            register(domain, twin_url)
+            log.info("seeded route: %s -> %s", domain, twin_url)
+        except Exception as e:
+            log.error("failed to register %s: %s", domain, e)
+
+
+_seed_routes_from_env()
 
 
 class RouteMode:
