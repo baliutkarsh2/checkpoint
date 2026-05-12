@@ -1,0 +1,26 @@
+{
+  "name": "@checkpoint/vitest",
+  "version": "0.1.0",
+  "description": "Vitest wrapper for Checkpoint — spin up stateful GitHub/Slack/Stripe twins for your JS test suite.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node example.test.js"
+  },
+  "keywords": [
+    "checkpoint",
+    "vitest",
+    "agent-testing",
+    "synthetic-saas",
+    "test-doubles"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
