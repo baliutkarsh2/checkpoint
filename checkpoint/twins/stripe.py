@@ -43,6 +43,11 @@ def _now_unix() -> int:
     return int(time.time())
 
 
+def _strict_default() -> bool:
+    val = os.environ.get("STRIPE_STRICT", "true").lower()
+    return val not in ("false", "0", "no")
+
+
 def _fresh_state() -> dict:
     return {
         "customers": {},          # cus_xxx -> dict
@@ -79,7 +84,7 @@ def _fresh_state() -> dict:
         "_idempotency": {},   # key -> {"path": ..., "body_hash": ..., "status": ..., "body": ...}
         "_config": {
             "rate_limit": None,
-            "strict": True,
+            "strict": _strict_default(),
         },
     }
 
@@ -102,11 +107,6 @@ def stripe_error(status: int, message: str, *, type_: str = "invalid_request_err
 
 def _bootstrap_token() -> str:
     return os.environ.get("STRIPE_BOOTSTRAP_TOKEN", DEFAULT_BOOTSTRAP_TOKEN)
-
-
-def _strict_default() -> bool:
-    val = os.environ.get("STRIPE_STRICT", "true").lower()
-    return val not in ("false", "0", "no")
 
 
 def _extract_token(auth_header: str | None) -> str | None:
@@ -183,7 +183,17 @@ async def auth_middleware(request: Request, call_next):
             type_="invalid_request_error",
         )
 
+    # Rate-limit gate: count then check.
     STATE["_counters"]["requests"] += 1
+    rl = STATE["_config"].get("rate_limit")
+    if rl is not None and STATE["_counters"]["requests"] > rl:
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"type": "rate_limit_error",
+                               "message": "Too many requests"}},
+            headers={"Stripe-Should-Retry": "true"},
+        )
+
     return await call_next(request)
 
 
@@ -730,3 +740,218 @@ def fetch_resources(limit: int = 10):
 @app.get("/v1/account")
 def get_account_info():
     return STATE["account"]
+
+
+# --- extended-mode endpoints (STRIPE_STRICT=false) ----------------------
+#
+# All extended endpoints return 404 Stripe-shape when strict mode is on.
+# This mirrors the real Stripe MCP server which gates this surface behind
+# `--strict=false`.
+
+def _strict_404() -> JSONResponse:
+    return stripe_error(404, "Unrecognized endpoint", code="endpoint_unknown")
+
+
+@app.get("/v1/customers/{customer_id}")
+def retrieve_customer(customer_id: str):
+    if _strict():
+        return _strict_404()
+    cust = STATE["customers"].get(customer_id)
+    if cust is None:
+        return stripe_error(404, f"No such customer: {customer_id}", code="resource_missing")
+    return cust
+
+
+@app.post("/v1/payment_intents")
+async def create_payment_intent(request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    body = await _parse_body(request)
+    amount = body.get("amount")
+    if amount is None:
+        return stripe_error(400, "Missing required param: amount.", code="parameter_missing", param="amount")
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return stripe_error(400, "amount must be an integer.", code="parameter_invalid_integer", param="amount")
+    pid = _next_id("payment_intent", "pi")
+    intent = {
+        "id": pid,
+        "object": "payment_intent",
+        "amount": amount,
+        "currency": body.get("currency", "usd"),
+        "customer": body.get("customer"),
+        "status": "requires_confirmation",
+        "capture_method": body.get("capture_method", "automatic"),
+        "created": _now_unix(),
+        "metadata": body.get("metadata") or {},
+    }
+    STATE["payment_intents"][pid] = intent
+    _idempotency_store(request, 200, intent)
+    return intent
+
+
+def _pi_or_404(pi_id: str):
+    pi = STATE["payment_intents"].get(pi_id)
+    if pi is None:
+        return None, stripe_error(404, f"No such payment_intent: {pi_id}", code="resource_missing")
+    return pi, None
+
+
+@app.post("/v1/payment_intents/{pi_id}/confirm")
+async def confirm_payment_intent(pi_id: str, request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    pi, err = _pi_or_404(pi_id)
+    if err is not None:
+        return err
+    if pi.get("capture_method") == "manual":
+        pi["status"] = "requires_capture"
+    else:
+        pi["status"] = "succeeded"
+    _idempotency_store(request, 200, pi)
+    return pi
+
+
+@app.post("/v1/payment_intents/{pi_id}/capture")
+async def capture_payment_intent(pi_id: str, request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    pi, err = _pi_or_404(pi_id)
+    if err is not None:
+        return err
+    if pi["status"] not in ("requires_capture", "succeeded"):
+        return stripe_error(400, f"payment_intent in status {pi['status']} cannot be captured",
+                            code="payment_intent_unexpected_state")
+    pi["status"] = "succeeded"
+    _idempotency_store(request, 200, pi)
+    return pi
+
+
+@app.post("/v1/payment_intents/{pi_id}/cancel")
+async def cancel_payment_intent(pi_id: str, request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    pi, err = _pi_or_404(pi_id)
+    if err is not None:
+        return err
+    pi["status"] = "canceled"
+    pi["canceled_at"] = _now_unix()
+    _idempotency_store(request, 200, pi)
+    return pi
+
+
+@app.post("/v1/payment_intents/{pi_id}")
+async def update_payment_intent(pi_id: str, request: Request):
+    """Update/handle_next_action for payment_intent (extended mode)."""
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    pi, err = _pi_or_404(pi_id)
+    if err is not None:
+        return err
+    body = await _parse_body(request)
+    if "metadata" in body and isinstance(body["metadata"], dict):
+        pi.setdefault("metadata", {}).update(body["metadata"])
+    if body.get("amount") is not None:
+        try:
+            pi["amount"] = int(body["amount"])
+        except (TypeError, ValueError):
+            pass
+    # handle_next_action heuristic: if status was requires_action, advance.
+    if pi.get("status") == "requires_action":
+        pi["status"] = "succeeded"
+    _idempotency_store(request, 200, pi)
+    return pi
+
+
+@app.get("/v1/refunds/{refund_id}")
+def retrieve_refund(refund_id: str):
+    if _strict():
+        return _strict_404()
+    refund = STATE["refunds"].get(refund_id)
+    if refund is None:
+        return stripe_error(404, f"No such refund: {refund_id}", code="resource_missing")
+    return refund
+
+
+@app.post("/v1/invoices/{invoice_id}/pay")
+async def pay_invoice(invoice_id: str, request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    inv = STATE["invoices"].get(invoice_id)
+    if inv is None:
+        return stripe_error(404, f"No such invoice: {invoice_id}", code="resource_missing")
+    inv["status"] = "paid"
+    inv["amount_paid"] = inv["amount_due"]
+    _idempotency_store(request, 200, inv)
+    return inv
+
+
+@app.post("/v1/invoices/{invoice_id}/void")
+async def void_invoice(invoice_id: str, request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    inv = STATE["invoices"].get(invoice_id)
+    if inv is None:
+        return stripe_error(404, f"No such invoice: {invoice_id}", code="resource_missing")
+    inv["status"] = "void"
+    _idempotency_store(request, 200, inv)
+    return inv
+
+
+@app.post("/v1/subscriptions")
+async def create_subscription(request: Request):
+    if _strict():
+        return _strict_404()
+    cached = _idempotency_serve(request, await request.body())
+    if cached is not None:
+        return cached
+    body = await _parse_body(request)
+    customer = body.get("customer")
+    if not customer:
+        return stripe_error(400, "Missing required param: customer.", code="parameter_missing", param="customer")
+    sid = _next_id("subscription", "sub")
+    sub = {
+        "id": sid,
+        "object": "subscription",
+        "customer": customer,
+        "status": "active",
+        "items": body.get("items") or [],
+        "current_period_start": _now_unix(),
+        "current_period_end": _now_unix() + 30 * 86400,
+        "cancel_at_period_end": False,
+        "created": _now_unix(),
+        "metadata": body.get("metadata") or {},
+    }
+    STATE["subscriptions"][sid] = sub
+    _idempotency_store(request, 200, sub)
+    return sub
+
+
+@app.get("/v1/payment_links")
+def list_payment_links(limit: int = 10):
+    if _strict():
+        return _strict_404()
+    items = list(STATE["payment_links"].values())
+    return {"object": "list", "url": "/v1/payment_links", "has_more": False, "data": items[:limit]}
