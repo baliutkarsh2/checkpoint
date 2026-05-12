@@ -1,0 +1,9 @@
+.planning/
+.git/
+.venv/
+__pycache__/
+*.egg-info/
+tests/
+example/
+*.md
+!README.md
