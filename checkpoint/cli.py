@@ -28,6 +28,8 @@ from .config import (
     resolve_evaluator_model,
     matches_tag,
 )
+from .failure_analyzer import analyze as analyze_failures
+from .run_record import build_record, write_record
 
 console = Console()
 
@@ -185,6 +187,17 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
                 "evaluator_model_source": resolution.source,
             })
 
+        # EV-05 + EV-06: per-run failure analysis + persisted run record.
+        for r in results:
+            _persist_run_record(
+                r,
+                scenario_name=scenario.title or (Path(scn_path).name if scn_path else "<inline>"),
+                scenario_path=str(scn_path) if scn_path else None,
+                evaluator_model=resolution.model,
+                evaluator_model_source=resolution.source,
+                task=scenario.prompt,
+            )
+
         any_run = True
         if not all(r.complete and r.score == 100.0 for r in results):
             any_failed = True
@@ -292,6 +305,58 @@ def _print_run(r: RunResult) -> None:
     if metrics:
         keys = ", ".join(sorted(k for k in metrics.keys()))
         console.print(f"[dim]metrics:[/dim] {keys}")
+
+
+def _persist_run_record(
+    r: RunResult,
+    *,
+    scenario_name: str,
+    scenario_path: str | None,
+    evaluator_model: str,
+    evaluator_model_source: str,
+    task: str,
+) -> None:
+    """Build, optionally enrich with failure analysis, write to disk.
+
+    Best-effort: never raise to the user — the score has already been printed.
+    """
+    failure_analysis: dict[str, str] = {}
+    failed_texts = [c.text for c in r.criteria if not c.passed] if r.criteria else []
+    if r.complete and failed_texts:
+        try:
+            failure_analysis = analyze_failures(
+                failed_texts,
+                task=task,
+                final_answer=r.final_answer,
+                trace=r.trace,
+                state=r.state,
+                model=evaluator_model,
+            )
+        except Exception as e:
+            console.print(f"[dim]failure-analysis skipped: {e}[/dim]")
+            failure_analysis = {}
+
+    record = build_record(
+        scenario_name=scenario_name,
+        scenario_path=scenario_path,
+        satisfaction=r.score,
+        criteria=r.criteria,
+        evaluator_model=evaluator_model,
+        evaluator_model_source=evaluator_model_source,
+        final_answer=r.final_answer,
+        trace=r.trace,
+        state=r.state,
+        error=r.error,
+        exit_code=r.exit_code,
+        metrics=getattr(r, "metrics", None),
+        agent_trace=getattr(r, "agent_trace", None),
+        failure_analysis=failure_analysis or None,
+    )
+    try:
+        path = write_record(record)
+        console.print(f"[dim]Run record: {path}[/dim]")
+    except Exception as e:
+        console.print(f"[dim]Run record write failed: {e}[/dim]")
 
 
 def _print_summary(results: list[RunResult]) -> None:
