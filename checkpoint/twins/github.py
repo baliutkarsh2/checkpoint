@@ -686,3 +686,330 @@ async def create_label(owner: str, name: str, request: Request):
     label = {"name": label_name, "color": body.get("color", "ededed")}
     STATE["labels"][key] = label
     return label
+
+
+# --- pull requests -------------------------------------------------------
+
+def _pr_key(owner: str, name: str, number: int) -> str:
+    return f"{owner}/{name}#{number}"
+
+
+@app.post("/repos/{owner}/{name}/pulls", status_code=201)
+async def create_pull_request(owner: str, name: str, request: Request):
+    body = await request.json()
+    title = body.get("title")
+    head = body.get("head")
+    base = body.get("base")
+    if not title or not head or not base:
+        return gh_error(422, "title, head, base are required")
+    repo = _ensure_repo(owner, name)
+    repo_key = f"{owner}/{name}"
+    counters = STATE["_counters"]["pull_number_per_repo"]
+    counters[repo_key] = counters.get(repo_key, 0) + 1
+    number = counters[repo_key]
+    head_sha = (
+        repo["branches"].get(head, {}).get("sha")
+        or _synthetic_sha(repo_key)
+    )
+    base_sha = repo["branches"].get(base, {}).get("sha", "")
+    pr = {
+        "number": number,
+        "title": title,
+        "body": body.get("body", "") or "",
+        "state": "open",
+        "merged": False,
+        "draft": bool(body.get("draft")),
+        "head": {"ref": head, "sha": head_sha},
+        "base": {"ref": base, "sha": base_sha},
+        "user": _user("default-user"),
+        "created_at": _now(),
+        "updated_at": _now(),
+        "merged_at": None,
+        "html_url": f"http://localhost/{repo_key}/pull/{number}",
+        # inline children
+        "_commits": [],
+        "_reviews": [],
+        "_files": [],
+        "_comments": [],
+        "_status": {"state": "pending", "statuses": []},
+    }
+    STATE["pulls"][_pr_key(owner, name, number)] = pr
+    return _pr_view(pr)
+
+
+def _pr_view(pr: dict) -> dict:
+    """Strip private inline children before serializing."""
+    return {k: v for k, v in pr.items() if not k.startswith("_")}
+
+
+# Registered BEFORE `/pulls/{number}` so FastAPI's int validator doesn't 422
+# on `1.diff`.
+@app.get("/repos/{owner}/{name}/pulls/{number_diff}.diff")
+def get_pull_request_diff(owner: str, name: str, number_diff: str):
+    try:
+        number = int(number_diff)
+    except ValueError:
+        return gh_error(404, "Not Found")
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    pr = STATE["pulls"][key]
+    diff_lines = [f"diff --git a/{f.get('filename')} b/{f.get('filename')}" for f in pr["_files"]]
+    return PlainTextResponse("\n".join(diff_lines) or "diff (empty)")
+
+
+@app.get("/repos/{owner}/{name}/pulls")
+def list_pull_requests(owner: str, name: str, state: str = "open",
+                       head: str | None = None, base: str | None = None):
+    repo_key = f"{owner}/{name}"
+    out = []
+    for key, pr in STATE["pulls"].items():
+        if not key.startswith(f"{repo_key}#"):
+            continue
+        if state != "all" and pr["state"] != state:
+            continue
+        if head and pr["head"]["ref"] != head:
+            continue
+        if base and pr["base"]["ref"] != base:
+            continue
+        out.append(_pr_view(pr))
+    return out
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}")
+def get_pull_request(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return _pr_view(STATE["pulls"][key])
+
+
+@app.patch("/repos/{owner}/{name}/pulls/{number}")
+async def update_pull_request(owner: str, name: str, number: int, request: Request):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    body = await request.json()
+    pr = STATE["pulls"][key]
+    for field in ("title", "body"):
+        if body.get(field) is not None:
+            pr[field] = body[field]
+    if body.get("state") in ("open", "closed"):
+        pr["state"] = body["state"]
+    pr["updated_at"] = _now()
+    return _pr_view(pr)
+
+
+@app.put("/repos/{owner}/{name}/pulls/{number}/merge")
+async def merge_pull_request(owner: str, name: str, number: int, request: Request):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    pr = STATE["pulls"][key]
+    if pr["state"] != "open":
+        return gh_error(409, "Pull Request is not mergeable")
+    body = await request.json() if await request.body() else {}
+    message = body.get("commit_message") or f"Merge pull request #{number}"
+    repo_key = f"{owner}/{number}"  # not used for sha generation
+    merge_sha = _synthetic_sha(f"{owner}/{name}")
+    pr["state"] = "closed"
+    pr["merged"] = True
+    pr["merged_at"] = _now()
+    pr["merge_commit_sha"] = merge_sha
+    # Record a synthetic commit on the base branch.
+    repo = STATE["repos"].get(f"{owner}/{name}")
+    if repo:
+        repo["commits"].insert(0, {
+            "sha": merge_sha,
+            "commit": {"message": message, "author": {"name": "default-user", "date": _now()}},
+            "files": [],
+        })
+        if pr["base"]["ref"] in repo["branches"]:
+            repo["branches"][pr["base"]["ref"]]["sha"] = merge_sha
+    return {"sha": merge_sha, "merged": True, "message": "Pull Request successfully merged"}
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}/commits")
+def get_pull_request_commits(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return STATE["pulls"][key]["_commits"]
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}/files")
+def get_pull_request_files(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return STATE["pulls"][key]["_files"]
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}/reviews")
+def get_pull_request_reviews(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return STATE["pulls"][key]["_reviews"]
+
+
+@app.post("/repos/{owner}/{name}/pulls/{number}/reviews", status_code=200)
+async def create_pull_request_review(owner: str, name: str, number: int, request: Request):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    body = await request.json()
+    event = body.get("event") or "COMMENT"
+    if event not in ("APPROVE", "REQUEST_CHANGES", "COMMENT", "PENDING"):
+        return gh_error(422, "invalid review event")
+    STATE["_counters"]["review_id"] += 1
+    rid = STATE["_counters"]["review_id"]
+    state_map = {"APPROVE": "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED",
+                 "COMMENT": "COMMENTED", "PENDING": "PENDING"}
+    review = {
+        "id": rid,
+        "user": _user("default-user"),
+        "body": body.get("body", "") or "",
+        "state": state_map[event],
+        "submitted_at": _now(),
+    }
+    STATE["pulls"][key]["_reviews"].append(review)
+    return review
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}/comments")
+def get_pull_request_comments(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return STATE["pulls"][key]["_comments"]
+
+
+@app.post("/repos/{owner}/{name}/pulls/{number}/comments", status_code=201)
+async def create_pull_request_comment(owner: str, name: str, number: int, request: Request):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    body = await request.json()
+    STATE["_counters"]["comment_id"] += 1
+    cid = STATE["_counters"]["comment_id"]
+    comment = {
+        "id": cid,
+        "body": body.get("body", "") or "",
+        "user": _user("default-user"),
+        "created_at": _now(),
+        "path": body.get("path"),
+    }
+    STATE["pulls"][key]["_comments"].append(comment)
+    return comment
+
+
+@app.put("/repos/{owner}/{name}/pulls/{number}/update-branch")
+async def update_pull_request_branch(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    pr = STATE["pulls"][key]
+    pr["head"]["sha"] = _synthetic_sha(f"{owner}/{name}")
+    pr["updated_at"] = _now()
+    return {"message": "Updating pull request branch.", "url": pr["html_url"]}
+
+
+@app.get("/repos/{owner}/{name}/pulls/{number}/status")
+def get_pull_request_status(owner: str, name: str, number: int):
+    key = _pr_key(owner, name, number)
+    if key not in STATE["pulls"]:
+        return gh_error(404, "Not Found")
+    return STATE["pulls"][key]["_status"]
+
+
+# `get_pull_request_diff` is registered earlier (before `/pulls/{number}` int
+# route) so FastAPI's int-coercion doesn't 422 on `1.diff`.
+
+
+# --- combined status -----------------------------------------------------
+
+@app.get("/repos/{owner}/{name}/commits/{ref}/check-runs")
+def get_check_runs(owner: str, name: str, ref: str):
+    return {"total_count": 0, "check_runs": []}
+
+
+# --- workflows -----------------------------------------------------------
+
+@app.get("/repos/{owner}/{name}/actions/runs")
+def list_workflow_runs(owner: str, name: str, status: str | None = None,
+                       per_page: int = 30, page: int = 1):
+    repo_key = f"{owner}/{name}"
+    runs = [r for k, r in STATE["workflow_runs"].items() if k.startswith(f"{repo_key}#")]
+    if status:
+        runs = [r for r in runs if r.get("status") == status or r.get("conclusion") == status]
+    start = (page - 1) * per_page
+    items = runs[start:start + per_page]
+    return {"total_count": len(runs), "workflow_runs": items}
+
+
+@app.get("/repos/{owner}/{name}/actions/runs/{run_id}")
+def get_workflow_run(owner: str, name: str, run_id: int):
+    key = f"{owner}/{name}#{run_id}"
+    if key not in STATE["workflow_runs"]:
+        return gh_error(404, "Not Found")
+    return STATE["workflow_runs"][key]
+
+
+# --- search --------------------------------------------------------------
+
+@app.get("/search/code")
+def search_code(q: str = "", per_page: int = 30, page: int = 1):
+    """Substring search over repo file contents."""
+    needle = q.lower()
+    items: list[dict] = []
+    for repo_key, repo in STATE["repos"].items():
+        for path, entry in repo["files"].items():
+            if needle and needle not in entry["content"].lower() and needle not in path.lower():
+                continue
+            items.append({
+                "name": path.rsplit("/", 1)[-1],
+                "path": path,
+                "sha": entry["sha"],
+                "repository": {"full_name": repo_key, "id": repo["id"]},
+                "html_url": f"http://localhost/{repo_key}/blob/main/{path}",
+            })
+    start = (page - 1) * per_page
+    return {
+        "total_count": len(items),
+        "incomplete_results": False,
+        "items": items[start:start + per_page],
+    }
+
+
+@app.get("/search/users")
+def search_users(q: str = "", per_page: int = 30, page: int = 1):
+    needle = q.lower()
+    items = [u for u in STATE["users"].values() if needle in u["login"].lower()]
+    start = (page - 1) * per_page
+    return {
+        "total_count": len(items),
+        "incomplete_results": False,
+        "items": items[start:start + per_page],
+    }
+
+
+@app.get("/search/issues")
+def search_issues(q: str = "", per_page: int = 30, page: int = 1):
+    """Substring search over issue title + body."""
+    needle = q.lower()
+    items: list[dict] = []
+    for key, issue in STATE["issues"].items():
+        repo_key = key.split("#")[0]
+        text = f"{issue['title']} {issue.get('body', '')}".lower()
+        if needle and needle not in text:
+            continue
+        item = dict(issue)
+        item["repository_url"] = f"http://localhost/repos/{repo_key}"
+        items.append(item)
+    start = (page - 1) * per_page
+    return {
+        "total_count": len(items),
+        "incomplete_results": False,
+        "items": items[start:start + per_page],
+    }
