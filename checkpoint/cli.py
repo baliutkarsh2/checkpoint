@@ -29,7 +29,8 @@ from .config import (
     matches_tag,
 )
 from .failure_analyzer import analyze as analyze_failures
-from .run_record import build_record, write_record
+from .run_record import build_record, write_record, load_last_run, RUNS_DIR
+from . import diagnostics as _diag
 
 console = Console()
 
@@ -372,6 +373,187 @@ def _print_summary(results: list[RunResult]) -> None:
         title="Summary",
         border_style=color,
     ))
+
+
+# =============================================================================
+# Phase 7: long-tail CLI surface
+# =============================================================================
+
+
+@main.command()
+def doctor():
+    """CLI-03: check environment readiness."""
+    checks = _diag.run_checks()
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("", style="dim", width=2)
+    t.add_column("Check")
+    t.add_column("Detail", overflow="fold")
+    for c in checks:
+        mark = "[green]✓[/green]" if c.ok else "[red]✗[/red]"
+        t.add_row(mark, c.name, c.detail)
+    console.print(t)
+    failed = [c for c in checks if not c.ok]
+    if failed:
+        console.print()
+        console.print("[bold red]Fix the following:[/bold red]")
+        for c in failed:
+            if c.fix:
+                console.print(f"  [red]✗[/red] {c.name}: [yellow]{c.fix}[/yellow]")
+            else:
+                console.print(f"  [red]✗[/red] {c.name}")
+        sys.exit(1)
+    console.print("[green]All checks passed.[/green]")
+    sys.exit(0)
+
+
+@main.group()
+def scenario():
+    """Manage local scenario files."""
+
+
+@scenario.command("list")
+@click.argument("path", required=False, type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON instead of a table.")
+def scenario_list(path, as_json):
+    """CLI-05: enumerate `.md` scenarios under PATH (default cwd)."""
+    rows = _enumerate_scenarios(Path(path))
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        console.print(f"[yellow]No scenarios found under {path}[/yellow]")
+        return
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Path", overflow="fold")
+    t.add_column("Title", overflow="fold")
+    t.add_column("Tags")
+    t.add_column("Clones")
+    for r in rows:
+        t.add_row(r["path"], r["title"], r["tags"] or "-", r["clones"] or "-")
+    console.print(t)
+
+
+def _enumerate_scenarios(root: Path) -> list[dict]:
+    """Walk `root` for `.md` files, parse each, return summary rows.
+
+    To distinguish scenario files from arbitrary README markdown we require
+    at least one of: ``## Prompt`` / ``## Task``, ``## Success Criteria`` /
+    ``## Checks``, or ``## Config``. A plain title alone is not enough.
+    """
+    rows: list[dict] = []
+    for p in sorted(root.rglob("*.md")):
+        try:
+            scn = parse_file(p)
+        except Exception:
+            continue
+        has_section = bool(scn.prompt or scn.criteria or scn.config or scn.setup)
+        if not has_section:
+            continue
+        rows.append({
+            "path": str(p),
+            "title": scn.title or "(untitled)",
+            "tags": scn.config.get("tags", ""),
+            "clones": ", ".join(scn.clones),
+        })
+    return rows
+
+
+@main.group()
+def traces():
+    """Inspect persisted run records."""
+
+
+@traces.command("detail")
+@click.argument("run_id", required=False)
+def traces_detail(run_id):
+    """CLI-06: print the run record. Defaults to last-run."""
+    record = _load_run_record(run_id)
+    if record is None:
+        if run_id:
+            console.print(f"[red]No run record for id={run_id}[/red]")
+        else:
+            console.print("[red]No last-run pointer. Run `checkpoint run` first.[/red]")
+        sys.exit(1)
+    _print_run_record(record)
+
+
+@traces.command("export")
+@click.argument("run_id", required=False)
+@click.option("--output", "-o", required=True, type=click.Path(dir_okay=False))
+def traces_export(run_id, output):
+    """CLI-06: write a run record JSON to disk."""
+    record = _load_run_record(run_id)
+    if record is None:
+        if run_id:
+            console.print(f"[red]No run record for id={run_id}[/red]")
+        else:
+            console.print("[red]No last-run pointer.[/red]")
+        sys.exit(1)
+    Path(output).write_text(json.dumps(record, indent=2, default=str))
+    console.print(f"[green]Wrote run record to {output}[/green]")
+
+
+def _load_run_record(run_id: str | None) -> dict | None:
+    """Resolve a run record by id or fall back to last-run."""
+    if not run_id:
+        return load_last_run()
+    path = RUNS_DIR / f"{run_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _print_run_record(record: dict) -> None:
+    rid = record.get("run_id", "?")
+    sat = record.get("satisfaction", 0.0)
+    color = "green" if sat == 100 else ("yellow" if sat >= 50 else "red")
+    header = (
+        f"[bold]Run {rid}[/bold] — {record.get('scenario', '?')}\n"
+        f"[dim]model:[/dim] {record.get('evaluator_model', '?')} "
+        f"[dim]({record.get('evaluator_model_source', '?')})[/dim]\n"
+        f"[dim]score:[/dim] [{color}]{sat}/100[/{color}]"
+    )
+    console.print(Panel.fit(header, border_style=color))
+
+    criteria = record.get("criteria") or []
+    if criteria:
+        t = Table(box=box.SIMPLE_HEAD)
+        t.add_column("", style="dim", width=2)
+        t.add_column("Kind", width=4)
+        t.add_column("Criterion", overflow="fold")
+        t.add_column("Eval", style="dim", width=14)
+        t.add_column("Reasoning", overflow="fold")
+        for c in criteria:
+            mark = "[green]✓[/green]" if c.get("passed") else "[red]✗[/red]"
+            t.add_row(
+                mark,
+                f"[{c.get('kind', '?')}]",
+                c.get("text", "")[:200],
+                c.get("evaluator", ""),
+                (c.get("reasoning") or "")[:300],
+            )
+        console.print(t)
+
+    fa = record.get("failure_analysis") or {}
+    if fa:
+        console.print("\n[bold]Failure analysis[/bold]")
+        for crit, why in fa.items():
+            console.print(f"  [dim]•[/dim] [yellow]{crit[:100]}[/yellow]")
+            console.print(f"    {why}")
+
+    state = record.get("state") or {}
+    if state:
+        console.print("\n[bold]Twin state[/bold]")
+        # State may be flat (single clone) or {clone: state} (multi-clone).
+        first = next(iter(state.values()), None)
+        if isinstance(first, dict) and all(isinstance(v, dict) for v in state.values()):
+            for clone, s in state.items():
+                console.print(f"  [dim]{clone}:[/dim] {sorted(s.keys())[:10]}")
+        else:
+            console.print(f"  keys: {sorted(state.keys())[:20]}")
 
 
 if __name__ == "__main__":
