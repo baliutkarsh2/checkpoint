@@ -355,6 +355,209 @@ def get_repo(owner: str, name: str):
     return STATE["repos"][key]
 
 
+@app.get("/search/repositories")
+def search_repositories(q: str = "", per_page: int = 30, page: int = 1):
+    matches = [
+        r for r in STATE["repos"].values()
+        if q.lower() in r["full_name"].lower() or q.lower() in r["name"].lower()
+    ]
+    start = (page - 1) * per_page
+    items = matches[start:start + per_page]
+    return {"total_count": len(matches), "incomplete_results": False, "items": items}
+
+
+@app.post("/repos/{owner}/{name}/forks", status_code=202)
+async def fork_repository(owner: str, name: str, request: Request):
+    src_key = f"{owner}/{name}"
+    if src_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    body = await request.json() if await request.body() else {}
+    new_owner = body.get("organization") or "default-user"
+    new_key = f"{new_owner}/{name}"
+    if new_key in STATE["repos"]:
+        return gh_error(422, "Repository already exists")
+    # Shallow copy with a fresh ID.
+    src = STATE["repos"][src_key]
+    fork = _make_repo(new_owner, name)
+    fork["fork"] = True
+    fork["parent"] = {"full_name": src["full_name"], "id": src["id"]}
+    STATE["repos"][new_key] = fork
+    return fork
+
+
+# --- files / contents ---------------------------------------------------
+
+def _b64(s: str) -> str:
+    import base64
+    return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
+
+def _b64decode(s: str) -> str:
+    import base64
+    try:
+        return base64.b64decode(s).decode("utf-8")
+    except Exception:
+        return ""
+
+
+@app.get("/repos/{owner}/{name}/contents/{path:path}")
+def get_file_contents(owner: str, name: str, path: str, ref: str | None = None):
+    repo_key = f"{owner}/{name}"
+    if repo_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    repo = STATE["repos"][repo_key]
+    if path not in repo["files"]:
+        return gh_error(404, "Not Found")
+    entry = repo["files"][path]
+    return {
+        "type": "file",
+        "name": path.rsplit("/", 1)[-1],
+        "path": path,
+        "sha": entry["sha"],
+        "size": len(entry["content"]),
+        "encoding": "base64",
+        "content": _b64(entry["content"]),
+    }
+
+
+@app.put("/repos/{owner}/{name}/contents/{path:path}")
+async def create_or_update_file(owner: str, name: str, path: str, request: Request):
+    body = await request.json()
+    message = body.get("message")
+    if not message:
+        return gh_error(422, "message is required")
+    content_b64 = body.get("content")
+    if content_b64 is None:
+        return gh_error(422, "content is required")
+    content = _b64decode(content_b64)
+    repo = _ensure_repo(owner, name)
+    repo_key = f"{owner}/{name}"
+    branch = body.get("branch") or repo["default_branch"]
+    sha = _synthetic_sha(repo_key)
+    repo["files"][path] = {"content": content, "sha": sha}
+    commit_sha = _synthetic_sha(repo_key)
+    commit = {
+        "sha": commit_sha,
+        "commit": {
+            "message": message,
+            "author": {
+                "name": (body.get("committer") or {}).get("name", "default-user"),
+                "date": _now(),
+            },
+        },
+        "files": [{"filename": path, "status": "modified", "sha": sha}],
+    }
+    repo["commits"].insert(0, commit)
+    if branch in repo["branches"]:
+        repo["branches"][branch]["sha"] = commit_sha
+    status = 201 if not body.get("sha") else 200
+    return JSONResponse(
+        status_code=status,
+        content={
+            "content": {
+                "name": path.rsplit("/", 1)[-1],
+                "path": path,
+                "sha": sha,
+            },
+            "commit": commit,
+        },
+    )
+
+
+@app.post("/repos/{owner}/{name}/_push_files", status_code=201)
+async def push_files(owner: str, name: str, request: Request):
+    """MCP-shape batch push: body = {branch, message, files: [{path, content}, ...]}."""
+    body = await request.json()
+    repo = _ensure_repo(owner, name)
+    repo_key = f"{owner}/{name}"
+    branch = body.get("branch") or repo["default_branch"]
+    message = body.get("message") or "Update files"
+    files = body.get("files") or []
+    if not files:
+        return gh_error(422, "files list cannot be empty")
+    file_entries = []
+    for f in files:
+        p = f.get("path")
+        c = f.get("content", "")
+        if not p:
+            return gh_error(422, "each file requires a path")
+        sha = _synthetic_sha(repo_key)
+        repo["files"][p] = {"content": c, "sha": sha}
+        file_entries.append({"filename": p, "status": "modified", "sha": sha})
+    commit_sha = _synthetic_sha(repo_key)
+    commit = {
+        "sha": commit_sha,
+        "commit": {"message": message, "author": {"name": "default-user", "date": _now()}},
+        "files": file_entries,
+    }
+    repo["commits"].insert(0, commit)
+    if branch in repo["branches"]:
+        repo["branches"][branch]["sha"] = commit_sha
+    return {"commit": commit, "branch": branch, "files_pushed": len(files)}
+
+
+# --- branches -----------------------------------------------------------
+
+@app.get("/repos/{owner}/{name}/branches")
+def list_branches(owner: str, name: str):
+    repo_key = f"{owner}/{name}"
+    if repo_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    return [
+        {"name": b["name"], "commit": {"sha": b["sha"]}, "protected": b.get("protected", False)}
+        for b in STATE["repos"][repo_key]["branches"].values()
+    ]
+
+
+@app.post("/repos/{owner}/{name}/git/refs", status_code=201)
+async def create_ref(owner: str, name: str, request: Request):
+    body = await request.json()
+    ref = body.get("ref", "")
+    sha = body.get("sha")
+    if not ref.startswith("refs/heads/"):
+        return gh_error(422, "only refs/heads/<name> supported")
+    branch_name = ref[len("refs/heads/"):]
+    repo_key = f"{owner}/{name}"
+    if repo_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    repo = STATE["repos"][repo_key]
+    if branch_name in repo["branches"]:
+        return gh_error(422, "Reference already exists")
+    if not sha:
+        sha = repo["branches"][repo["default_branch"]]["sha"]
+    repo["branches"][branch_name] = {"name": branch_name, "sha": sha, "protected": False}
+    return {"ref": ref, "object": {"sha": sha, "type": "commit"}}
+
+
+@app.delete("/repos/{owner}/{name}/git/refs/heads/{branch}")
+def delete_branch(owner: str, name: str, branch: str):
+    repo_key = f"{owner}/{name}"
+    if repo_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    repo = STATE["repos"][repo_key]
+    if branch not in repo["branches"]:
+        return gh_error(404, "Not Found")
+    if branch == repo["default_branch"]:
+        return gh_error(422, "Cannot delete default branch")
+    del repo["branches"][branch]
+    return Response(status_code=204)
+
+
+# --- commits -------------------------------------------------------------
+
+@app.get("/repos/{owner}/{name}/commits")
+def list_commits(owner: str, name: str, sha: str | None = None,
+                 path: str | None = None, per_page: int = 30, page: int = 1):
+    repo_key = f"{owner}/{name}"
+    if repo_key not in STATE["repos"]:
+        return gh_error(404, "Not Found")
+    commits = list(STATE["repos"][repo_key]["commits"])
+    if path:
+        commits = [c for c in commits if any(f["filename"] == path for f in c.get("files", []))]
+    start = (page - 1) * per_page
+    return commits[start:start + per_page]
+
+
 # --- issues --------------------------------------------------------------
 
 @app.post("/repos/{owner}/{name}/issues", status_code=201)
