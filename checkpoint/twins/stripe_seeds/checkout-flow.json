@@ -1,0 +1,24 @@
+{
+  "state": {
+    "customers": {
+      "cus_chk_001": {"id": "cus_chk_001", "object": "customer", "email": "buyer1@x.com", "created": 1714600000, "balance": 0, "currency": "usd"},
+      "cus_chk_002": {"id": "cus_chk_002", "object": "customer", "email": "buyer2@x.com", "created": 1714600100, "balance": 0, "currency": "usd"},
+      "cus_chk_003": {"id": "cus_chk_003", "object": "customer", "email": "buyer3@x.com", "created": 1714600200, "balance": 0, "currency": "usd"}
+    },
+    "products": {
+      "prod_chk": {"id": "prod_chk", "object": "product", "name": "Checkout Item", "active": true, "created": 1714000000}
+    },
+    "prices": {
+      "price_chk": {"id": "price_chk", "object": "price", "product": "prod_chk", "unit_amount": 4999, "currency": "usd", "active": true, "type": "one_time", "created": 1714000000}
+    },
+    "payment_intents": {
+      "pi_succ": {"id": "pi_succ", "object": "payment_intent", "amount": 4999, "currency": "usd", "customer": "cus_chk_001", "status": "succeeded", "capture_method": "automatic", "created": 1714700000},
+      "pi_req_action": {"id": "pi_req_action", "object": "payment_intent", "amount": 4999, "currency": "usd", "customer": "cus_chk_002", "status": "requires_action", "capture_method": "automatic", "created": 1714700100},
+      "pi_req_capture": {"id": "pi_req_capture", "object": "payment_intent", "amount": 4999, "currency": "usd", "customer": "cus_chk_003", "status": "requires_capture", "capture_method": "manual", "created": 1714700200},
+      "pi_canceled": {"id": "pi_canceled", "object": "payment_intent", "amount": 4999, "currency": "usd", "customer": "cus_chk_001", "status": "canceled", "capture_method": "automatic", "created": 1714700300, "canceled_at": 1714700400},
+      "pi_confirm": {"id": "pi_confirm", "object": "payment_intent", "amount": 4999, "currency": "usd", "customer": "cus_chk_002", "status": "requires_confirmation", "capture_method": "automatic", "created": 1714700500}
+    },
+    "_counters": {"customer": 3, "product": 1, "price": 1, "payment_intent": 5, "refund": 0, "invoice": 0, "invoice_item": 0, "subscription": 0, "coupon": 0, "payment_link": 0, "dispute": 0, "requests": 0}
+  },
+  "config": {}
+}

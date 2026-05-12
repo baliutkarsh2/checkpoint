@@ -1,0 +1,537 @@
+{
+  "state": {
+    "customers": {
+      "cus_sh_001": {
+        "id": "cus_sh_001",
+        "object": "customer",
+        "email": "sub1@acme.com",
+        "created": 1714000100,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_002": {
+        "id": "cus_sh_002",
+        "object": "customer",
+        "email": "sub2@acme.com",
+        "created": 1714000200,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_003": {
+        "id": "cus_sh_003",
+        "object": "customer",
+        "email": "sub3@acme.com",
+        "created": 1714000300,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_004": {
+        "id": "cus_sh_004",
+        "object": "customer",
+        "email": "sub4@acme.com",
+        "created": 1714000400,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_005": {
+        "id": "cus_sh_005",
+        "object": "customer",
+        "email": "sub5@acme.com",
+        "created": 1714000500,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_006": {
+        "id": "cus_sh_006",
+        "object": "customer",
+        "email": "sub6@acme.com",
+        "created": 1714000600,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_007": {
+        "id": "cus_sh_007",
+        "object": "customer",
+        "email": "sub7@acme.com",
+        "created": 1714000700,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_008": {
+        "id": "cus_sh_008",
+        "object": "customer",
+        "email": "sub8@acme.com",
+        "created": 1714000800,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_009": {
+        "id": "cus_sh_009",
+        "object": "customer",
+        "email": "sub9@acme.com",
+        "created": 1714000900,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_010": {
+        "id": "cus_sh_010",
+        "object": "customer",
+        "email": "sub10@acme.com",
+        "created": 1714001000,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_011": {
+        "id": "cus_sh_011",
+        "object": "customer",
+        "email": "sub11@acme.com",
+        "created": 1714001100,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_012": {
+        "id": "cus_sh_012",
+        "object": "customer",
+        "email": "sub12@acme.com",
+        "created": 1714001200,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_013": {
+        "id": "cus_sh_013",
+        "object": "customer",
+        "email": "sub13@acme.com",
+        "created": 1714001300,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_014": {
+        "id": "cus_sh_014",
+        "object": "customer",
+        "email": "sub14@acme.com",
+        "created": 1714001400,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_015": {
+        "id": "cus_sh_015",
+        "object": "customer",
+        "email": "sub15@acme.com",
+        "created": 1714001500,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_016": {
+        "id": "cus_sh_016",
+        "object": "customer",
+        "email": "sub16@acme.com",
+        "created": 1714001600,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_017": {
+        "id": "cus_sh_017",
+        "object": "customer",
+        "email": "sub17@acme.com",
+        "created": 1714001700,
+        "balance": 0,
+        "currency": "usd"
+      },
+      "cus_sh_018": {
+        "id": "cus_sh_018",
+        "object": "customer",
+        "email": "sub18@acme.com",
+        "created": 1714001800,
+        "balance": 0,
+        "currency": "usd"
+      }
+    },
+    "products": {
+      "prod_basic": {
+        "id": "prod_basic",
+        "object": "product",
+        "name": "Basic Plan",
+        "active": true,
+        "created": 1714000000
+      },
+      "prod_pro": {
+        "id": "prod_pro",
+        "object": "product",
+        "name": "Pro Plan",
+        "active": true,
+        "created": 1714000000
+      },
+      "prod_enterprise": {
+        "id": "prod_enterprise",
+        "object": "product",
+        "name": "Enterprise Plan",
+        "active": true,
+        "created": 1714000000
+      }
+    },
+    "prices": {
+      "price_basic": {
+        "id": "price_basic",
+        "object": "price",
+        "product": "prod_basic",
+        "unit_amount": 999,
+        "currency": "usd",
+        "active": true,
+        "type": "recurring",
+        "recurring": {
+          "interval": "month"
+        },
+        "created": 1714000000
+      },
+      "price_pro": {
+        "id": "price_pro",
+        "object": "price",
+        "product": "prod_pro",
+        "unit_amount": 2999,
+        "currency": "usd",
+        "active": true,
+        "type": "recurring",
+        "recurring": {
+          "interval": "month"
+        },
+        "created": 1714000000
+      },
+      "price_enterprise": {
+        "id": "price_enterprise",
+        "object": "price",
+        "product": "prod_enterprise",
+        "unit_amount": 9999,
+        "currency": "usd",
+        "active": true,
+        "type": "recurring",
+        "recurring": {
+          "interval": "month"
+        },
+        "created": 1714000000
+      }
+    },
+    "subscriptions": {
+      "sub_h_001": {
+        "id": "sub_h_001",
+        "object": "subscription",
+        "customer": "cus_sh_001",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_001",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000100
+      },
+      "sub_h_002": {
+        "id": "sub_h_002",
+        "object": "subscription",
+        "customer": "cus_sh_002",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_002",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000200
+      },
+      "sub_h_003": {
+        "id": "sub_h_003",
+        "object": "subscription",
+        "customer": "cus_sh_003",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_003",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000300
+      },
+      "sub_h_004": {
+        "id": "sub_h_004",
+        "object": "subscription",
+        "customer": "cus_sh_004",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_004",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000400
+      },
+      "sub_h_005": {
+        "id": "sub_h_005",
+        "object": "subscription",
+        "customer": "cus_sh_005",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_005",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000500
+      },
+      "sub_h_006": {
+        "id": "sub_h_006",
+        "object": "subscription",
+        "customer": "cus_sh_006",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_006",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000600
+      },
+      "sub_h_007": {
+        "id": "sub_h_007",
+        "object": "subscription",
+        "customer": "cus_sh_007",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_007",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000700
+      },
+      "sub_h_008": {
+        "id": "sub_h_008",
+        "object": "subscription",
+        "customer": "cus_sh_008",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_008",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000800
+      },
+      "sub_h_009": {
+        "id": "sub_h_009",
+        "object": "subscription",
+        "customer": "cus_sh_009",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_009",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714000900
+      },
+      "sub_h_010": {
+        "id": "sub_h_010",
+        "object": "subscription",
+        "customer": "cus_sh_010",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_010",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001000
+      },
+      "sub_h_011": {
+        "id": "sub_h_011",
+        "object": "subscription",
+        "customer": "cus_sh_011",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_011",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001100
+      },
+      "sub_h_012": {
+        "id": "sub_h_012",
+        "object": "subscription",
+        "customer": "cus_sh_012",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_012",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001200
+      },
+      "sub_h_013": {
+        "id": "sub_h_013",
+        "object": "subscription",
+        "customer": "cus_sh_013",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_013",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001300
+      },
+      "sub_h_014": {
+        "id": "sub_h_014",
+        "object": "subscription",
+        "customer": "cus_sh_014",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_014",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001400
+      },
+      "sub_h_015": {
+        "id": "sub_h_015",
+        "object": "subscription",
+        "customer": "cus_sh_015",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_015",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001500
+      },
+      "sub_h_016": {
+        "id": "sub_h_016",
+        "object": "subscription",
+        "customer": "cus_sh_016",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_016",
+            "price": "price_pro",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001600
+      },
+      "sub_h_017": {
+        "id": "sub_h_017",
+        "object": "subscription",
+        "customer": "cus_sh_017",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_017",
+            "price": "price_enterprise",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001700
+      },
+      "sub_h_018": {
+        "id": "sub_h_018",
+        "object": "subscription",
+        "customer": "cus_sh_018",
+        "status": "active",
+        "items": [
+          {
+            "id": "si_018",
+            "price": "price_basic",
+            "quantity": 1
+          }
+        ],
+        "current_period_start": 1714500000,
+        "current_period_end": 1717092000,
+        "cancel_at_period_end": false,
+        "created": 1714001800
+      }
+    },
+    "_counters": {
+      "customer": 18,
+      "product": 3,
+      "price": 3,
+      "payment_intent": 0,
+      "refund": 0,
+      "invoice": 0,
+      "invoice_item": 0,
+      "subscription": 18,
+      "coupon": 0,
+      "payment_link": 0,
+      "dispute": 0,
+      "requests": 0
+    }
+  },
+  "config": {}
+}

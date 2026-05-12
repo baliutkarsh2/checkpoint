@@ -1,0 +1,35 @@
+{
+  "state": {
+    "customers": {
+      "cus_001": {"id": "cus_001", "object": "customer", "email": "alice@bigco.com", "name": "Alice Adams", "created": 1714521600, "balance": 0, "currency": "usd"},
+      "cus_002": {"id": "cus_002", "object": "customer", "email": "bob@startup.io", "name": "Bob Brown", "created": 1714521700, "balance": 0, "currency": "usd"},
+      "cus_003": {"id": "cus_003", "object": "customer", "email": "carol@enterprise.com", "name": "Carol Chen", "created": 1714521800, "balance": 0, "currency": "usd"},
+      "cus_004": {"id": "cus_004", "object": "customer", "email": "dave@smb.net", "name": "Dave Davis", "created": 1714521900, "balance": 0, "currency": "usd"},
+      "cus_005": {"id": "cus_005", "object": "customer", "email": "erin@local.shop", "name": "Erin Edwards", "created": 1714522000, "balance": 0, "currency": "usd"},
+      "cus_006": {"id": "cus_006", "object": "customer", "email": "frank@store.io", "name": "Frank Foster", "created": 1714522100, "balance": 0, "currency": "usd"},
+      "cus_007": {"id": "cus_007", "object": "customer", "email": "grace@bakery.com", "name": "Grace Garcia", "created": 1714522200, "balance": 0, "currency": "usd"}
+    },
+    "products": {
+      "prod_001": {"id": "prod_001", "object": "product", "name": "Basic Plan", "active": true, "created": 1714000000},
+      "prod_002": {"id": "prod_002", "object": "product", "name": "Pro Plan", "active": true, "created": 1714000000},
+      "prod_003": {"id": "prod_003", "object": "product", "name": "Enterprise Plan", "active": true, "created": 1714000000}
+    },
+    "prices": {
+      "price_001": {"id": "price_001", "object": "price", "product": "prod_001", "unit_amount": 999, "currency": "usd", "active": true, "type": "recurring", "recurring": {"interval": "month"}, "created": 1714000000},
+      "price_002": {"id": "price_002", "object": "price", "product": "prod_002", "unit_amount": 2999, "currency": "usd", "active": true, "type": "recurring", "recurring": {"interval": "month"}, "created": 1714000000},
+      "price_003": {"id": "price_003", "object": "price", "product": "prod_003", "unit_amount": 9999, "currency": "usd", "active": true, "type": "recurring", "recurring": {"interval": "month"}, "created": 1714000000}
+    },
+    "payment_intents": {
+      "pi_001": {"id": "pi_001", "object": "payment_intent", "amount": 999, "currency": "usd", "customer": "cus_001", "status": "succeeded", "created": 1714600000},
+      "pi_002": {"id": "pi_002", "object": "payment_intent", "amount": 2999, "currency": "usd", "customer": "cus_002", "status": "succeeded", "created": 1714610000},
+      "pi_003": {"id": "pi_003", "object": "payment_intent", "amount": 9999, "currency": "usd", "customer": "cus_003", "status": "succeeded", "created": 1714620000}
+    },
+    "balance": {
+      "object": "balance",
+      "available": [{"amount": 13997, "currency": "usd"}],
+      "pending":   [{"amount": 0, "currency": "usd"}]
+    },
+    "_counters": {"customer": 7, "product": 3, "price": 3, "payment_intent": 3, "refund": 0, "invoice": 0, "invoice_item": 0, "subscription": 0, "coupon": 0, "payment_link": 0, "dispute": 0, "requests": 0}
+  },
+  "config": {}
+}
