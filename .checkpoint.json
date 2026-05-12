@@ -1,0 +1,13 @@
+{
+  "clones": ["github", "slack", "stripe"],
+  "harness": {
+    "path": "./example/multi_clone_harness.py",
+    "promptFiles": ["./example/scenarios/*.md"]
+  },
+  "evaluator": {"model": "gpt-4o-mini"},
+  "seeds": {
+    "github": "small-project",
+    "slack": "engineering-team",
+    "stripe": "small-business"
+  }
+}

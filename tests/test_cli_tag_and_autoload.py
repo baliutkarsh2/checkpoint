@@ -49,7 +49,8 @@ def _scn(path: Path, title: str, tag: str | None = None, clones: str = "github")
     return path
 
 
-def test_tag_filter_runs_only_matching_scenarios(echo_harness, tmp_path: Path):
+def test_tag_filter_runs_only_matching_scenarios(echo_harness, tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # isolate from repo-root .checkpoint.json
     scn_dir = tmp_path / "scenarios"
     scn_dir.mkdir()
     _scn(scn_dir / "a.md", "smoke A", tag="smoke")
@@ -70,7 +71,8 @@ def test_tag_filter_runs_only_matching_scenarios(echo_harness, tmp_path: Path):
     assert "regression B" not in result.output or "skip" in result.output
 
 
-def test_tag_filter_all_skipped_exits_zero(echo_harness, tmp_path: Path):
+def test_tag_filter_all_skipped_exits_zero(echo_harness, tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     scn_dir = tmp_path / "scenarios"
     scn_dir.mkdir()
     _scn(scn_dir / "a.md", "regression A", tag="regression")
@@ -107,6 +109,7 @@ def test_dot_checkpoint_json_autoload(echo_harness, tmp_path: Path, monkeypatch)
 
 def test_harness_json_autoload(echo_harness, tmp_path: Path, monkeypatch):
     """--harness pointing at a directory containing harness.json works."""
+    monkeypatch.chdir(tmp_path)
     hdir = echo_harness.parent
     (hdir / "harness.json").write_text(json.dumps({"path": echo_harness.name}))
     scn = hdir / "x.md"
@@ -121,8 +124,9 @@ def test_harness_json_autoload(echo_harness, tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, result.output
 
 
-def test_evaluator_source_recorded_in_trace_out(echo_harness, tmp_path: Path):
+def test_evaluator_source_recorded_in_trace_out(echo_harness, tmp_path: Path, monkeypatch):
     """`evaluator_model_source` shows up in --trace-out JSON (SCN-09)."""
+    monkeypatch.chdir(tmp_path)
     scn = tmp_path / "x.md"
     scn.write_text(
         "# x\n## Prompt\nhi\n## Config\nclones: github\ntimeout: 30\n"
@@ -141,7 +145,8 @@ def test_evaluator_source_recorded_in_trace_out(echo_harness, tmp_path: Path):
     assert dump[0]["evaluator_model_source"] == "scenario"
 
 
-def test_evaluator_flag_overrides_scenario(echo_harness, tmp_path: Path):
+def test_evaluator_flag_overrides_scenario(echo_harness, tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     scn = tmp_path / "x.md"
     scn.write_text(
         "# x\n## Prompt\nhi\n## Config\nclones: github\ntimeout: 30\n"
@@ -161,8 +166,9 @@ def test_evaluator_flag_overrides_scenario(echo_harness, tmp_path: Path):
     assert dump[0]["evaluator_model_source"] == "flag"
 
 
-def test_reuse_session_flag_is_noop(echo_harness, tmp_path: Path):
+def test_reuse_session_flag_is_noop(echo_harness, tmp_path: Path, monkeypatch):
     """--reuse-session prints a notice and otherwise behaves normally."""
+    monkeypatch.chdir(tmp_path)
     scn = tmp_path / "x.md"
     scn.write_text(
         "# x\n## Prompt\nhi\n"

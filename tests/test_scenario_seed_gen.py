@@ -138,7 +138,7 @@ def test_runner_soft_fail_when_setup_without_key(monkeypatch, tmp_path: Path):
     s = Scenario(
         prompt="ok",
         setup="A repo with two open issues.",
-        config={"clones": "github", "timeout": "30"},
+        config={"clones": "github", "timeout": "30", "setup-seed": "true"},
     )
     r = run_once(s, [sys.executable, str(harness)])
     # Soft-fall-through: run completes; twin state stays fresh (no issues).
@@ -172,7 +172,7 @@ def test_runner_uses_cached_seed(monkeypatch, tmp_path: Path):
     s = Scenario(
         prompt="ok",
         setup=setup_text,
-        config={"clones": "github", "timeout": "30"},
+        config={"clones": "github", "timeout": "30", "setup-seed": "true"},
     )
     r = run_once(s, [sys.executable, str(harness)])
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
