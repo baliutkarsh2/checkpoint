@@ -1,0 +1,13 @@
+{
+  "clones": ["github"],
+  "harness": {
+    "path": "./harness.py",
+    "promptFiles": ["./scenarios/*.md"]
+  },
+  "evaluator": {
+    "model": "gpt-4o-mini"
+  },
+  "seeds": {
+    "github": "small-project"
+  }
+}

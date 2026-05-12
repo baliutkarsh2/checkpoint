@@ -1,0 +1,5 @@
+{
+  "path": "harness.py",
+  "promptFiles": ["./scenarios/*.md"],
+  "env": {}
+}
