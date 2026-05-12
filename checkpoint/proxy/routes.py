@@ -11,8 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Dict, Optional
 
-# Per SCOPE §3.2 / REQUIREMENTS.md GH-02.
+# Per SCOPE §3 / REQUIREMENTS.md GH-02 / SL-02 / ST-03.
 GITHUB_BOOTSTRAP_TOKEN = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
+SLACK_BOOTSTRAP_TOKEN = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+STRIPE_BOOTSTRAP_TOKEN = "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,16 @@ _ROUTES: Dict[str, Route] = {
         domain="api.github.com",
         twin_url="",
         bootstrap_token=GITHUB_BOOTSTRAP_TOKEN,
+    ),
+    "slack.com": Route(
+        domain="slack.com",
+        twin_url="",
+        bootstrap_token=SLACK_BOOTSTRAP_TOKEN,
+    ),
+    "api.stripe.com": Route(
+        domain="api.stripe.com",
+        twin_url="",
+        bootstrap_token=STRIPE_BOOTSTRAP_TOKEN,
     ),
 }
 

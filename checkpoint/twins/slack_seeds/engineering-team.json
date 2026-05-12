@@ -1,0 +1,39 @@
+{
+  "state": {
+    "channels": {
+      "C00000001": {"id": "C00000001", "name": "general", "is_channel": true, "num_members": 12, "topic": {"value": "Company-wide announcements"}},
+      "C00000002": {"id": "C00000002", "name": "engineering", "is_channel": true, "num_members": 8, "topic": {"value": "Engineering chatter"}},
+      "C00000003": {"id": "C00000003", "name": "backend", "is_channel": true, "num_members": 5, "topic": {"value": "Backend team"}},
+      "C00000004": {"id": "C00000004", "name": "frontend", "is_channel": true, "num_members": 4, "topic": {"value": "Frontend team"}},
+      "C00000005": {"id": "C00000005", "name": "design", "is_channel": true, "num_members": 3, "topic": {"value": "Design discussions"}},
+      "C00000006": {"id": "C00000006", "name": "random", "is_channel": true, "num_members": 12, "topic": {"value": "Memes and watercooler"}}
+    },
+    "users": {
+      "U00000001": {"id": "U00000001", "name": "alice", "real_name": "Alice Anderson", "profile": {"real_name": "Alice Anderson", "display_name": "alice", "email": "alice@acme.com", "title": "CTO"}},
+      "U00000002": {"id": "U00000002", "name": "bob", "real_name": "Bob Baker", "profile": {"real_name": "Bob Baker", "display_name": "bob", "email": "bob@acme.com", "title": "Senior Engineer"}},
+      "U00000003": {"id": "U00000003", "name": "carol", "real_name": "Carol Chen", "profile": {"real_name": "Carol Chen", "display_name": "carol", "email": "carol@acme.com", "title": "Engineering Manager"}},
+      "U00000004": {"id": "U00000004", "name": "dave", "real_name": "Dave Davis", "profile": {"real_name": "Dave Davis", "display_name": "dave", "email": "dave@acme.com", "title": "Backend Engineer"}},
+      "U00000005": {"id": "U00000005", "name": "erin", "real_name": "Erin Edwards", "profile": {"real_name": "Erin Edwards", "display_name": "erin", "email": "erin@acme.com", "title": "Frontend Engineer"}},
+      "U00000006": {"id": "U00000006", "name": "frank", "real_name": "Frank Foster", "profile": {"real_name": "Frank Foster", "display_name": "frank", "email": "frank@acme.com", "title": "Designer"}},
+      "U00000007": {"id": "U00000007", "name": "grace", "real_name": "Grace Garcia", "profile": {"real_name": "Grace Garcia", "display_name": "grace", "email": "grace@acme.com", "title": "Designer"}},
+      "U00000008": {"id": "U00000008", "name": "henry", "real_name": "Henry Harris", "profile": {"real_name": "Henry Harris", "display_name": "henry", "email": "henry@acme.com", "title": "Backend Engineer"}},
+      "U00000009": {"id": "U00000009", "name": "ivy", "real_name": "Ivy Iverson", "profile": {"real_name": "Ivy Iverson", "display_name": "ivy", "email": "ivy@acme.com", "title": "Frontend Engineer"}},
+      "U00000010": {"id": "U00000010", "name": "jack", "real_name": "Jack Johnson", "profile": {"real_name": "Jack Johnson", "display_name": "jack", "email": "jack@acme.com", "title": "DevOps Engineer"}},
+      "U00000011": {"id": "U00000011", "name": "kate", "real_name": "Kate King", "profile": {"real_name": "Kate King", "display_name": "kate", "email": "kate@acme.com", "title": "Product Manager"}},
+      "U00000012": {"id": "U00000012", "name": "leo", "real_name": "Leo Lewis", "profile": {"real_name": "Leo Lewis", "display_name": "leo", "email": "leo@acme.com", "title": "QA Engineer"}}
+    },
+    "messages": {
+      "C00000002": [
+        {"type": "message", "user": "U00000003", "text": "Sprint planning at 10am tomorrow", "ts": "1714521600.000001", "channel": "C00000002"},
+        {"type": "message", "user": "U00000002", "text": "I'll prep the deck", "ts": "1714521700.000002", "channel": "C00000002"},
+        {"type": "message", "user": "U00000004", "text": "Backend retro notes pushed to the wiki", "ts": "1714608000.000003", "channel": "C00000002"}
+      ],
+      "C00000003": [
+        {"type": "message", "user": "U00000004", "text": "API latency spike at 3pm, investigating", "ts": "1714694400.000004", "channel": "C00000003"},
+        {"type": "message", "user": "U00000008", "text": "Looks like the rate limiter wasn't backing off", "ts": "1714694500.000005", "channel": "C00000003"}
+      ]
+    },
+    "_counters": {"channel_id": 6, "user_id": 12, "ts_seq": 100, "requests": 0}
+  },
+  "config": {}
+}

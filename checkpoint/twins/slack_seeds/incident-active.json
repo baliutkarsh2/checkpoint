@@ -1,0 +1,29 @@
+{
+  "state": {
+    "channels": {
+      "C00000001": {"id": "C00000001", "name": "general", "is_channel": true, "num_members": 12},
+      "C00000002": {"id": "C00000002", "name": "engineering", "is_channel": true, "num_members": 8},
+      "C00000003": {"id": "C00000003", "name": "incident-payments-2026-05-12", "is_channel": true, "num_members": 6, "topic": {"value": "Active P1: payment processor 5xx errors"}},
+      "C00000004": {"id": "C00000004", "name": "infra", "is_channel": true, "num_members": 5}
+    },
+    "users": {
+      "U00000001": {"id": "U00000001", "name": "alice", "real_name": "Alice Anderson", "profile": {"real_name": "Alice Anderson", "display_name": "alice", "email": "alice@acme.com", "title": "CTO"}},
+      "U00000002": {"id": "U00000002", "name": "bob", "real_name": "Bob Baker", "profile": {"real_name": "Bob Baker", "display_name": "bob", "email": "bob@acme.com", "title": "SRE"}},
+      "U00000003": {"id": "U00000003", "name": "carol", "real_name": "Carol Chen", "profile": {"real_name": "Carol Chen", "display_name": "carol", "email": "carol@acme.com", "title": "Engineering Manager"}},
+      "U00000004": {"id": "U00000004", "name": "dave", "real_name": "Dave Davis", "profile": {"real_name": "Dave Davis", "display_name": "dave", "email": "dave@acme.com", "title": "Backend Engineer"}},
+      "U00000005": {"id": "U00000005", "name": "erin", "real_name": "Erin Edwards", "profile": {"real_name": "Erin Edwards", "display_name": "erin", "email": "erin@acme.com", "title": "Incident Commander"}},
+      "U00000006": {"id": "U00000006", "name": "frank", "real_name": "Frank Foster", "profile": {"real_name": "Frank Foster", "display_name": "frank", "email": "frank@acme.com", "title": "Customer Support Lead"}}
+    },
+    "messages": {
+      "C00000003": [
+        {"type": "message", "user": "U00000005", "text": "P1 declared: Stripe webhook 5xx rate at 18%. IC: erin. Scribe: carol.", "ts": "1714780800.000001", "channel": "C00000003", "reactions": [{"name": "rotating_light", "users": ["U00000001", "U00000002", "U00000003"], "count": 3}]},
+        {"type": "message", "user": "U00000004", "text": "Logs show timeouts on webhook signing — likely cert rotation issue", "ts": "1714780900.000002", "channel": "C00000003"},
+        {"type": "message", "user": "U00000002", "text": "Rolling back signing cert to previous version now", "ts": "1714781000.000003", "channel": "C00000003"},
+        {"type": "message", "user": "U00000005", "text": "Error rate dropping — 18% -> 12% -> 4%. Monitoring.", "ts": "1714781200.000004", "channel": "C00000003", "reactions": [{"name": "tada", "users": ["U00000001", "U00000003", "U00000004", "U00000006"], "count": 4}]},
+        {"type": "message", "user": "U00000003", "text": "Customer support: ~40 affected merchants. Postmortem owner: dave. Doc due Friday.", "ts": "1714781400.000005", "channel": "C00000003"}
+      ]
+    },
+    "_counters": {"channel_id": 4, "user_id": 6, "ts_seq": 100, "requests": 0}
+  },
+  "config": {}
+}

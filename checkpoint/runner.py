@@ -52,13 +52,21 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+TWIN_APPS = {
+    "github": "checkpoint.twins.github:app",
+    "slack": "checkpoint.twins.slack:app",
+    "stripe": "checkpoint.twins.stripe:app",
+}
+
+
 def _start_twin(clone: str, port: int) -> subprocess.Popen:
-    if clone != "github":
-        raise ValueError(f"v0 only supports clone=github (got {clone!r})")
+    app = TWIN_APPS.get(clone)
+    if app is None:
+        raise ValueError(f"unsupported clone={clone!r}; known: {sorted(TWIN_APPS)}")
     return subprocess.Popen(
         [
             sys.executable, "-m", "uvicorn",
-            "checkpoint.twins.github:app",
+            app,
             "--host", "127.0.0.1",
             "--port", str(port),
             "--log-level", "warning",
@@ -148,6 +156,10 @@ def run_once(
         # the local twin (non-Docker, no TLS sidecar) authenticate cleanly.
         if clone == "github":
             env["GITHUB_TOKEN"] = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
+        elif clone == "slack":
+            env["SLACK_TOKEN"] = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+        elif clone == "stripe":
+            env["STRIPE_API_KEY"] = "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"
 
         try:
             proc = subprocess.run(
