@@ -1,0 +1,17 @@
+{
+  "state": {
+    "repos": {
+      "acme/webapp": {
+        "id": 1, "name": "webapp", "full_name": "acme/webapp",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": true,
+        "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
+        "html_url": "http://localhost/acme/webapp",
+        "branches": {"main": {"name": "main", "sha": "p000000000000000000000000000000000000000", "protected": true}},
+        "commits": [], "files": {}
+      }
+    },
+    "_counters": {"issue_number_per_repo": {}, "pull_number_per_repo": {}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 0, "sha_seq_per_repo": {}, "requests": 0}
+  },
+  "config": {"rate_limit": null, "permissions_denied": true}
+}

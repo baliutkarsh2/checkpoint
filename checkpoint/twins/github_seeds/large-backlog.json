@@ -1,0 +1,34 @@
+{
+  "state": {
+    "repos": {
+      "acme/webapp": {
+        "id": 1, "name": "webapp", "full_name": "acme/webapp",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": false,
+        "created_at": "2024-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
+        "html_url": "http://localhost/acme/webapp",
+        "branches": {"main": {"name": "main", "sha": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0", "protected": false}},
+        "commits": [], "files": {}
+      }
+    },
+    "issues": {
+      "acme/webapp#1":  {"number": 1,  "title": "[bug] crash on logout",          "body": "stack trace attached", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}],            "comments": 0, "user": {"login": "u1", "id": 10, "type": "User"}, "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#2":  {"number": 2,  "title": "[feat] export CSV",              "body": "", "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}],     "comments": 0, "user": {"login": "u2", "id": 11, "type": "User"}, "created_at": "2026-01-02T00:00:00Z", "updated_at": "2026-01-02T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#3":  {"number": 3,  "title": "[bug] flaky integration test",   "body": "", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}],            "comments": 0, "user": {"login": "u3", "id": 12, "type": "User"}, "created_at": "2026-01-03T00:00:00Z", "updated_at": "2026-01-03T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#4":  {"number": 4,  "title": "[docs] readme outdated",         "body": "", "state": "open", "labels": [{"name": "docs", "color": "cccccc"}],           "comments": 0, "user": {"login": "u4", "id": 13, "type": "User"}, "created_at": "2026-01-04T00:00:00Z", "updated_at": "2026-01-04T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#5":  {"number": 5,  "title": "[feat] dark mode",               "body": "", "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}],     "comments": 0, "user": {"login": "u5", "id": 14, "type": "User"}, "created_at": "2026-01-05T00:00:00Z", "updated_at": "2026-01-05T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#6":  {"number": 6,  "title": "[bug] memory leak in worker",    "body": "", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}],            "comments": 0, "user": {"login": "u6", "id": 15, "type": "User"}, "created_at": "2026-01-06T00:00:00Z", "updated_at": "2026-01-06T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#7":  {"number": 7,  "title": "[feat] SSO with Google",         "body": "", "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}],     "comments": 0, "user": {"login": "u7", "id": 16, "type": "User"}, "created_at": "2026-01-07T00:00:00Z", "updated_at": "2026-01-07T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#8":  {"number": 8,  "title": "[chore] update CI image",        "body": "", "state": "open", "labels": [{"name": "chore", "color": "cfd3d7"}],          "comments": 0, "user": {"login": "u8", "id": 17, "type": "User"}, "created_at": "2026-01-08T00:00:00Z", "updated_at": "2026-01-08T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#9":  {"number": 9,  "title": "[bug] 500 on /healthz under load","body": "", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}],            "comments": 0, "user": {"login": "u9", "id": 18, "type": "User"}, "created_at": "2026-01-09T00:00:00Z", "updated_at": "2026-01-09T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#10": {"number": 10, "title": "[feat] webhooks",                "body": "", "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}],     "comments": 0, "user": {"login": "u10","id": 19, "type": "User"}, "created_at": "2026-01-10T00:00:00Z", "updated_at": "2026-01-10T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#11": {"number": 11, "title": "[bug] race in queue", "body": "", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}], "comments": 0, "user": {"login": "u11", "id": 20, "type": "User"}, "created_at": "2026-01-11T00:00:00Z", "updated_at": "2026-01-11T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#12": {"number": 12, "title": "[feat] rate-limit knob", "body": "", "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}], "comments": 0, "user": {"login": "u12", "id": 21, "type": "User"}, "created_at": "2026-01-12T00:00:00Z", "updated_at": "2026-01-12T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#13": {"number": 13, "title": "[docs] config docs", "body": "", "state": "open", "labels": [{"name": "docs", "color": "cccccc"}], "comments": 0, "user": {"login": "u13", "id": 22, "type": "User"}, "created_at": "2026-01-13T00:00:00Z", "updated_at": "2026-01-13T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#14": {"number": 14, "title": "[bug] retry storm on outage", "body": "", "state": "open", "labels": [{"name": "bug", "color": "ee0701"}], "comments": 0, "user": {"login": "u14", "id": 23, "type": "User"}, "created_at": "2026-01-14T00:00:00Z", "updated_at": "2026-01-14T00:00:00Z", "closed_at": null, "html_url": "x"},
+      "acme/webapp#15": {"number": 15, "title": "[chore] drop py3.8", "body": "", "state": "open", "labels": [{"name": "chore", "color": "cfd3d7"}], "comments": 0, "user": {"login": "u15", "id": 24, "type": "User"}, "created_at": "2026-01-15T00:00:00Z", "updated_at": "2026-01-15T00:00:00Z", "closed_at": null, "html_url": "x"}
+    },
+    "_counters": {"issue_number_per_repo": {"acme/webapp": 15}, "pull_number_per_repo": {}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 0, "sha_seq_per_repo": {}, "requests": 0}
+  },
+  "config": {"rate_limit": null, "permissions_denied": false}
+}

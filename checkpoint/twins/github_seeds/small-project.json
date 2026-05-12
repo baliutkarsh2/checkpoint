@@ -1,0 +1,68 @@
+{
+  "state": {
+    "repos": {
+      "acme/webapp": {
+        "id": 1, "name": "webapp", "full_name": "acme/webapp",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": false,
+        "created_at": "2026-04-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+        "html_url": "http://localhost/acme/webapp",
+        "branches": {
+          "main": {"name": "main", "sha": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0", "protected": false}
+        },
+        "commits": [
+          {"sha": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+           "commit": {"message": "Initial commit", "author": {"name": "acme", "date": "2026-04-01T00:00:00Z"}},
+           "files": []}
+        ],
+        "files": {
+          "README.md": {"content": "# webapp\nSmall demo project.\n", "sha": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"}
+        }
+      },
+      "acme/api": {
+        "id": 2, "name": "api", "full_name": "acme/api",
+        "owner": {"login": "acme", "id": 1, "type": "Organization"},
+        "default_branch": "main", "private": false,
+        "created_at": "2026-04-15T00:00:00Z", "updated_at": "2026-05-10T00:00:00Z",
+        "html_url": "http://localhost/acme/api",
+        "branches": {
+          "main": {"name": "main", "sha": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2", "protected": false}
+        },
+        "commits": [
+          {"sha": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+           "commit": {"message": "Initial commit", "author": {"name": "acme", "date": "2026-04-15T00:00:00Z"}},
+           "files": []}
+        ],
+        "files": {}
+      }
+    },
+    "issues": {
+      "acme/webapp#1": {
+        "number": 1, "title": "Add dark mode", "body": "Users on Hacker News asked.",
+        "state": "open", "labels": [{"name": "enhancement", "color": "84b6eb"}],
+        "comments": 0, "user": {"login": "alice", "id": 2, "type": "User"},
+        "created_at": "2026-05-01T00:00:00Z", "updated_at": "2026-05-01T00:00:00Z",
+        "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/1"
+      },
+      "acme/webapp#2": {
+        "number": 2, "title": "Login broken on Safari", "body": "Cookies not persisted.",
+        "state": "open", "labels": [{"name": "bug", "color": "ee0701"}],
+        "comments": 1, "user": {"login": "bob", "id": 3, "type": "User"},
+        "created_at": "2026-05-05T00:00:00Z", "updated_at": "2026-05-05T00:00:00Z",
+        "closed_at": null, "html_url": "http://localhost/acme/webapp/issues/2"
+      }
+    },
+    "users": {
+      "acme": {"login": "acme", "id": 1, "type": "Organization"},
+      "alice": {"login": "alice", "id": 2, "type": "User"},
+      "bob":   {"login": "bob",   "id": 3, "type": "User"}
+    },
+    "_counters": {
+      "issue_number_per_repo": {"acme/webapp": 2, "acme/api": 0},
+      "pull_number_per_repo": {},
+      "comment_id": 0, "review_id": 0, "repo_id": 2, "run_id": 0,
+      "sha_seq_per_repo": {"acme/webapp": 2, "acme/api": 1}, "requests": 0
+    }
+  },
+  "config": {"rate_limit": null, "permissions_denied": false}
+}
