@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from .checker import check
+from .checker_llm import try_stage2
 from .judge import judge
 from .scenario import Criterion, Scenario
 
@@ -383,6 +384,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
     deferred: list[Criterion] = []
     for c in scenario.criteria:
         if c.kind == "D":
+            # Stage 1: regex catalog.
             cr = check(c.text, result.state, result.trace)
             if cr.handled:
                 result.criteria.append(CriterionResult(
@@ -390,6 +392,27 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
                     reasoning=cr.reasoning, evaluator="deterministic",
                 ))
                 continue
+
+            # Stage 2: schema-validated LLM-JSON parser (the wedge).
+            # On any fall-through (invalid JSON, schema fail, unknown noun,
+            # missing API key) we defer to the `[P]` judge with the ORIGINAL
+            # text — no silent failure. Reason is recorded for debugging.
+            try:
+                stage2_result, stage2_reason = try_stage2(
+                    c.text, result.state, result.trace, model=judge_model,
+                )
+            except Exception as e:
+                stage2_result, stage2_reason = None, f"stage2 raised: {e}"
+            if stage2_result is not None:
+                result.criteria.append(CriterionResult(
+                    text=c.text, kind="D", passed=stage2_result.passed,
+                    reasoning=stage2_result.reasoning, evaluator="llm-json",
+                ))
+                continue
+            # Tag the criterion with the fall-through reason so the run record
+            # tells us *why* stage 2 didn't carry it.
+            c = Criterion(text=c.text, kind=c.kind)
+            setattr(c, "_stage2_fallthrough", stage2_reason)
             deferred.append(c)
         else:
             deferred.append(c)
