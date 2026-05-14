@@ -163,7 +163,9 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
             suffix = "…" if len(scenario.prompt) > 240 else ""
             console.print(f"[dim]Task:[/dim] {preview}{suffix}")
 
-        harness_cmd = shlex.split(harness_cmd_str) if harness_cmd_str else []
+        # On Windows, shlex.split with posix=True treats backslashes as escape
+        # chars, mangling Windows paths. posix=False preserves them as literals.
+        harness_cmd = shlex.split(harness_cmd_str, posix=sys.platform != "win32") if harness_cmd_str else []
 
         results: list[RunResult] = []
         for i in range(scenario.runs):
@@ -650,6 +652,192 @@ def clone_stop(clone_id):
     else:
         console.print(f"[yellow]Clone {clone_id!r} was not running "
                       f"(registry cleared).[/yellow]")
+
+
+# =============================================================================
+# runs list / compare
+# =============================================================================
+
+
+@main.group("runs")
+def runs_group():
+    """List and compare past run records."""
+
+
+@runs_group.command("list")
+@click.option("--limit", "-n", default=20, show_default=True, help="Max rows to display.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON.")
+def runs_list(limit, as_json):
+    """List recent run records from .checkpoint/cache/runs/."""
+    rows = _load_recent_runs(limit)
+    if as_json:
+        click.echo(json.dumps(rows, indent=2))
+        return
+    if not rows:
+        console.print("[yellow]No run records found. Run `checkpoint run` first.[/yellow]")
+        return
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Run ID", style="dim", width=14)
+    t.add_column("Scenario", overflow="fold")
+    t.add_column("Score", width=7)
+    t.add_column("Criteria", width=9)
+    t.add_column("Model", overflow="fold")
+    t.add_column("Timestamp")
+    for row in rows:
+        sat = row.get("satisfaction", 0)
+        color = "green" if sat == 100 else ("yellow" if sat >= 50 else "red")
+        passed = sum(1 for c in (row.get("criteria") or []) if c.get("passed"))
+        total = len(row.get("criteria") or [])
+        ts = (row.get("env") or {}).get("timestamp", "?")
+        t.add_row(
+            row.get("run_id", "?")[:12],
+            (row.get("scenario") or "?")[:50],
+            f"[{color}]{sat:.0f}[/{color}]",
+            f"{passed}/{total}",
+            row.get("evaluator_model", "?"),
+            ts,
+        )
+    console.print(t)
+
+
+def _load_recent_runs(limit: int) -> list[dict]:
+    """Load up to `limit` run records sorted newest-first."""
+    if not RUNS_DIR.exists():
+        return []
+    files = sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    out: list[dict] = []
+    for f in files[:limit]:
+        try:
+            out.append(json.loads(f.read_text()))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return out
+
+
+@main.command("compare")
+@click.argument("run_id_a")
+@click.argument("run_id_b")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON diff.")
+def compare(run_id_a, run_id_b, as_json):
+    """Compare two run records (score regression, criterion-level diff).
+
+    RUN_ID_A is the baseline; RUN_ID_B is the candidate.
+    """
+    rec_a = _load_run_record(run_id_a)
+    rec_b = _load_run_record(run_id_b)
+    missing = []
+    if rec_a is None:
+        missing.append(run_id_a)
+    if rec_b is None:
+        missing.append(run_id_b)
+    if missing:
+        console.print(f"[red]Run records not found: {', '.join(missing)}[/red]")
+        sys.exit(1)
+
+    diff = _build_compare_diff(rec_a, rec_b)
+
+    if as_json:
+        click.echo(json.dumps(diff, indent=2))
+        return
+
+    _print_compare(diff, run_id_a, run_id_b, rec_a, rec_b)
+
+
+def _build_compare_diff(rec_a: dict, rec_b: dict) -> dict:
+    """Build a structured diff between two run records."""
+    sat_a = rec_a.get("satisfaction", 0.0)
+    sat_b = rec_b.get("satisfaction", 0.0)
+    delta = sat_b - sat_a
+
+    crit_a = {c["text"]: c for c in (rec_a.get("criteria") or [])}
+    crit_b = {c["text"]: c for c in (rec_b.get("criteria") or [])}
+    all_texts = sorted(set(crit_a) | set(crit_b))
+
+    criterion_diffs: list[dict] = []
+    for text in all_texts:
+        ca = crit_a.get(text)
+        cb = crit_b.get(text)
+        pa = ca.get("passed", False) if ca else None
+        pb = cb.get("passed", False) if cb else None
+        if pa == pb:
+            change = "same"
+        elif pa is None:
+            change = "added"
+        elif pb is None:
+            change = "removed"
+        elif pb and not pa:
+            change = "fixed"
+        else:
+            change = "regressed"
+        criterion_diffs.append({
+            "text": text,
+            "baseline_passed": pa,
+            "candidate_passed": pb,
+            "change": change,
+        })
+
+    return {
+        "baseline_score": sat_a,
+        "candidate_score": sat_b,
+        "delta": round(delta, 1),
+        "regressions": [d for d in criterion_diffs if d["change"] == "regressed"],
+        "fixes": [d for d in criterion_diffs if d["change"] == "fixed"],
+        "same": [d for d in criterion_diffs if d["change"] == "same"],
+        "added": [d for d in criterion_diffs if d["change"] == "added"],
+        "removed": [d for d in criterion_diffs if d["change"] == "removed"],
+        "criteria": criterion_diffs,
+    }
+
+
+def _print_compare(diff: dict, id_a: str, id_b: str, rec_a: dict, rec_b: dict) -> None:
+    sat_a = diff["baseline_score"]
+    sat_b = diff["candidate_score"]
+    delta = diff["delta"]
+    delta_str = f"+{delta}" if delta >= 0 else str(delta)
+    delta_color = "green" if delta > 0 else ("red" if delta < 0 else "dim")
+
+    header = (
+        f"[bold]Baseline:[/bold]  {id_a[:12]}  [{_score_color(sat_a)}]{sat_a:.0f}/100[/{_score_color(sat_a)}]"
+        f"  [dim]{rec_a.get('scenario', '?')}[/dim]\n"
+        f"[bold]Candidate:[/bold] {id_b[:12]}  [{_score_color(sat_b)}]{sat_b:.0f}/100[/{_score_color(sat_b)}]"
+        f"  [dim]{rec_b.get('scenario', '?')}[/dim]\n"
+        f"[bold]Delta:[/bold]     [{delta_color}]{delta_str}[/{delta_color}]"
+    )
+    border = "green" if delta >= 0 else "red"
+    console.print(Panel.fit(header, title="checkpoint compare", border_style=border))
+
+    if diff["regressions"]:
+        console.print("\n[bold red]Regressions (passed → failed)[/bold red]")
+        for d in diff["regressions"]:
+            console.print(f"  [red]✗[/red] {d['text'][:120]}")
+
+    if diff["fixes"]:
+        console.print("\n[bold green]Fixes (failed → passed)[/bold green]")
+        for d in diff["fixes"]:
+            console.print(f"  [green]✓[/green] {d['text'][:120]}")
+
+    if diff["added"]:
+        console.print("\n[dim]New criteria (only in candidate)[/dim]")
+        for d in diff["added"]:
+            mark = "[green]✓[/green]" if d["candidate_passed"] else "[red]✗[/red]"
+            console.print(f"  {mark} {d['text'][:120]}")
+
+    if diff["removed"]:
+        console.print("\n[dim]Removed criteria (only in baseline)[/dim]")
+        for d in diff["removed"]:
+            mark = "[green]✓[/green]" if d["baseline_passed"] else "[red]✗[/red]"
+            console.print(f"  {mark} {d['text'][:120]}")
+
+    if not diff["regressions"] and not diff["fixes"]:
+        console.print("\n[dim]No criterion-level changes.[/dim]")
+
+
+def _score_color(sat: float) -> str:
+    if sat == 100:
+        return "green"
+    if sat >= 50:
+        return "yellow"
+    return "red"
 
 
 if __name__ == "__main__":

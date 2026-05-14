@@ -1,0 +1,13 @@
+{
+  "state": {
+    "guilds": {},
+    "channels": {},
+    "messages": {},
+    "members": {},
+    "roles": {},
+    "webhooks": {},
+    "users": {},
+    "_counters": {"snowflake_seq": 0, "requests": 0}
+  },
+  "config": {}
+}

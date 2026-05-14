@@ -43,6 +43,12 @@ def test_cold_start_local_under_budget() -> None:
     # The fake harness doesn't use OpenAI, so the key is irrelevant. But the
     # CLI's dotenv hook can pick up an OPENAI_API_KEY from .env in the repo,
     # which is fine — we don't strip it.
+    #
+    # Force UTF-8 I/O and disable Rich colour output so that Unicode symbols
+    # (✓/✗) don't trigger UnicodeEncodeError on Windows cp1252 consoles when
+    # stdout is piped.
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["NO_COLOR"] = "1"
 
     cmd = [
         sys.executable,
@@ -58,6 +64,9 @@ def test_cold_start_local_under_budget() -> None:
         cmd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
         timeout=COLD_START_BUDGET_SECONDS + 30,
     )
     elapsed = time.monotonic() - started

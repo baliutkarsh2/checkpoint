@@ -1,0 +1,146 @@
+{
+  "state": {
+    "teams": {
+      "team-engineering": {
+        "id": "team-engineering",
+        "name": "Engineering",
+        "key": "ENG",
+        "description": "Core engineering team",
+        "createdAt": "2025-01-01T00:00:00+00:00"
+      }
+    },
+    "projects": {
+      "proj-webapp": {
+        "id": "proj-webapp",
+        "name": "Web App v2",
+        "description": "Rebuild the web app with the new design system",
+        "state": "started",
+        "teamIds": ["team-engineering"],
+        "createdAt": "2025-01-01T00:00:00+00:00",
+        "updatedAt": "2025-01-01T00:00:00+00:00",
+        "startDate": "2025-01-15",
+        "targetDate": "2025-03-31",
+        "progress": 0.35,
+        "issueCount": 3
+      }
+    },
+    "users": {
+      "user-alice": {
+        "id": "user-alice",
+        "name": "Alice Chen",
+        "email": "alice@acme.test",
+        "displayName": "Alice Chen",
+        "active": true,
+        "admin": true,
+        "createdAt": "2024-12-01T00:00:00+00:00"
+      },
+      "user-bob": {
+        "id": "user-bob",
+        "name": "Bob Smith",
+        "email": "bob@acme.test",
+        "displayName": "Bob Smith",
+        "active": true,
+        "admin": false,
+        "createdAt": "2024-12-01T00:00:00+00:00"
+      }
+    },
+    "labels": {
+      "label-bug": {
+        "id": "label-bug",
+        "name": "Bug",
+        "color": "#EB5757",
+        "teamId": "team-engineering",
+        "createdAt": "2025-01-01T00:00:00+00:00"
+      },
+      "label-feature": {
+        "id": "label-feature",
+        "name": "Feature",
+        "color": "#5E6AD2",
+        "teamId": "team-engineering",
+        "createdAt": "2025-01-01T00:00:00+00:00"
+      }
+    },
+    "issues": {
+      "issue-001": {
+        "id": "issue-001",
+        "identifier": "ENG-1",
+        "title": "Set up CI/CD pipeline",
+        "description": "Configure GitHub Actions for automated testing and deployment.",
+        "priority": 2,
+        "priorityLabel": "High",
+        "state": {"id": "state-done", "name": "Done", "type": "completed"},
+        "stateId": "state-done",
+        "teamId": "team-engineering",
+        "assigneeId": "user-alice",
+        "assignee": {"id": "user-alice", "name": "Alice Chen"},
+        "labelIds": ["label-feature"],
+        "labels": [{"id": "label-feature", "name": "Feature", "color": "#5E6AD2"}],
+        "projectId": "proj-webapp",
+        "cycleId": null,
+        "estimate": 3,
+        "dueDate": null,
+        "createdAt": "2025-01-10T09:00:00+00:00",
+        "updatedAt": "2025-01-20T15:00:00+00:00",
+        "completedAt": "2025-01-20T15:00:00+00:00",
+        "canceledAt": null,
+        "url": "https://linear.app/checkpoint/issue/ENG-1",
+        "commentCount": 1
+      },
+      "issue-002": {
+        "id": "issue-002",
+        "identifier": "ENG-2",
+        "title": "Login page crashes on mobile",
+        "description": "Users report the login button is unresponsive on iOS Safari.",
+        "priority": 1,
+        "priorityLabel": "Urgent",
+        "state": {"id": "state-in-progress", "name": "In Progress", "type": "started"},
+        "stateId": "state-in-progress",
+        "teamId": "team-engineering",
+        "assigneeId": "user-bob",
+        "assignee": {"id": "user-bob", "name": "Bob Smith"},
+        "labelIds": ["label-bug"],
+        "labels": [{"id": "label-bug", "name": "Bug", "color": "#EB5757"}],
+        "projectId": "proj-webapp",
+        "cycleId": null,
+        "estimate": 2,
+        "dueDate": "2025-02-01",
+        "createdAt": "2025-01-22T10:00:00+00:00",
+        "updatedAt": "2025-01-23T11:00:00+00:00",
+        "completedAt": null,
+        "canceledAt": null,
+        "url": "https://linear.app/checkpoint/issue/ENG-2",
+        "commentCount": 0
+      },
+      "issue-003": {
+        "id": "issue-003",
+        "identifier": "ENG-3",
+        "title": "Add dark mode support",
+        "description": "Implement CSS variables and a toggle for dark mode.",
+        "priority": 3,
+        "priorityLabel": "Medium",
+        "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"},
+        "stateId": "state-backlog",
+        "teamId": "team-engineering",
+        "assigneeId": null,
+        "assignee": null,
+        "labelIds": ["label-feature"],
+        "labels": [{"id": "label-feature", "name": "Feature", "color": "#5E6AD2"}],
+        "projectId": "proj-webapp",
+        "cycleId": null,
+        "estimate": null,
+        "dueDate": null,
+        "createdAt": "2025-01-24T08:00:00+00:00",
+        "updatedAt": "2025-01-24T08:00:00+00:00",
+        "completedAt": null,
+        "canceledAt": null,
+        "url": "https://linear.app/checkpoint/issue/ENG-3",
+        "commentCount": 0
+      }
+    },
+    "_counters": {
+      "issue_seq": {"ENG": 3},
+      "requests": 0
+    }
+  },
+  "config": {}
+}

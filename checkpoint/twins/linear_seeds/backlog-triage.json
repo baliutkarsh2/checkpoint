@@ -1,0 +1,50 @@
+{
+  "state": {
+    "teams": {
+      "team-engineering": {
+        "id": "team-engineering",
+        "name": "Engineering",
+        "key": "ENG",
+        "description": "Core engineering team",
+        "createdAt": "2025-01-01T00:00:00+00:00"
+      }
+    },
+    "users": {
+      "user-alice": {
+        "id": "user-alice",
+        "name": "Alice Chen",
+        "email": "alice@acme.test",
+        "displayName": "Alice Chen",
+        "active": true,
+        "admin": true,
+        "createdAt": "2024-12-01T00:00:00+00:00"
+      },
+      "user-bob": {
+        "id": "user-bob",
+        "name": "Bob Smith",
+        "email": "bob@acme.test",
+        "displayName": "Bob Smith",
+        "active": true,
+        "admin": false,
+        "createdAt": "2024-12-01T00:00:00+00:00"
+      }
+    },
+    "labels": {
+      "label-bug": {"id": "label-bug", "name": "Bug", "color": "#EB5757", "teamId": "team-engineering", "createdAt": "2025-01-01T00:00:00+00:00"},
+      "label-feature": {"id": "label-feature", "name": "Feature", "color": "#5E6AD2", "teamId": "team-engineering", "createdAt": "2025-01-01T00:00:00+00:00"},
+      "label-infra": {"id": "label-infra", "name": "Infra", "color": "#F2C94C", "teamId": "team-engineering", "createdAt": "2025-01-01T00:00:00+00:00"}
+    },
+    "issues": {
+      "issue-b1": {"id": "issue-b1", "identifier": "ENG-10", "title": "Database slow on large queries", "description": "Queries over 10k rows take >5s.", "priority": 0, "priorityLabel": "No priority", "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"}, "stateId": "state-backlog", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-bug"], "labels": [{"id": "label-bug", "name": "Bug", "color": "#EB5757"}], "projectId": null, "cycleId": null, "estimate": null, "dueDate": null, "createdAt": "2025-01-01T00:00:00+00:00", "updatedAt": "2025-01-01T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-10", "commentCount": 0},
+      "issue-b2": {"id": "issue-b2", "identifier": "ENG-11", "title": "Add webhook support", "description": "Support outbound webhooks for order events.", "priority": 0, "priorityLabel": "No priority", "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"}, "stateId": "state-backlog", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-feature"], "labels": [{"id": "label-feature", "name": "Feature", "color": "#5E6AD2"}], "projectId": null, "cycleId": null, "estimate": null, "dueDate": null, "createdAt": "2025-01-02T00:00:00+00:00", "updatedAt": "2025-01-02T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-11", "commentCount": 0},
+      "issue-b3": {"id": "issue-b3", "identifier": "ENG-12", "title": "Upgrade Node.js to v22", "description": "EOL date approaching for Node 18.", "priority": 0, "priorityLabel": "No priority", "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"}, "stateId": "state-backlog", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-infra"], "labels": [{"id": "label-infra", "name": "Infra", "color": "#F2C94C"}], "projectId": null, "cycleId": null, "estimate": null, "dueDate": null, "createdAt": "2025-01-03T00:00:00+00:00", "updatedAt": "2025-01-03T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-12", "commentCount": 0},
+      "issue-b4": {"id": "issue-b4", "identifier": "ENG-13", "title": "Email notifications not sent on signup", "description": "New user signup does not trigger the welcome email.", "priority": 0, "priorityLabel": "No priority", "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"}, "stateId": "state-backlog", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-bug"], "labels": [{"id": "label-bug", "name": "Bug", "color": "#EB5757"}], "projectId": null, "cycleId": null, "estimate": null, "dueDate": null, "createdAt": "2025-01-04T00:00:00+00:00", "updatedAt": "2025-01-04T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-13", "commentCount": 0},
+      "issue-b5": {"id": "issue-b5", "identifier": "ENG-14", "title": "Add CSV export for reports", "description": "Allow admins to export analytics as CSV.", "priority": 0, "priorityLabel": "No priority", "state": {"id": "state-backlog", "name": "Backlog", "type": "backlog"}, "stateId": "state-backlog", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-feature"], "labels": [{"id": "label-feature", "name": "Feature", "color": "#5E6AD2"}], "projectId": null, "cycleId": null, "estimate": null, "dueDate": null, "createdAt": "2025-01-05T00:00:00+00:00", "updatedAt": "2025-01-05T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-14", "commentCount": 0}
+    },
+    "_counters": {
+      "issue_seq": {"ENG": 14},
+      "requests": 0
+    }
+  },
+  "config": {}
+}

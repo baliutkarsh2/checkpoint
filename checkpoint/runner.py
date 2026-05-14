@@ -57,6 +57,10 @@ TWIN_APPS = {
     "github": "checkpoint.twins.github:app",
     "slack": "checkpoint.twins.slack:app",
     "stripe": "checkpoint.twins.stripe:app",
+    "linear": "checkpoint.twins.linear:app",
+    "supabase": "checkpoint.twins.supabase:app",
+    "discord": "checkpoint.twins.discord:app",
+    "google-workspace": "checkpoint.twins.google_workspace:app",
 }
 
 
@@ -143,6 +147,10 @@ _CLONE_BOOTSTRAP_TOKEN_ENV = {
     "github": ("GITHUB_TOKEN", "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"),
     "slack": ("SLACK_TOKEN", "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
     "stripe": ("STRIPE_API_KEY", "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"),
+    "linear": ("LINEAR_BOOTSTRAP_TOKEN", "lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011"),
+    "supabase": ("SUPABASE_BOOTSTRAP_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff"),
+    "discord": ("DISCORD_BOOTSTRAP_TOKEN", "Bot checkpoint.discord.twin.token.aabbccddeeff0011"),
+    "google-workspace": ("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", "ya29.checkpoint_google_workspace_token_aabbccddeeff"),
 }
 
 
@@ -247,6 +255,17 @@ def run_once(
                 capture_output=True,
                 text=True,
                 timeout=scenario.timeout,
+            )
+        except FileNotFoundError as e:
+            per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
+            per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
+            return RunResult(
+                final_answer="",
+                stderr=str(e),
+                exit_code=-1,
+                trace=_merge_trace_for_clones(per_trace),
+                state=_merge_state_for_clones(per_state),
+                error=f"Harness executable not found: {e}",
             )
         except subprocess.TimeoutExpired as e:
             per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
