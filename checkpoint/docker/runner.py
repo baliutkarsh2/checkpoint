@@ -50,7 +50,7 @@ from ..runner import (
     _wait_healthy,
 )
 from ..scenario import Scenario
-from ..proxy.routes import register, all_domains
+from ..proxy.routes import register, lookup, all_domains
 from .harness_image import build_harness_image, HarnessImageError
 
 
@@ -58,7 +58,26 @@ _DOCKER_TWIN_APPS = {
     "github": "checkpoint.twins.github:app",
     "slack": "checkpoint.twins.slack:app",
     "stripe": "checkpoint.twins.stripe:app",
+    "linear": "checkpoint.twins.linear:app",
+    "supabase": "checkpoint.twins.supabase:app",
+    "discord": "checkpoint.twins.discord:app",
+    "google-workspace": "checkpoint.twins.google_workspace:app",
 }
+
+# Maps clone name -> the domain(s) the harness's SDK will call.
+# These are registered in CHECKPOINT_ROUTES so the sidecar addon can intercept.
+_CLONE_DOMAINS = {
+    "github": ["api.github.com"],
+    "slack": ["slack.com"],
+    "stripe": ["api.stripe.com"],
+    "linear": ["api.linear.app"],
+    "supabase": ["supabase.co", "checkpoint.supabase.co"],
+    "discord": ["discord.com"],
+    "google-workspace": ["gmail.googleapis.com", "www.googleapis.com"],
+}
+
+# The first twin in the list gets this port; each subsequent twin increments by 1.
+_BASE_TWIN_PORT = 18080
 
 
 def _start_twin_for_docker(clone: str, port: int) -> subprocess.Popen:
@@ -144,6 +163,22 @@ def _wait_for_twin_in_container(sidecar, twin_port: int, timeout: float = 15.0) 
             pass
         time.sleep(0.3)
     return False
+
+
+def _apply_seed_in_container(sidecar, twin_port: int, seed_name: str) -> None:
+    """POST /_seed/<name> to a twin running in the sidecar's shared netns."""
+    cmd = [
+        "python", "-c",
+        (
+            f"import urllib.request; "
+            f"req = urllib.request.Request('http://127.0.0.1:{twin_port}/_seed/{seed_name}', method='POST', data=b''); "
+            f"urllib.request.urlopen(req, timeout=10)"
+        ),
+    ]
+    try:
+        sidecar.exec_run(cmd)
+    except Exception as e:
+        log.warning("seed %r on :%d failed: %s", seed_name, twin_port, e)
 
 
 def _fetch_trace_in_container(sidecar, twin_port: int) -> list:
@@ -239,14 +274,9 @@ def docker_run_once(
     verbose: bool = False,
 ) -> DockerRunResult:
     clones = scenario.clones or ["github"]
-    if len(clones) > 1:
-        # Multi-clone in docker mode requires extending the sidecar's routes
-        # to bridge multiple netns-shared twin containers. Local mode already
-        # supports this in Phase 4 — docker-mode multi-clone is deferred.
-        return DockerRunResult("", "", -1, [], {}, error=f"Docker-mode multi-clone is deferred to a later phase (got: {clones}). Use local mode (drop --docker) for now.")
-    clone = clones[0]
-    if clone not in _DOCKER_TWIN_APPS:
-        return DockerRunResult("", "", -1, [], {}, error=f"Docker runner: unknown clone={clone!r}")
+    unknown = [c for c in clones if c not in _DOCKER_TWIN_APPS]
+    if unknown:
+        return DockerRunResult("", "", -1, [], {}, error=f"Docker runner: unknown clone(s): {unknown}")
 
     client = docker.from_env()
     try:
@@ -254,31 +284,44 @@ def docker_run_once(
     except Exception as e:
         return DockerRunResult("", "", -1, [], {}, error=f"Docker daemon not reachable: {e}")
 
-    # Twin port is the one mitmdump's addon forwards to from inside the sidecar
-    # container. Since the sidecar and twin will share a netns, the twin can be
-    # bound to 127.0.0.1 inside the netns and reached by the sidecar via the
-    # same 127.0.0.1. We pick a high port that doesn't clash with mitmdump (443).
-    twin_port = 18080
-    twin = None  # twin runs in a container, started after the sidecar (shared netns)
     archal_out = Path(tempfile.mkdtemp(prefix="checkpoint-archal-out-"))
-    sidecar = None
-    harness = None
-    network = None  # user-defined bridge network so containers can resolve each other by name
     run_id = uuid.uuid4().hex[:8]
     network_name = f"checkpoint-net-{run_id}"
     sidecar_name = f"checkpoint-sidecar-{run_id}"
-    twin_name = f"checkpoint-twin-{run_id}"
     harness_tag = f"checkpoint-harness:run-{run_id}"
 
-    try:
-        # Sidecar forwards to the twin on 127.0.0.1:<twin_port> in the shared netns.
-        twin_url_from_container = f"http://127.0.0.1:{twin_port}"
-        register("api.github.com", twin_url_from_container)
+    # Assign one port per clone, all sharing the sidecar's netns.
+    # Ports start at _BASE_TWIN_PORT and increment so they never collide.
+    clone_ports: dict[str, int] = {
+        clone: _BASE_TWIN_PORT + i for i, clone in enumerate(clones)
+    }
 
-        # _write_hosts_file is kept for unit-test compatibility but we no longer
-        # mount it into containers — docker's native extra_hosts is the right
-        # mechanism. Bind-mounting our own /etc/hosts erases the host-gateway
-        # entry that --add-host inserts, breaking sidecar -> twin connectivity.
+    # Build the CHECKPOINT_ROUTES mapping for the sidecar addon.
+    # Each domain for a clone maps to http://127.0.0.1:<port> in the shared netns.
+    routes: dict[str, str] = {}
+    for clone, port in clone_ports.items():
+        twin_url = f"http://127.0.0.1:{port}"
+        for domain in _CLONE_DOMAINS.get(clone, []):
+            routes[domain] = twin_url
+            # For subdomains not in _ROUTES, inherit the parent domain's bootstrap token.
+            token: Optional[str] = None
+            parts = domain.split(".")
+            for i in range(len(parts)):
+                parent_route = lookup(".".join(parts[i:]))
+                if parent_route is not None:
+                    token = parent_route.bootstrap_token
+                    break
+            register(domain, twin_url, bootstrap_token=token)
+
+    # Default reverse-mode upstream = first clone (fallback if addon has no route).
+    first_twin_url = f"http://127.0.0.1:{clone_ports[clones[0]]}"
+
+    sidecar = None
+    twin_containers: list = []  # list of (clone, port, container)
+    harness = None
+    network = None
+
+    try:
         _write_hosts_file(archal_out)
 
         try:
@@ -286,13 +329,6 @@ def docker_run_once(
         except HarnessImageError as e:
             return DockerRunResult("", "", -1, [], {}, error=f"Harness image build failed: {e}")
 
-        # The sidecar runs mitmproxy in a separate Python process; its routes
-        # registry is independent of ours. Pass twin URLs via CHECKPOINT_ROUTES
-        # JSON env so the addon's _seed_routes_from_env() can register() them.
-        routes_env = json.dumps({"api.github.com": twin_url_from_container})
-
-        # Create an isolated user-defined bridge network for this run.
-        # The harness then resolves "api.github.com" -> sidecar's IP via extra_hosts.
         network = client.networks.create(network_name, driver="bridge")
 
         sidecar = client.containers.run(
@@ -300,73 +336,75 @@ def docker_run_once(
             detach=True,
             name=sidecar_name,
             network=network_name,
-            volumes={
-                str(archal_out): {"bind": "/archal-out", "mode": "rw"},
-            },
+            volumes={str(archal_out): {"bind": "/archal-out", "mode": "rw"}},
             environment={
                 "SIDECAR_PORT": "443",
-                "TWIN_UPSTREAM": twin_url_from_container,
-                "CHECKPOINT_ROUTES": routes_env,
+                "TWIN_UPSTREAM": first_twin_url,
+                "CHECKPOINT_ROUTES": json.dumps(routes),
             },
-            # IMPORTANT: do NOT inject api.github.com -> 127.0.0.1 into the
-            # SIDECAR's /etc/hosts — mitmproxy's reverse-mode upstream resolution
-            # would loop back to itself. The harness gets the hijack separately.
         )
 
         if not _wait_for_ca(archal_out):
-            return DockerRunResult(
-                "", "", -1, _fetch_trace_in_container(sidecar, twin_port), _fetch_state_in_container(sidecar, twin_port),
-                error="Sidecar did not mint CA within 10s",
-            )
+            return DockerRunResult("", "", -1, [], {}, error="Sidecar did not mint CA within 10s")
 
         if not _wait_for_sidecar_listening(sidecar):
-            return DockerRunResult(
-                "", "", -1, _fetch_trace_in_container(sidecar, twin_port), _fetch_state_in_container(sidecar, twin_port),
-                error="Sidecar mitmdump did not start listening within 15s",
+            return DockerRunResult("", "", -1, [], {}, error="Sidecar mitmdump did not start listening within 15s")
+
+        # Start one twin container per clone, all sharing the sidecar's netns so
+        # mitmproxy can reach them at 127.0.0.1:<port> in the shared namespace.
+        for clone, port in clone_ports.items():
+            twin_app = _DOCKER_TWIN_APPS[clone]
+            twin_ctr = client.containers.run(
+                SIDECAR_IMAGE,
+                detach=True,
+                name=f"checkpoint-twin-{clone}-{run_id}",
+                network_mode=f"container:{sidecar.id}",
+                entrypoint=[
+                    "python", "-m", "uvicorn", twin_app,
+                    "--host", "127.0.0.1", "--port", str(port),
+                    "--log-level", "warning",
+                ],
             )
+            twin_containers.append((clone, port, twin_ctr))
 
-        # Start the GitHub twin as a sidecar-netns-sharing container so that
-        # mitmproxy can reach it at 127.0.0.1:<twin_port> in the shared netns.
-        twin = client.containers.run(
-            SIDECAR_IMAGE,
-            detach=True,
-            name=twin_name,
-            network_mode=f"container:{sidecar.id}",
-            entrypoint=[
-                "python", "-m", "uvicorn", "checkpoint.twins.github:app",
-                "--host", "127.0.0.1", "--port", str(twin_port),
-                "--log-level", "warning",
-            ],
-        )
+        # Wait for every twin to be healthy inside the shared netns.
+        for clone, port, _ in twin_containers:
+            if not _wait_for_twin_in_container(sidecar, port):
+                return DockerRunResult(
+                    "", "", -1, [], {},
+                    error=f"Twin '{clone}' failed to start on 127.0.0.1:{port} in shared netns",
+                )
 
-        if not _wait_for_twin_in_container(sidecar, twin_port):
-            return DockerRunResult(
-                "", "", -1, [], {},
-                error=f"Twin failed to start on 127.0.0.1:{twin_port} in shared netns",
-            )
+        # Apply seeds via /_seed/<name> inside the shared netns.
+        from ..runner import _parse_seed_spec
+        seed_map = _parse_seed_spec(scenario.config.get("seed") or scenario.config.get("seed_name"), clones)
+        for clone, port, _ in twin_containers:
+            seed_name = seed_map.get(clone)
+            if seed_name:
+                _apply_seed_in_container(sidecar, port, seed_name)
 
-        # Resolve sidecar IP on the user-defined network so the harness's
-        # /etc/hosts can map api.github.com -> sidecar_ip.
+        # Resolve sidecar IP so the harness can reach :443 via extra_hosts.
         sidecar.reload()
         sidecar_ip = sidecar.attrs["NetworkSettings"]["Networks"][network_name]["IPAddress"]
         if not sidecar_ip:
-            return DockerRunResult("", "", -1, [], {},
-                                   error="Could not resolve sidecar IP on user network")
+            return DockerRunResult("", "", -1, [], {}, error="Could not resolve sidecar IP on user network")
 
         env = _build_env(scenario, judge_model)
-        # Harness gets its own netns on the same user-defined network. We hijack
-        # api.github.com -> sidecar_ip via extra_hosts so the harness's stock
-        # https://api.github.com calls land on the sidecar's :443.
-        harness_extra_hosts = {domain: sidecar_ip for domain in all_domains()}
+        # Inject per-clone bootstrap tokens so the harness SDKs authenticate.
+        from ..runner import _CLONE_BOOTSTRAP_TOKEN_ENV
+        for clone in clones:
+            tok = _CLONE_BOOTSTRAP_TOKEN_ENV.get(clone)
+            if tok:
+                env[tok[0]] = tok[1]
+
         harness = client.containers.run(
             harness_tag,
             detach=True,
             network=network_name,
-            volumes={
-                str(archal_out): {"bind": "/archal-out", "mode": "rw"},
-            },
+            volumes={str(archal_out): {"bind": "/archal-out", "mode": "rw"}},
             environment=env,
-            extra_hosts=harness_extra_hosts,
+            # Point every service domain -> sidecar so the harness's SDK calls land on :443.
+            extra_hosts={domain: sidecar_ip for domain in all_domains()},
         )
 
         try:
@@ -382,10 +420,7 @@ def docker_run_once(
                 harness.kill()
             except Exception:
                 pass
-            return DockerRunResult(
-                "", "", -1, _fetch_trace_in_container(sidecar, twin_port), _fetch_state_in_container(sidecar, twin_port),
-                error=f"Harness wait failed: {e}",
-            )
+            return DockerRunResult("", "", -1, [], {}, error=f"Harness wait failed: {e}")
 
         stdout = harness.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
         stderr = harness.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")[-4000:]
@@ -394,12 +429,21 @@ def docker_run_once(
         metrics = _read_output(archal_out, "metrics.json")
         agent_trace = _read_output(archal_out, "agent-trace.json")
 
+        # Merge state and trace from all twins.
+        per_clone_state = {clone: _fetch_state_in_container(sidecar, port)
+                           for clone, port, _ in twin_containers}
+        per_clone_trace = {clone: _fetch_trace_in_container(sidecar, port)
+                           for clone, port, _ in twin_containers}
+        from ..runner import _merge_state_for_clones, _merge_trace_for_clones
+        merged_state = _merge_state_for_clones(per_clone_state)
+        merged_trace = _merge_trace_for_clones(per_clone_trace)
+
         result = DockerRunResult(
             final_answer=_extract_final_answer(stdout),
             stderr=stderr,
             exit_code=exit_code,
-            trace=_fetch_trace_in_container(sidecar, twin_port),
-            state=_fetch_state_in_container(sidecar, twin_port),
+            trace=merged_trace,
+            state=merged_state,
             metrics=metrics,
             agent_trace=agent_trace,
         )
@@ -412,9 +456,13 @@ def docker_run_once(
         return result
 
     finally:
-        # Teardown — never raise out of finally. Stop harness first (depends on
-        # sidecar), then twin (depends on sidecar netns), then sidecar.
-        for c, _name in [(harness, "harness"), (twin, "twin"), (sidecar, "sidecar")]:
+        # Teardown: harness first, then all twin containers, then sidecar.
+        containers_to_stop = (
+            [(harness, "harness")]
+            + [(ctr, f"twin-{clone}") for clone, _, ctr in twin_containers]
+            + [(sidecar, "sidecar")]
+        )
+        for c, _name in containers_to_stop:
             if c is None:
                 continue
             try:

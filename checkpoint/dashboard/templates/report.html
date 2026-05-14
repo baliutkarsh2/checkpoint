@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% set active = 'report' %}
+{% block title %}Report — checkpoint{% endblock %}
+{% block content %}
+<div class="page-title">Trend report</div>
+<div class="page-sub">
+  {{ trend.run_count }} runs aggregated{% if scenario_pattern %} for "{{ scenario_pattern }}"{% endif %}
+</div>
+
+<form method="get" class="filter-row">
+  <input type="search" name="scenario" placeholder="scenario name substring…"
+         value="{{ scenario_pattern or '' }}" style="flex:1; max-width:480px">
+  <button type="submit" class="btn">Apply</button>
+  {% if scenario_pattern %}<a href="/report" class="btn outline">Clear</a>{% endif %}
+</form>
+
+{# Summary tiles #}
+<div class="stat-grid">
+  <div class="card">
+    <div class="card-title">Runs</div>
+    <div class="stat-num">{{ trend.run_count }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Avg score</div>
+    <div class="stat-num" style="color:{{ trend.avg_score | score_color }}">{{ trend.avg_score }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Range</div>
+    <div class="stat-num" style="font-size:24px">{{ trend.min_score }}–{{ trend.max_score }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Flaky criteria</div>
+    <div class="stat-num" style="color:{% if flaky %}var(--warn){% else %}var(--pass){% endif %}">{{ flaky | length }}</div>
+  </div>
+</div>
+
+{# Score history sparkline #}
+{% if trend.history %}
+<div class="section-title">Score history (oldest to newest)</div>
+<div class="card">
+  <div class="sparkline">
+    {% for h in trend.history | reverse %}
+    {% set score = h.score | int %}
+    <div class="bar" title="{{ h.run_id | short_id }}: {{ score }}"
+         style="height:{{ [score, 5] | max }}%; background:{{ score | score_color }}"></div>
+    {% endfor %}
+  </div>
+  <div class="micro" style="color:var(--ink-3); margin-top:6px">Oldest &#8594; newest, left to right. Hover for details.</div>
+</div>
+{% endif %}
+
+{# Per-criterion pass rates #}
+<div class="section-title">Criteria pass rates</div>
+{% if trend.criteria %}
+<div class="card tight">
+<table>
+  <thead><tr>
+    <th style="width:40px">Kind</th>
+    <th>Criterion</th>
+    <th style="width:80px">Runs</th>
+    <th style="width:160px">Pass rate</th>
+    <th style="width:100px">Status</th>
+  </tr></thead>
+  <tbody>
+  {% for text, s in trend.criteria.items() | sort(attribute='1.pass_rate') %}
+  {% set rate_pct = (s.pass_rate * 100) | int %}
+  <tr>
+    <td><span class="kind-{{ (s.kind or 'd') | lower }}">{{ s.kind or 'D' }}</span></td>
+    <td>{{ text | truncate_mid(80) }}</td>
+    <td class="mono">{{ s.total }}</td>
+    <td>
+      <span class="mono" style="color:{{ rate_pct | score_color }}">{{ rate_pct }}%</span>
+      <span class="score-bar"><span class="fill" style="width:{{ rate_pct }}%; background:{{ rate_pct | score_color }}"></span></span>
+    </td>
+    <td>
+      {% if text in flaky %}<span class="badge warn">flaky</span>
+      {% elif s.pass_rate >= 0.95 %}<span class="badge pass">stable</span>
+      {% elif s.pass_rate < 0.5 %}<span class="badge fail">failing</span>
+      {% else %}<span class="badge">—</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="card" style="text-align:center; color:var(--ink-4); padding:32px">
+  No matching runs found.
+</div>
+{% endif %}
+{% endblock %}
