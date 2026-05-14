@@ -18,9 +18,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+sdk = []
 
 [project.scripts]
 checkpoint = "checkpoint.cli:main"
+
+[project.entry-points."pytest11"]
+checkpoint = "checkpoint.pytest_plugin"
 
 [build-system]
 requires = ["setuptools>=68"]

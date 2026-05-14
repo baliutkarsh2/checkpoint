@@ -109,14 +109,15 @@ def _check_auth(request: Request) -> bool:
 async def _middleware(request: Request, call_next):
     path = request.url.path
     is_introspection = path.startswith(INTROSPECTION_PREFIX)
-    if not is_introspection:
+    is_mcp = path.startswith("/mcp")
+    if not is_introspection and not is_mcp:
         STATE["_counters"]["requests"] += 1
         if not _check_auth(request):
             return JSONResponse(status_code=401, content={
                 "error": {"code": 401, "message": "Request had invalid authentication credentials.", "status": "UNAUTHENTICATED"}
             })
     response = await call_next(request)
-    if not is_introspection:
+    if not is_introspection and not is_mcp:
         TRACE.append({"method": request.method, "path": path, "status": response.status_code, "ts": _now()})
     return response
 

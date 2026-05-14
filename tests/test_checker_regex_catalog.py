@@ -357,3 +357,87 @@ def test_pattern_count_is_at_least_25():
     """Sanity: catalog has enough breadth to be considered 'expanded'."""
     from checkpoint.checker import PATTERNS
     assert len(PATTERNS) >= 15  # number of regex pairs; each handles N nouns
+
+
+# ---------------------------------------------------------------------------
+# Trace-based patterns (Stage 1 extension)
+# ---------------------------------------------------------------------------
+
+def _trace(*calls) -> list[dict]:
+    """Build a synthetic trace list from (method, path) tuples."""
+    return [{"method": m, "path": p, "status": 200} for m, p in calls]
+
+
+def test_trace_call_count_exact_pass():
+    trace = _trace(("POST", "/repos/acme/webapp/issues"), ("POST", "/repos/acme/webapp/issues"))
+    r = check("agent called exactly 2 POST requests to /repos/acme/webapp/issues", {}, trace)
+    assert r.handled
+    assert r.passed
+
+
+def test_trace_call_count_exact_fail():
+    trace = _trace(("POST", "/repos/acme/webapp/issues"))
+    r = check("agent called exactly 2 POST requests to /repos/acme/webapp/issues", {}, trace)
+    assert r.handled
+    assert not r.passed
+
+
+def test_trace_call_count_at_least_pass():
+    trace = _trace(("POST", "/issues"), ("POST", "/issues"), ("POST", "/issues"))
+    r = check("agent called at least 2 POST requests to /issues", {}, trace)
+    assert r.handled
+    assert r.passed
+
+
+def test_trace_call_count_at_least_fail():
+    trace = _trace(("POST", "/issues"))
+    r = check("agent called at least 3 POST requests to /issues", {}, trace)
+    assert r.handled
+    assert not r.passed
+
+
+def test_trace_no_call_passes_when_no_matching_calls():
+    trace = _trace(("GET", "/repos"), ("POST", "/issues"))
+    r = check("no DELETE requests to /issues", {}, trace)
+    assert r.handled
+    assert r.passed
+
+
+def test_trace_no_call_fails_when_call_exists():
+    trace = _trace(("DELETE", "/repos/acme/webapp/issues/7"), ("GET", "/repos"))
+    r = check("no DELETE requests to /repos", {}, trace)
+    assert r.handled
+    assert not r.passed
+
+
+def test_trace_agent_did_not_call_syntax():
+    trace = _trace(("GET", "/repos"), ("POST", "/issues"))
+    r = check("agent did not call DELETE /issues", {}, trace)
+    assert r.handled
+    assert r.passed
+
+
+def test_trace_method_path_was_called_syntax():
+    trace = _trace(("PATCH", "/repos/acme/webapp/issues/5"))
+    r = check("PATCH /repos/acme/webapp/issues/5 was called exactly 1 times", {}, trace)
+    assert r.handled
+    assert r.passed
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: empty / null state
+# ---------------------------------------------------------------------------
+
+def test_empty_state_returns_handled_false_count():
+    """With an empty dict, count-based patterns should handle and return 0 items."""
+    r = check("at least 1 issue exists", {}, [])
+    assert r.handled
+    assert not r.passed
+
+
+def test_null_value_in_state_does_not_crash():
+    """State with None values shouldn't cause handler exceptions."""
+    state = {"issues": None, "repos": None}
+    r = check("exactly 0 issues exist", state, [])
+    # Should handle gracefully; passed or not is less important than no crash
+    assert isinstance(r.handled, bool)

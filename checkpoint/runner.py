@@ -35,6 +35,7 @@ class RunResult:
     state: dict
     criteria: list[CriterionResult] = field(default_factory=list)
     error: str | None = None
+    failure_analysis: dict[str, str] | None = None
 
     @property
     def score(self) -> float:
@@ -447,6 +448,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             deferred.append(c)
 
     if not deferred:
+        _maybe_analyze_failures(scenario, result, judge_model)
         return
 
     try:
@@ -464,6 +466,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
                 text=c.text, kind=c.kind, passed=False,
                 reasoning=f"Judge failed: {e}", evaluator="llm",
             ))
+        _maybe_analyze_failures(scenario, result, judge_model)
         return
 
     for c, v in zip(deferred, verdicts):
@@ -471,3 +474,23 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             text=c.text, kind=c.kind, passed=v.passed,
             reasoning=v.reasoning, evaluator="llm",
         ))
+
+    _maybe_analyze_failures(scenario, result, judge_model)
+
+
+def _maybe_analyze_failures(scenario: Scenario, result: RunResult, judge_model: str) -> None:
+    """Populate result.failure_analysis when any criteria failed. Non-fatal."""
+    failed = [c.text for c in result.criteria if not c.passed]
+    if not failed:
+        return
+    try:
+        from .failure_analysis import analyze_failures
+        result.failure_analysis = analyze_failures(
+            task=scenario.prompt,
+            failed_criteria=failed,
+            trace=result.trace,
+            state=result.state,
+            model=judge_model,
+        )
+    except Exception:
+        pass  # non-fatal — don't block the run or change the score

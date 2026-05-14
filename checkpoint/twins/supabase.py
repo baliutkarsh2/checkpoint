@@ -342,6 +342,20 @@ async def load_seed_file(request: Request):
 # --- PostgREST REST surface --------------------------------------------------
 # Supabase's PostgREST API: /rest/v1/<table>
 
+@app.get("/rest/v1/")
+def postgrest_list_tables():
+    """Return available tables (OpenAPI-style definition list)."""
+    return {
+        "definitions": {
+            name: {
+                "properties": {col: {"type": "unknown"} for col in tbl.get("columns", [])},
+                "row_count": len(tbl.get("rows", [])),
+            }
+            for name, tbl in STATE["tables"].items()
+        }
+    }
+
+
 @app.get("/rest/v1/{table_name}")
 async def postgrest_select(table_name: str, request: Request):
     """SELECT rows. Supports select=, order=, limit=, offset=, and col=op.val filters."""
@@ -537,6 +551,7 @@ def auth_get_user(user_id: str):
 
 
 @app.put("/auth/v1/admin/users/{user_id}")
+@app.patch("/auth/v1/admin/users/{user_id}")
 async def auth_update_user(user_id: str, request: Request):
     u = STATE["auth_users"].get(user_id)
     if not u:
@@ -545,6 +560,8 @@ async def auth_update_user(user_id: str, request: Request):
     for field in ("email", "phone", "role", "user_metadata", "app_metadata"):
         if field in body:
             u[field] = body[field]
+    if "ban_duration" in body:
+        u["ban_duration"] = body["ban_duration"]
     u["updated_at"] = _now()
     return u
 
@@ -596,6 +613,33 @@ def storage_get_bucket(bucket_id: str):
     return b
 
 
+@app.put("/storage/v1/bucket/{bucket_id}")
+async def storage_update_bucket(bucket_id: str, request: Request):
+    b = STATE["storage"]["buckets"].get(bucket_id)
+    if not b:
+        return supabase_error(404, f"Bucket {bucket_id!r} not found")
+    body = await request.json()
+    if "public" in body:
+        b["public"] = bool(body["public"])
+    if "file_size_limit" in body or "fileSizeLimit" in body:
+        b["file_size_limit"] = body.get("file_size_limit") or body.get("fileSizeLimit")
+    if "allowed_mime_types" in body or "allowedMimeTypes" in body:
+        b["allowed_mime_types"] = body.get("allowed_mime_types") or body.get("allowedMimeTypes")
+    b["updated_at"] = _now()
+    return {"message": f"Successfully updated {bucket_id}"}
+
+
+@app.post("/storage/v1/bucket/{bucket_id}/empty")
+def storage_empty_bucket(bucket_id: str):
+    if bucket_id not in STATE["storage"]["buckets"]:
+        return supabase_error(404, f"Bucket {bucket_id!r} not found")
+    to_remove = [k for k in STATE["storage"]["objects"] if k.startswith(f"{bucket_id}/")]
+    for k in to_remove:
+        del STATE["storage"]["objects"][k]
+    STATE["storage"]["buckets"][bucket_id]["object_count"] = 0
+    return {"message": f"Successfully emptied {bucket_id}"}
+
+
 @app.delete("/storage/v1/bucket/{bucket_id}")
 def storage_delete_bucket(bucket_id: str):
     if bucket_id not in STATE["storage"]["buckets"]:
@@ -608,98 +652,29 @@ def storage_delete_bucket(bucket_id: str):
     return {"message": f"Successfully deleted {bucket_id}"}
 
 
-@app.get("/storage/v1/object/list/{bucket_id}")
-async def storage_list_objects_get_early(bucket_id: str, request: Request):
-    if bucket_id not in STATE["storage"]["buckets"]:
-        return supabase_error(404, f"Bucket {bucket_id!r} not found")
-    prefix = request.query_params.get("prefix", "")
-    return _list_objects_fn(bucket_id, prefix)
-
-
-@app.post("/storage/v1/object/list/{bucket_id}")
-async def storage_list_objects_post_early(bucket_id: str, request: Request):
-    if bucket_id not in STATE["storage"]["buckets"]:
-        return supabase_error(404, f"Bucket {bucket_id!r} not found")
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    prefix = body.get("prefix", "")
-    return _list_objects_fn(bucket_id, prefix)
-
-
-def _list_objects_fn(bucket_id: str, prefix: str) -> list:
+def _list_objects(bucket_id: str, prefix: str) -> list:
     return [
-        {"name": k[len(bucket_id) + 1:], **{fk: fv for fk, fv in v.items() if not fk.startswith("_")}}
+        {
+            "name": k[len(bucket_id) + 1:],
+            **{fk: fv for fk, fv in v.items() if not fk.startswith("_")},
+        }
         for k, v in STATE["storage"]["objects"].items()
         if k.startswith(f"{bucket_id}/{prefix}")
     ]
 
 
-@app.post("/storage/v1/object/{bucket_id}/{path:path}")
-async def storage_upload_object(bucket_id: str, path: str, request: Request):
-    if bucket_id not in STATE["storage"]["buckets"]:
-        return supabase_error(404, f"Bucket {bucket_id!r} not found")
-    content_type_hdr = request.headers.get("content-type", "")
-    # Accept either raw body upload or MCP JSON envelope.
-    if "application/json" in content_type_hdr:
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
-        if "_mcp_content" in payload:
-            raw_content = payload["_mcp_content"]
-            mime = payload.get("_mcp_content_type", "text/plain")
-            body_bytes = raw_content.encode("utf-8") if isinstance(raw_content, str) else raw_content
-        else:
-            body_bytes = (await request.body())
-            mime = "application/json"
-    else:
-        body_bytes = await request.body()
-        mime = content_type_hdr or "application/octet-stream"
-    upsert = request.headers.get("x-upsert", "false").lower() == "true"
-    key = f"{bucket_id}/{path}"
-    if not upsert and key in STATE["storage"]["objects"]:
-        return supabase_error(409, f"Object {key!r} already exists")
-    obj: dict[str, Any] = {
-        "id": _uid(),
-        "bucket_id": bucket_id,
-        "name": path,
-        "owner": "authenticated",
-        "created_at": _now(),
-        "updated_at": _now(),
-        "last_accessed_at": _now(),
-        "metadata": {"size": len(body_bytes), "mimetype": mime},
-        "_content": body_bytes.decode("utf-8", errors="replace") if isinstance(body_bytes, bytes) else body_bytes,
-    }
-    STATE["storage"]["objects"][key] = obj
-    bucket = STATE["storage"]["buckets"][bucket_id]
-    bucket["object_count"] = len([k for k in STATE["storage"]["objects"] if k.startswith(f"{bucket_id}/")])
-    return {"Key": key}
-
-
-@app.get("/storage/v1/object/{bucket_id}/{path:path}")
-def storage_download_object(bucket_id: str, path: str):
-    key = f"{bucket_id}/{path}"
-    obj = STATE["storage"]["objects"].get(key)
-    if not obj:
-        return supabase_error(404, "Object not found")
-    content = obj.get("_content", "")
-    mime = (obj.get("metadata") or {}).get("mimetype", "application/octet-stream")
-    return Response(content=content, media_type=mime)
-
-
-@app.delete("/storage/v1/object/{bucket_id}/{path:path}")
-def storage_delete_object(bucket_id: str, path: str):
-    key = f"{bucket_id}/{path}"
-    if key not in STATE["storage"]["objects"]:
-        return supabase_error(404, "Object not found")
-    del STATE["storage"]["objects"][key]
+def _update_bucket_count(bucket_id: str) -> None:
     b = STATE["storage"]["buckets"].get(bucket_id)
     if b:
-        b["object_count"] = len([k for k in STATE["storage"]["objects"] if k.startswith(f"{bucket_id}/")])
-    return [{"name": path}]
+        b["object_count"] = sum(
+            1 for k in STATE["storage"]["objects"] if k.startswith(f"{bucket_id}/")
+        )
 
+
+# --- Storage: Objects (specific paths before wildcards) ----------------------
+
+# These routes MUST be registered before /object/{bucket_id}/{path:path} so
+# Starlette doesn't swallow "list", "info", "sign", "move", "copy" as bucket ids.
 
 @app.get("/storage/v1/object/list/{bucket_id}")
 async def storage_list_objects_get(bucket_id: str, request: Request):
@@ -721,12 +696,157 @@ async def storage_list_objects_post(bucket_id: str, request: Request):
     return _list_objects(bucket_id, prefix)
 
 
-def _list_objects(bucket_id: str, prefix: str) -> list:
-    return [
-        {"name": k[len(bucket_id) + 1:], **{fk: fv for fk, fv in v.items() if not fk.startswith("_")}}
-        for k, v in STATE["storage"]["objects"].items()
-        if k.startswith(f"{bucket_id}/{prefix}")
-    ]
+@app.get("/storage/v1/object/info/{bucket_id}/{path:path}")
+def storage_get_object_info(bucket_id: str, path: str):
+    """Return object metadata without downloading its content."""
+    key = f"{bucket_id}/{path}"
+    obj = STATE["storage"]["objects"].get(key)
+    if not obj:
+        return supabase_error(404, "Object not found")
+    return {k: v for k, v in obj.items() if not k.startswith("_")}
+
+
+@app.post("/storage/v1/object/move")
+async def storage_move_object(request: Request):
+    body = await request.json()
+    src_bucket = body.get("bucketId", "")
+    src_key = f"{src_bucket}/{body.get('sourceKey', '')}"
+    dst_bucket = body.get("destinationBucket") or src_bucket
+    dst_key = f"{dst_bucket}/{body.get('destinationKey', '')}"
+    if src_key not in STATE["storage"]["objects"]:
+        return supabase_error(404, f"Source object {src_key!r} not found")
+    if dst_bucket not in STATE["storage"]["buckets"]:
+        return supabase_error(404, f"Destination bucket {dst_bucket!r} not found")
+    obj = STATE["storage"]["objects"].pop(src_key)
+    obj["name"] = body.get("destinationKey", obj["name"])
+    obj["bucket_id"] = dst_bucket
+    obj["updated_at"] = _now()
+    STATE["storage"]["objects"][dst_key] = obj
+    _update_bucket_count(src_bucket)
+    if dst_bucket != src_bucket:
+        _update_bucket_count(dst_bucket)
+    return {"message": "Successfully moved"}
+
+
+@app.post("/storage/v1/object/copy")
+async def storage_copy_object(request: Request):
+    body = await request.json()
+    src_bucket = body.get("bucketId", "")
+    src_key = f"{src_bucket}/{body.get('sourceKey', '')}"
+    dst_bucket = body.get("destinationBucket") or src_bucket
+    dst_key = f"{dst_bucket}/{body.get('destinationKey', '')}"
+    if src_key not in STATE["storage"]["objects"]:
+        return supabase_error(404, f"Source object {src_key!r} not found")
+    if dst_bucket not in STATE["storage"]["buckets"]:
+        return supabase_error(404, f"Destination bucket {dst_bucket!r} not found")
+    import copy as _copy
+    obj = _copy.deepcopy(STATE["storage"]["objects"][src_key])
+    obj["id"] = _uid()
+    obj["name"] = body.get("destinationKey", obj["name"])
+    obj["bucket_id"] = dst_bucket
+    obj["created_at"] = _now()
+    obj["updated_at"] = _now()
+    STATE["storage"]["objects"][dst_key] = obj
+    _update_bucket_count(dst_bucket)
+    return {"Id": obj["id"]}
+
+
+@app.post("/storage/v1/object/sign/{bucket_id}/{path:path}")
+async def storage_create_signed_url(bucket_id: str, path: str, request: Request):
+    key = f"{bucket_id}/{path}"
+    if key not in STATE["storage"]["objects"]:
+        return supabase_error(404, "Object not found")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    expires_in = body.get("expiresIn", 3600)
+    token = _uid().replace("-", "")
+    signed_url = f"/storage/v1/object/authenticated/{bucket_id}/{path}?token={token}&expires_in={expires_in}"
+    return {"signedURL": signed_url, "token": token, "path": path}
+
+
+# --- Storage: Objects (wildcard routes — must come after specific routes) ----
+
+@app.post("/storage/v1/object/{bucket_id}/{path:path}")
+async def storage_upload_object(bucket_id: str, path: str, request: Request):
+    if bucket_id not in STATE["storage"]["buckets"]:
+        return supabase_error(404, f"Bucket {bucket_id!r} not found")
+    content_type_hdr = request.headers.get("content-type", "")
+    if "application/json" in content_type_hdr:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if "_mcp_content" in payload:
+            raw_content = payload["_mcp_content"]
+            mime = payload.get("_mcp_content_type", "text/plain")
+            body_bytes = raw_content.encode("utf-8") if isinstance(raw_content, str) else raw_content
+        else:
+            body_bytes = await request.body()
+            mime = "application/json"
+    else:
+        body_bytes = await request.body()
+        mime = content_type_hdr or "application/octet-stream"
+    upsert = request.headers.get("x-upsert", "false").lower() == "true"
+    key = f"{bucket_id}/{path}"
+    if not upsert and key in STATE["storage"]["objects"]:
+        return supabase_error(409, f"Object {key!r} already exists")
+    obj: dict[str, Any] = {
+        "id": _uid(),
+        "bucket_id": bucket_id,
+        "name": path,
+        "owner": "authenticated",
+        "created_at": _now(),
+        "updated_at": _now(),
+        "last_accessed_at": _now(),
+        "metadata": {"size": len(body_bytes), "mimetype": mime},
+        "_content": body_bytes.decode("utf-8", errors="replace") if isinstance(body_bytes, bytes) else body_bytes,
+    }
+    STATE["storage"]["objects"][key] = obj
+    _update_bucket_count(bucket_id)
+    return {"Key": key}
+
+
+@app.get("/storage/v1/object/{bucket_id}/{path:path}")
+def storage_download_object(bucket_id: str, path: str):
+    key = f"{bucket_id}/{path}"
+    obj = STATE["storage"]["objects"].get(key)
+    if not obj:
+        return supabase_error(404, "Object not found")
+    content = obj.get("_content", "")
+    mime = (obj.get("metadata") or {}).get("mimetype", "application/octet-stream")
+    return Response(content=content, media_type=mime)
+
+
+@app.delete("/storage/v1/object/{bucket_id}")
+async def storage_bulk_delete_objects(bucket_id: str, request: Request):
+    """Bulk-delete objects by path list (Supabase storage bulk delete API)."""
+    if bucket_id not in STATE["storage"]["buckets"]:
+        return supabase_error(404, f"Bucket {bucket_id!r} not found")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    prefixes: list[str] = body.get("prefixes", [])
+    removed = []
+    for rel_path in prefixes:
+        key = f"{bucket_id}/{rel_path}"
+        if key in STATE["storage"]["objects"]:
+            del STATE["storage"]["objects"][key]
+            removed.append({"name": rel_path})
+    _update_bucket_count(bucket_id)
+    return removed
+
+
+@app.delete("/storage/v1/object/{bucket_id}/{path:path}")
+def storage_delete_object(bucket_id: str, path: str):
+    key = f"{bucket_id}/{path}"
+    if key not in STATE["storage"]["objects"]:
+        return supabase_error(404, "Object not found")
+    del STATE["storage"]["objects"][key]
+    _update_bucket_count(bucket_id)
+    return [{"name": path}]
 
 
 # --- MCP transport -----------------------------------------------------------

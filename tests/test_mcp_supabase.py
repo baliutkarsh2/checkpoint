@@ -123,7 +123,7 @@ async def test_supabase_mcp_key_tools(supabase_twin):
             # 2. insert a row
             result = await session.call_tool("supabase_insert", {
                 "table": "tasks",
-                "row": {"title": "MCP task", "done": False},
+                "data": {"title": "MCP task", "done": False},
             })
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert text  # any response

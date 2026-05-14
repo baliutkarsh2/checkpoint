@@ -349,6 +349,42 @@ def h_count_equals(m: re.Match, state: dict, trace: list) -> CheckResult:
     return _count_compare(state, m.group("noun"), None, "eq", n)
 
 
+def h_exactly_n_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """exactly N <noun> named/titled 'X' exist(s)."""
+    n = int(m.group("n"))
+    noun = m.group("noun")
+    target = m.group("title")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    matching = [i for i in items if isinstance(i, dict) and _has_title(i, target)]
+    return CheckResult(
+        len(matching) == n,
+        f"Found {len(matching)} {noun} named/titled '{target}'; expected exactly {n}.",
+        True,
+    )
+
+
+def h_at_least_n_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N <noun> named/titled 'X' exist(s)."""
+    n = int(m.group("n"))
+    noun = m.group("noun")
+    target = m.group("title")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    matching = [i for i in items if isinstance(i, dict) and _has_title(i, target)]
+    return CheckResult(
+        len(matching) >= n,
+        f"Found {len(matching)} {noun} named/titled '{target}'; expected at least {n}.",
+        True,
+    )
+
+
 def h_titled_exists(m: re.Match, state: dict, trace: list) -> CheckResult:
     noun = m.group("noun")
     target = m.group("title")
@@ -410,6 +446,84 @@ def h_no_new_resource(m: re.Match, state: dict, trace: list) -> CheckResult:
     return _count_compare(state, m.group("noun"), None, "eq", 0)
 
 
+def _supabase_table_rows(state: dict, table: str) -> list:
+    """Collect rows from a Supabase PostgREST dynamic table across flat/nested state."""
+    def _from_sub(sub: dict) -> list:
+        tables = sub.get("tables") or {}
+        tbl = tables.get(table) or {}
+        return list(tbl.get("rows") or [])
+
+    if isinstance(state.get("supabase"), dict):
+        return _from_sub(state["supabase"])
+    return _from_sub(state)
+
+
+def h_trace_call_count(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """'agent called exactly/at least/at most N METHOD /path' — trace-based."""
+    method = m.group("method").upper()
+    path_needle = m.group("path").rstrip("/")
+    raw_op = re.sub(r"\s+", "_", m.group("op").strip().lower())  # "at_least", "at_most", "exactly"
+    n = int(m.group("n"))
+
+    count = sum(
+        1 for e in trace
+        if isinstance(e, dict)
+        and e.get("method", "").upper() == method
+        and path_needle in e.get("path", "")
+    )
+    if raw_op == "exactly":
+        passed = count == n
+    elif raw_op == "at_least":
+        passed = count >= n
+    else:  # at_most
+        passed = count <= n
+    op_label = raw_op.replace("_", " ")
+    return CheckResult(
+        passed,
+        f"Trace has {count} {method} calls matching '{path_needle}'; expected {op_label} {n}.",
+        True,
+    )
+
+
+def h_trace_no_call(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """'agent did not call DELETE /path' / 'no DELETE calls to /path'."""
+    method = m.group("method").upper()
+    path_needle = m.group("path").rstrip("/")
+    count = sum(
+        1 for e in trace
+        if isinstance(e, dict)
+        and e.get("method", "").upper() == method
+        and path_needle in e.get("path", "")
+    )
+    return CheckResult(
+        count == 0,
+        f"Trace has {count} {method} calls matching '{path_needle}'; expected none.",
+        True,
+    )
+
+
+def h_supabase_table_rows_gte(m: re.Match, state: dict, trace: list) -> CheckResult:
+    n = int(m.group("n"))
+    tbl = m.group("tbl").lower()
+    rows = _supabase_table_rows(state, tbl)
+    return CheckResult(
+        len(rows) >= n,
+        f"Table '{tbl}' has {len(rows)} rows; expected at least {n}.",
+        True,
+    )
+
+
+def h_supabase_table_rows_eq(m: re.Match, state: dict, trace: list) -> CheckResult:
+    n = int(m.group("n"))
+    tbl = m.group("tbl").lower()
+    rows = _supabase_table_rows(state, tbl)
+    return CheckResult(
+        len(rows) == n,
+        f"Table '{tbl}' has {len(rows)} rows; expected exactly {n}.",
+        True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pattern catalog
 # ---------------------------------------------------------------------------
@@ -426,6 +540,42 @@ _ST = r"(?P<st>" + "|".join(_STATE_WORDS) + r")"
 _FLAGS = re.I
 
 PATTERNS: list[tuple[re.Pattern, Callable[[re.Match, dict, list], CheckResult]]] = [
+    # --- Trace-based patterns (MUST come before state-based count patterns) ---
+    # "agent called exactly/at least/at most N METHOD requests to /path"
+    (re.compile(
+        r"\bagent\s+(?:called?|made?)\s+(?P<op>exactly|at\s+least|at\s+most)\s+(?P<n>\d+)\s+"
+        r"(?P<method>GET|POST|PUT|PATCH|DELETE)\s+(?:requests?\s+to|calls?\s+to)\s+(?P<path>\S+)",
+        re.IGNORECASE,
+    ), h_trace_call_count),
+    # "METHOD /path was called exactly/at least N times"
+    (re.compile(
+        r"\b(?P<method>GET|POST|PUT|PATCH|DELETE)\s+(?P<path>\S+)\s+(?:was|were|is)\s+called?\s+"
+        r"(?P<op>exactly|at\s+least|at\s+most)\s+(?P<n>\d+)\s+times?",
+        re.IGNORECASE,
+    ), h_trace_call_count),
+    # "agent did not call DELETE /path"
+    (re.compile(
+        r"\bagent\s+did\s+not\s+(?:call|make\s+(?:a\s+)?)\s*(?P<method>GET|POST|PUT|PATCH|DELETE)\s+(?:request\s+to\s+)?(?P<path>\S+)",
+        re.IGNORECASE,
+    ), h_trace_no_call),
+    # "no DELETE requests to /path"  /  "no DELETE calls to /path"
+    (re.compile(
+        r"\bno\s+(?P<method>GET|POST|PUT|PATCH|DELETE)\s+(?:requests?\s+to|calls?\s+to)\s+(?P<path>\S+)",
+        re.IGNORECASE,
+    ), h_trace_no_call),
+
+    # --- Named/titled variants (MUST come before generic count patterns) ------
+    # exactly N <noun> named/titled "X"
+    (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+     h_exactly_n_titled),
+    # at least N <noun> named/titled "X"
+    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+     h_at_least_n_titled),
+    # at least N <noun> exist(s) named "X"  (trailing name qualifier)
+    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\s+exists?\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+     h_at_least_n_titled),
+
+    # --- Generic count patterns -----------------------------------------------
     # exactly N <noun> are <state>
     (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
      h_exactly_n_state),
@@ -481,6 +631,13 @@ PATTERNS: list[tuple[re.Pattern, Callable[[re.Match, dict, list], CheckResult]]]
     # a label named "X" exists  (kept for back-compat with the v0 single-pattern)
     (re.compile(r"\ba?\s*label\s+named\s+[\"'](?P<title>[^\"']+)[\"']\s+exists", _FLAGS),
      h_label_named_exists),
+    # Supabase: "at least N rows in <table>" / "N rows exist in <table>"
+    (re.compile(r"\bat\s+least\s+(?P<n>\d+)\s+rows?\s+(?:exist|exists|in|from)\s+(?:the\s+)?(?P<tbl>\w+)\s*(?:table)?\b", re.I),
+     h_supabase_table_rows_gte),
+    (re.compile(r"\bexactly\s+(?P<n>\d+)\s+rows?\s+(?:exist|exists|in|from)\s+(?:the\s+)?(?P<tbl>\w+)\s*(?:table)?\b", re.I),
+     h_supabase_table_rows_eq),
+    (re.compile(r"\b(?:the\s+)?(?P<tbl>\w+)\s+table\s+has\s+(?:at\s+least\s+)?(?P<n>\d+)\s+rows?\b", re.I),
+     h_supabase_table_rows_gte),
 ]
 
 

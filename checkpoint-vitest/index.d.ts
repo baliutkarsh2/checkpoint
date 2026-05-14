@@ -1,6 +1,13 @@
 // Type definitions for @checkpoint/vitest
 
-export type CheckpointServiceId = "github" | "slack" | "stripe";
+export type CheckpointServiceId =
+  | "github"
+  | "slack"
+  | "stripe"
+  | "linear"
+  | "supabase"
+  | "discord"
+  | "google-workspace";
 
 export interface CheckpointServiceConfig {
   /** How the twin should be reached. Currently only `route` is supported. */
