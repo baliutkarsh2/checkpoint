@@ -38,6 +38,25 @@
     a.link:hover { border-bottom-color:var(--ink); }
     code, .mono { font-family:'Geist Mono', ui-monospace, monospace; }
 
+    /* Util bar (site parity) */
+    .util-bar {
+      background: var(--ink); color: var(--paper);
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px; letter-spacing: 0.04em;
+      height: 28px;
+      position: relative; z-index: 60;
+    }
+    .util-bar .inner { display:flex; justify-content:space-between; align-items:center; height:100%; }
+    .util-bar .left  { display:flex; gap:18px; align-items:center; color: var(--paper); }
+    .util-bar .left .stat-dot {
+      width:7px; height:7px; border-radius:50%;
+      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    }
+    .util-bar .right { display:flex; gap:18px; color: rgba(245,242,234,0.55); }
+    .util-bar .right span { display:flex; gap:6px; align-items:center; }
+    .util-bar .right b { color: var(--paper); font-weight:500; }
+    @media (max-width: 720px) { .util-bar .right { display:none; } }
+
     /* Nav */
     nav.top {
       position:sticky; top:0; z-index:100; height:64px;
@@ -195,6 +214,29 @@
     /* Micro text */
     .micro { font-size:11px; color:var(--ink-4); }
 
+    /* Compare action bar (shown when 2 runs are selected) */
+    .compare-bar {
+      position: fixed; left:50%; bottom: 24px; transform: translateX(-50%);
+      display: none; z-index: 90;
+      border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+      box-shadow: var(--shadow);
+      padding: 10px 14px 10px 18px;
+      gap: 14px; align-items: center;
+      font-family: 'Geist Mono', monospace; font-size: 12px;
+    }
+    .compare-bar.on { display: flex; }
+    .compare-bar .picks { display:flex; gap:10px; align-items:center; color: rgba(245,242,234,0.7); }
+    .compare-bar .picks code { color: var(--accent); }
+    .compare-bar .arrow { color: var(--ink-4); }
+    .compare-bar .btn   { height:30px; padding:0 12px; font-family:'Geist',sans-serif; font-size:12px;
+                          background: var(--accent); color: var(--ink); border-color: var(--accent); }
+    .compare-bar .btn:hover { background:#5fff7a; }
+    .compare-bar .clear { background:transparent; color: rgba(245,242,234,0.5); border:none;
+                          padding:0 8px; cursor:pointer; font:inherit; }
+    .compare-bar .clear:hover { color: var(--accent); }
+    .row-link td.pick-col { width:30px; padding-right:0; }
+    .row-link td.pick-col input { accent-color: var(--ink); }
+
     /* Responsive */
     @media (max-width: 900px) {
       .stat-grid { grid-template-columns: repeat(2, 1fr); }
@@ -204,6 +246,19 @@
   </style>
 </head>
 <body>
+  <div class="util-bar">
+    <div class="container inner">
+      <div class="left">
+        <span class="stat-dot"></span>
+        <span>checkpoint dashboard</span>
+      </div>
+      <div class="right">
+        <span>JUDGE <b>gpt-4o-mini</b></span>
+        <span>HOST <b>{{ host or '127.0.0.1' }}</b></span>
+        <span>BUILD <b>v{{ version }}</b></span>
+      </div>
+    </div>
+  </div>
   <nav class="top">
     <div class="container inner">
       <div class="brand"><span class="brand-dot"></span><span>checkpoint</span></div>
@@ -218,6 +273,57 @@
   <div class="container" style="padding-top:40px; padding-bottom:80px;">
     {% block content %}{% endblock %}
   </div>
+  <div class="compare-bar" id="compare-bar" role="status" aria-live="polite">
+    <span class="picks"><code id="cmp-a">—</code><span class="arrow">vs</span><code id="cmp-b">—</code></span>
+    <a href="#" class="btn" id="cmp-go">Compare &rarr;</a>
+    <button type="button" class="clear" id="cmp-clear">clear</button>
+  </div>
   <footer><div class="container">checkpoint dashboard &middot; v{{ version }}</div></footer>
+  <script>
+    (function(){
+      const bar = document.getElementById('compare-bar');
+      if (!bar) return;
+      const aEl = document.getElementById('cmp-a');
+      const bEl = document.getElementById('cmp-b');
+      const goEl = document.getElementById('cmp-go');
+      const clr = document.getElementById('cmp-clear');
+      let picks = [];
+      function shortId(s){ return (s||'').slice(0,8); }
+      function render(){
+        aEl.textContent = picks[0] ? shortId(picks[0]) : '—';
+        bEl.textContent = picks[1] ? shortId(picks[1]) : '—';
+        if (picks.length === 2){
+          bar.classList.add('on');
+          goEl.href = `/compare?a=${encodeURIComponent(picks[0])}&b=${encodeURIComponent(picks[1])}`;
+        } else { bar.classList.remove('on'); goEl.removeAttribute('href'); }
+      }
+      function reset(){
+        picks = [];
+        document.querySelectorAll('input.cmp-pick').forEach(i => { i.checked = false; });
+        render();
+      }
+      document.addEventListener('change', (e) => {
+        const el = e.target.closest('input.cmp-pick');
+        if (!el) return;
+        const rid = el.value;
+        if (el.checked){
+          if (picks.length >= 2){
+            const drop = picks.shift();
+            const old = document.querySelector(`input.cmp-pick[value="${drop}"]`);
+            if (old) old.checked = false;
+          }
+          picks.push(rid);
+        } else {
+          picks = picks.filter(x => x !== rid);
+        }
+        render();
+      });
+      // Stop the row's onclick navigation from firing when toggling the checkbox.
+      document.addEventListener('click', (e) => {
+        if (e.target.closest('td.pick-col')) e.stopPropagation();
+      }, true);
+      if (clr) clr.addEventListener('click', reset);
+    })();
+  </script>
 </body>
 </html>
