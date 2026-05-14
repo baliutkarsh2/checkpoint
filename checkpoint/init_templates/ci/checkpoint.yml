@@ -1,0 +1,48 @@
+name: checkpoint eval
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario file or directory (default: scenarios/)"
+        required: false
+      clone:
+        description: "Clone override (comma-separated, e.g. github,slack)"
+        required: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install checkpoint
+        run: pip install checkpoint-eval
+
+      - name: Environment check
+        run: checkpoint doctor
+
+      - name: Run scenarios
+        run: |
+          SCENARIO_PATH="${{ github.event.inputs.scenario }}"
+          checkpoint run "${SCENARIO_PATH:-scenarios/}" \
+            --trace-out ci-traces.json
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Upload traces
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkpoint-traces
+          path: |
+            ci-traces.json
+            .checkpoint/cache/runs/
+          retention-days: 30

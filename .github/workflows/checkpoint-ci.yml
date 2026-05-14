@@ -67,6 +67,8 @@ jobs:
           STRIPE_API_KEY: sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789
           LINEAR_BOOTSTRAP_TOKEN: lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011
           SUPABASE_BOOTSTRAP_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff
+          DISCORD_BOOTSTRAP_TOKEN: Bot checkpoint.discord.twin.token.aabbccddeeff0011
+          GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN: ya29.checkpoint_google_workspace_token_aabbccddeeff
 
       - name: Upload trace artifact
         if: always()

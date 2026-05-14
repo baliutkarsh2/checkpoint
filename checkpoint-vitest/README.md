@@ -1,6 +1,6 @@
 # @checkpoint/vitest
 
-Spin up stateful GitHub / Slack / Stripe twins for your JS test suite.
+Spin up stateful GitHub / Slack / Stripe / Linear / Supabase / Discord / Google Workspace twins for your JS test suite.
 
 ```js
 // example.test.js
@@ -51,8 +51,8 @@ Set `CHECKPOINT_CLI=/path/to/checkpoint` to override.
 
 ## Supported services
 
-`github`, `slack`, `stripe`. See the parent
-[Checkpoint README](../README.md) for the underlying twin surface.
+`github`, `slack`, `stripe`, `linear`, `supabase`, `discord`, `google-workspace`.
+See the parent [Checkpoint README](../README.md) for the underlying twin surface.
 
 ## License
 

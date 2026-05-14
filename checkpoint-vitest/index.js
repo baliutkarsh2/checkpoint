@@ -12,7 +12,15 @@
 const { execFileSync, spawnSync } = require("node:child_process");
 const http = require("node:http");
 
-const SUPPORTED_SERVICES = new Set(["github", "slack", "stripe"]);
+const SUPPORTED_SERVICES = new Set([
+  "github",
+  "slack",
+  "stripe",
+  "linear",
+  "supabase",
+  "discord",
+  "google-workspace",
+]);
 const DEFAULT_CLI = process.env.CHECKPOINT_CLI || "checkpoint";
 
 // Tracks every clone this process started so `resetCheckpointTwins()` and
@@ -39,9 +47,11 @@ function _runCli(args, { timeoutMs = 30_000 } = {}) {
 
 function _parseCloneStart(stdout) {
   // The CLI prints a rich-panel block; extract URL + Token via regex.
+  // Token may contain spaces (e.g. Discord uses "Bot <token>") so we
+  // capture the entire remainder of the line rather than just \S+.
   const url = stdout.match(/URL:\s*(\S+)/)?.[1];
   const mcpUrl = stdout.match(/MCP URL:\s*(\S+)/)?.[1];
-  const token = stdout.match(/Token:\s*(\S+)/)?.[1];
+  const token = stdout.match(/Token:\s*(.+)/)?.[1]?.trim();
   if (!url || !token) {
     throw new Error(
       `unable to parse \`checkpoint clone start\` output:\n${stdout}`
@@ -100,21 +110,12 @@ async function withCheckpoint(config = {}) {
     const parsed = _parseCloneStart(stdout);
     _started.set(id, parsed);
 
-    // Seed if requested — same /_seed-file dispatch the runner uses.
+    // Seed if requested — POST /_seed/<name> (the canonical twin endpoint).
     if (seed) {
       try {
         execFileSync(
           "curl",
-          [
-            "-fsS",
-            "-X",
-            "POST",
-            `${parsed.url}/_seed-named`,
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            JSON.stringify({ name: seed }),
-          ],
+          ["-fsS", "-X", "POST", `${parsed.url}/_seed/${encodeURIComponent(seed)}`],
           { stdio: "ignore" }
         );
       } catch {

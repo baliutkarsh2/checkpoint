@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: checkpoint-validate
+        name: checkpoint validate
+        entry: python -m checkpoint.cli validate
+        language: system
+        files: scenarios/.*\.md$
+        pass_filenames: true

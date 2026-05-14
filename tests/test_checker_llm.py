@@ -293,3 +293,71 @@ def test_try_stage2_unknown_noun_falls_through():
                              _client_factory=factory(raw))
     assert res is None
     assert "Unknown resource" in reason
+
+
+# ---------------------------------------------------------------------------
+# count_lte operator (previously untested)
+# ---------------------------------------------------------------------------
+
+def test_evaluate_count_lte_pass():
+    """at most 3 issues → 2 issues should pass."""
+    state = gh(issues=[{"id": 1, "state": "open"}, {"id": 2, "state": "open"}])
+    a = Assertion(resource="issues", operator="count_lte", value=3)
+    r = evaluate(a, state)
+    assert r.handled
+    assert r.passed
+
+
+def test_evaluate_count_lte_exact_pass():
+    """at most 2 issues → exactly 2 issues should pass."""
+    state = gh(issues=[{"id": 1, "state": "open"}, {"id": 2, "state": "open"}])
+    a = Assertion(resource="issues", operator="count_lte", value=2)
+    r = evaluate(a, state)
+    assert r.handled
+    assert r.passed
+
+
+def test_evaluate_count_lte_fail():
+    """at most 1 issue → 3 issues should fail."""
+    state = gh(issues=[{"id": 1}, {"id": 2}, {"id": 3}])
+    a = Assertion(resource="issues", operator="count_lte", value=1)
+    r = evaluate(a, state)
+    assert r.handled
+    assert not r.passed
+
+
+# ---------------------------------------------------------------------------
+# Multi-key selector (state + label combined)
+# ---------------------------------------------------------------------------
+
+def test_evaluate_selector_state_and_label():
+    """Selector with both state and label keys — intersection filtering."""
+    state = gh(issues=[
+        {"id": 1, "state": "open",   "labels": [{"name": "bug"}]},
+        {"id": 2, "state": "closed", "labels": [{"name": "bug"}]},
+        {"id": 3, "state": "open",   "labels": [{"name": "feature"}]},
+    ])
+    a = Assertion(
+        resource="issues",
+        selector={"state": "open", "label": "bug"},
+        operator="count_eq",
+        value=1,
+    )
+    r = evaluate(a, state)
+    assert r.handled
+    assert r.passed  # only issue 1 is open AND has label 'bug'
+
+
+def test_evaluate_selector_state_and_label_no_match():
+    state = gh(issues=[
+        {"id": 1, "state": "open", "labels": [{"name": "bug"}]},
+    ])
+    a = Assertion(
+        resource="issues",
+        selector={"state": "closed", "label": "bug"},
+        operator="count_eq",
+        value=0,
+    )
+    r = evaluate(a, state)
+    assert r.handled
+    assert r.passed  # no closed issues with bug label

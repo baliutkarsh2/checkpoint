@@ -1,7 +1,7 @@
 {
   "name": "@checkpoint/vitest",
   "version": "0.1.0",
-  "description": "Vitest wrapper for Checkpoint — spin up stateful GitHub/Slack/Stripe twins for your JS test suite.",
+  "description": "Vitest wrapper for Checkpoint — spin up stateful GitHub/Slack/Stripe/Linear/Supabase/Discord/Google Workspace twins for your JS test suite.",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [

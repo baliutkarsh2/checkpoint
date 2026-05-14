@@ -79,7 +79,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
         if upsert:
             headers["Prefer"] = "resolution=merge-duplicates"
         rows = data if isinstance(data, list) else [data]
-        return await shim("POST", f"/rest/v1/{table}", json=rows, headers=headers)
+        return await shim("POST", f"/rest/v1/{table}", json=rows, extra_headers=headers)
 
     @mcp.tool()
     async def supabase_update(
@@ -123,7 +123,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
             f"/rest/v1/{table}",
             json=rows,
             params=params,
-            headers={"Prefer": "resolution=merge-duplicates"},
+            extra_headers={"Prefer": "resolution=merge-duplicates"},
         )
 
     # ----- RPC (Stored Functions) ----------------------------------------

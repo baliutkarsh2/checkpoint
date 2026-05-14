@@ -236,6 +236,7 @@ def docker_run_once(
     harness_dir: Path,
     cwd: Optional[str] = None,
     judge_model: str = "gpt-4o-mini",
+    verbose: bool = False,
 ) -> DockerRunResult:
     clones = scenario.clones or ["github"]
     if len(clones) > 1:
@@ -369,7 +370,13 @@ def docker_run_once(
         )
 
         try:
-            exit_info = harness.wait(timeout=scenario.timeout)
+            if verbose:
+                import sys as _sys
+                for _line in harness.logs(stream=True, follow=True):
+                    _sys.stderr.write(_line.decode("utf-8", errors="replace"))
+                exit_info = harness.wait(timeout=10)
+            else:
+                exit_info = harness.wait(timeout=scenario.timeout)
         except Exception as e:
             try:
                 harness.kill()

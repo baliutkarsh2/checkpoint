@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 
@@ -28,6 +29,11 @@ do what the criterion requires, fail it even if the final answer claims success.
 Return strict JSON of the form:
 {"results": [{"criterion": "<exact criterion text>", "passed": true/false, "reasoning": "<1-2 sentences>"}]}
 """
+
+
+def _normalize(s: str) -> str:
+    """Lowercase + collapse whitespace for fuzzy criterion matching."""
+    return re.sub(r"\s+", " ", s.strip().lower())
 
 
 def judge(
@@ -68,6 +74,8 @@ def judge(
     used_idx: set[int] = set()
     for c in criteria:
         match: JudgeResult | None = None
+
+        # Pass 1: exact text match
         for j, item in enumerate(items):
             if j in used_idx:
                 continue
@@ -75,6 +83,20 @@ def judge(
                 match = JudgeResult(c, bool(item.get("passed")), item.get("reasoning") or "")
                 used_idx.add(j)
                 break
+
+        # Pass 2: normalized substring match (handles LLM paraphrasing)
+        if match is None:
+            c_norm = _normalize(c)
+            for j, item in enumerate(items):
+                if j in used_idx:
+                    continue
+                item_norm = _normalize(item.get("criterion") or "")
+                if item_norm and (item_norm in c_norm or c_norm in item_norm):
+                    match = JudgeResult(c, bool(item.get("passed")), item.get("reasoning") or "")
+                    used_idx.add(j)
+                    break
+
+        # Pass 3: positional fallback (LLM returned criteria in different order)
         if match is None:
             idx = len(aligned)
             if idx < len(items) and idx not in used_idx:
@@ -83,6 +105,7 @@ def judge(
                 used_idx.add(idx)
             else:
                 match = JudgeResult(c, False, "Judge returned no verdict for this criterion.")
+
         aligned.append(match)
     return aligned
 
@@ -94,24 +117,35 @@ def _truncate_trace(trace: list, max_entries: int = 200) -> list:
 
 
 def _truncate_state(state: dict, max_chars: int = 30000) -> dict:
-    raw = json.dumps(state)
+    raw = json.dumps(state, default=str)
     if len(raw) <= max_chars:
         return state
-    return {
-        "_note": "state truncated for context",
-        "summary": {
-            "n_repos": len(state.get("repos", {})),
-            "n_issues": len(state.get("issues", {})),
-            "n_comments": len(state.get("comments", {})),
-            "n_labels": len(state.get("labels", {})),
-            "issues_preview": [
-                {
-                    "title": i.get("title"),
-                    "state": i.get("state"),
-                    "labels": [lab.get("name") for lab in i.get("labels", [])],
-                    "comments": i.get("comments"),
-                }
-                for i in list(state.get("issues", {}).values())[:30]
-            ],
-        },
-    }
+
+    # Generic twin-agnostic summary: top-level key → item count (works for any twin).
+    summary: dict = {}
+    for k, v in list(state.items())[:40]:
+        if isinstance(v, dict):
+            summary[k] = len(v)
+        elif isinstance(v, list):
+            summary[k] = len(v)
+        else:
+            summary[k] = v  # scalars (strings, ints) pass through as-is
+
+    # Include a sample of items from the largest collection so the judge
+    # has concrete evidence to cite, not just counts.
+    biggest_key: str | None = None
+    biggest_size = 0
+    for k, v in state.items():
+        if isinstance(v, (dict, list)) and len(v) > biggest_size:
+            biggest_key = k
+            biggest_size = len(v)
+
+    if biggest_key:
+        coll = state[biggest_key]
+        if isinstance(coll, dict):
+            sample = list(coll.values())[:20]
+        else:
+            sample = list(coll)[:20]
+        summary[f"{biggest_key}_sample"] = sample
+
+    return {"_note": "state truncated for context window", "_summary": summary}

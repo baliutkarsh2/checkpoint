@@ -54,7 +54,8 @@ def main():
 @click.option("--reuse-session", is_flag=True, default=False, help="(stub) Reuse hosted session; no-op in v1.")
 @click.option("--docker/--no-docker", default=False, help="Run the harness inside Docker with the TLS sidecar.")
 @click.option("--harness-dir", type=click.Path(exists=True, file_okay=False), default=None, help="Harness directory containing Dockerfile (docker mode).")
-def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session, docker, harness_dir):
+@click.option("--docker-logs", is_flag=True, default=False, help="Stream harness container logs to stderr in real time (docker mode only).")
+def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session, docker, harness_dir, docker_logs):
     """Run scenario(s) against the agent harness.
 
     SCENARIO_PATH may be a single .md file or a directory of scenarios.
@@ -173,7 +174,7 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
             if docker:
                 from .docker.runner import docker_run_once
                 hdir = Path(harness_dir or cwd or ".").resolve()
-                r = docker_run_once(scenario, harness_cmd, hdir, cwd=cwd, judge_model=resolution.model)
+                r = docker_run_once(scenario, harness_cmd, hdir, cwd=cwd, judge_model=resolution.model, verbose=docker_logs)
             else:
                 r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=resolution.model)
             results.append(r)
@@ -384,13 +385,20 @@ def _print_summary(results: list[RunResult]) -> None:
 
 @main.command("init")
 @click.argument("target_dir", required=False, type=click.Path(file_okay=False), default=".")
-def init_cmd(target_dir):
+@click.option(
+    "--template",
+    default="raw",
+    show_default=True,
+    type=click.Choice(["raw", "anthropic", "openai-agents", "langchain"], case_sensitive=False),
+    help="Harness template to scaffold (raw=plain requests, anthropic=Claude SDK, openai-agents=OpenAI Agents SDK, langchain=LangChain).",
+)
+def init_cmd(target_dir, template):
     """CLI-04: scaffold a Checkpoint integration in TARGET_DIR (default cwd)."""
     from . import init as _init
 
     try:
-        result = _init.scaffold(target_dir)
-    except FileNotFoundError as e:
+        result = _init.scaffold(target_dir, template=template)
+    except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]init failed: {e}[/red]")
         sys.exit(1)
 
@@ -485,6 +493,112 @@ def _enumerate_scenarios(root: Path) -> list[dict]:
             "clones": ", ".join(scn.clones),
         })
     return rows
+
+
+def _suggest_reword(text: str) -> str | None:
+    """Return a reword hint when a [D] criterion noun is recognisable but unmatched."""
+    import re as _re
+    from .checker import _RESOURCE_MAP
+    t = text.lower()
+    for noun, _twin, _key in _RESOURCE_MAP:
+        if _re.search(r"\b" + _re.escape(noun) + r"\b", t):
+            return (
+                f'Try: "Exactly N {noun}s exist" / '
+                f'"An {noun} titled \\"…\\" exists" / '
+                f'"At least N {noun}s are <state>"'
+            )
+    return None
+
+
+@scenario.command("generate")
+@click.argument("description")
+@click.option("--output", "-o", type=click.Path(dir_okay=False), default=None,
+              help="Write to file instead of stdout.")
+@click.option("--clone", default=None, help="Twin clone(s) to use (comma-sep).")
+@click.option("--model", default="gpt-4o-mini", show_default=True,
+              help="LLM model to use for generation.")
+def scenario_generate(description, output, clone, model):
+    """Generate a scenario .md from a prose description (uses LLM)."""
+    import os
+    import tempfile
+    from .scenario_gen import generate as _gen
+
+    content = _gen(description, clone=clone, model=model)
+
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(content)
+        tmp = f.name
+    try:
+        parse_file(Path(tmp))
+    except Exception as e:
+        console.print(f"[yellow]Warning: generated file may be malformed: {e}[/yellow]")
+    finally:
+        os.unlink(tmp)
+
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        console.print(f"[green]Wrote scenario to {output}[/green]")
+    else:
+        click.echo(content)
+
+
+@scenario.command("coverage")
+@click.argument("path", required=False, type=click.Path(exists=True), default=".")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit JSON instead of a table.")
+def scenario_coverage(path, as_json):
+    """Report Stage-1 pattern hit rate for [D] criteria under PATH."""
+    from .checker import PATTERNS as _checker_patterns
+
+    rows = []
+    for md in sorted(Path(path).rglob("*.md")):
+        try:
+            scn = parse_file(md)
+        except Exception:
+            continue
+        if not (scn.prompt or scn.criteria):
+            continue
+        for crit in scn.criteria:
+            if crit.kind != "D":
+                continue
+            hit = any(pat.search(crit.text) for pat, _ in _checker_patterns)
+            rows.append({
+                "scenario": md.name,
+                "criterion": crit.text,
+                "stage1": hit,
+            })
+
+    if as_json:
+        total = len(rows)
+        hit_count = sum(1 for r in rows if r["stage1"])
+        click.echo(json.dumps({
+            "total_d": total,
+            "stage1_hits": hit_count,
+            "stage1_pct": round(100 * hit_count / total, 1) if total else 0,
+            "rows": rows,
+        }, indent=2))
+        return
+
+    if not rows:
+        console.print(f"[yellow]No [D] criteria found under {path}[/yellow]")
+        return
+
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Scenario")
+    t.add_column("Criterion", overflow="fold")
+    t.add_column("Stage 1?", width=9)
+    for r in rows:
+        mark = "[green]✓[/green]" if r["stage1"] else "[red]✗[/red]"
+        t.add_row(r["scenario"], r["criterion"][:100], mark)
+    console.print(t)
+
+    total = len(rows)
+    hits = sum(1 for r in rows if r["stage1"])
+    pct = 100 * hits // total if total else 0
+    color = "green" if pct >= 80 else ("yellow" if pct >= 50 else "red")
+    console.print(
+        f"\nStage-1 coverage: [{color}]{hits}/{total} ({pct}%)[/{color}] of [D] criteria"
+    )
 
 
 @main.group()
@@ -666,10 +780,11 @@ def runs_group():
 
 @runs_group.command("list")
 @click.option("--limit", "-n", default=20, show_default=True, help="Max rows to display.")
+@click.option("--scenario", "-s", default=None, help="Filter by scenario name substring.")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit JSON.")
-def runs_list(limit, as_json):
+def runs_list(limit, scenario, as_json):
     """List recent run records from .checkpoint/cache/runs/."""
-    rows = _load_recent_runs(limit)
+    rows = _load_recent_runs(limit, scenario_filter=scenario)
     if as_json:
         click.echo(json.dumps(rows, indent=2))
         return
@@ -700,17 +815,23 @@ def runs_list(limit, as_json):
     console.print(t)
 
 
-def _load_recent_runs(limit: int) -> list[dict]:
-    """Load up to `limit` run records sorted newest-first."""
+def _load_recent_runs(limit: int, scenario_filter: str | None = None) -> list[dict]:
+    """Load up to `limit` run records sorted newest-first, optionally filtered by scenario name."""
     if not RUNS_DIR.exists():
         return []
     files = sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     out: list[dict] = []
-    for f in files[:limit]:
+    pattern = scenario_filter.lower() if scenario_filter else None
+    for f in files:
         try:
-            out.append(json.loads(f.read_text()))
+            rec = json.loads(f.read_text())
         except (OSError, json.JSONDecodeError):
             continue
+        if pattern and pattern not in (rec.get("scenario") or "").lower():
+            continue
+        out.append(rec)
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -838,6 +959,332 @@ def _score_color(sat: float) -> str:
     if sat >= 50:
         return "yellow"
     return "red"
+
+
+# =============================================================================
+# CI/CD helpers
+# =============================================================================
+
+@main.group("ci")
+def ci_group():
+    """CI/CD integration helpers."""
+
+
+@ci_group.command("init")
+@click.argument("target_dir", required=False, type=click.Path(file_okay=False), default=".")
+@click.option("--pre-commit", "with_pre_commit", is_flag=True, default=False,
+              help="Also write .pre-commit-config.yaml.")
+def ci_init(target_dir, with_pre_commit):
+    """Scaffold a GitHub Actions workflow into TARGET_DIR (default cwd)."""
+    import shutil
+    tpl_dir = Path(__file__).parent / "init_templates" / "ci"
+    target = Path(target_dir)
+    wf_dir = target / ".github" / "workflows"
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    dest = wf_dir / "checkpoint.yml"
+    if dest.exists():
+        console.print(f"[yellow]=[/yellow] {dest} (already exists, kept)")
+    else:
+        shutil.copy(tpl_dir / "checkpoint.yml", dest)
+        console.print(f"[green]+[/green] {dest}")
+    if with_pre_commit:
+        pc_dest = target / ".pre-commit-config.yaml"
+        if pc_dest.exists():
+            console.print(f"[yellow]=[/yellow] {pc_dest} (already exists, kept)")
+        else:
+            shutil.copy(tpl_dir / "pre-commit-config.yaml", pc_dest)
+            console.print(f"[green]+[/green] {pc_dest}")
+    console.print(Panel.fit(
+        "Add OPENAI_API_KEY to GitHub Secrets, then push.\n"
+        + ("Run `pre-commit install` to activate the hook." if with_pre_commit else ""),
+        title="checkpoint ci init",
+        border_style="green",
+    ))
+
+
+@main.command("badge")
+@click.argument("run_id", required=False)
+@click.option("--md", "as_md", is_flag=True, default=False,
+              help="Emit Markdown `![…](…)` instead of raw URL.")
+@click.option("--label", default="checkpoint", show_default=True,
+              help="Left-hand label on the badge.")
+def badge_cmd(run_id, as_md, label):
+    """Generate a shields.io badge URL from a run record (defaults to last run)."""
+    record = _load_run_record(run_id)
+    if record is None:
+        console.print("[red]No run record found. Run `checkpoint run` first.[/red]")
+        sys.exit(1)
+    sat = record.get("satisfaction", 0)
+    color = "brightgreen" if sat == 100 else ("yellow" if sat >= 50 else "red")
+    pct_encoded = f"{sat:.0f}%25"
+    label_encoded = label.replace("-", "--").replace("_", "__")
+    url = f"https://img.shields.io/badge/{label_encoded}-{pct_encoded}-{color}"
+    if as_md:
+        click.echo(f"![{label}]({url})")
+    else:
+        click.echo(url)
+
+
+# =============================================================================
+# Reporting
+# =============================================================================
+
+@main.command("report")
+@click.argument("scenario_pattern", required=False, default="")
+@click.option("--limit", "-n", default=50, show_default=True,
+              help="Max runs to aggregate.")
+@click.option("--json", "as_json", is_flag=True, default=False)
+def report(scenario_pattern, limit, as_json):
+    """Aggregate pass-rate trend and flaky criteria across recent runs.
+
+    SCENARIO_PATTERN is a substring filter on scenario name (empty = all runs).
+    """
+    from .analytics import load_runs_for_scenario, compute_trend, detect_flaky
+
+    runs = load_runs_for_scenario(scenario_pattern, RUNS_DIR, limit)
+    if not runs:
+        console.print("[yellow]No matching run records found.[/yellow]")
+        sys.exit(0)
+
+    trend = compute_trend(runs)
+    flaky = detect_flaky(trend)
+
+    if as_json:
+        click.echo(json.dumps({**trend, "flaky_criteria": flaky}, indent=2))
+        return
+
+    console.print(Panel.fit(
+        f"[bold]Scenario:[/bold] {scenario_pattern or '(all)'}\n"
+        f"[bold]Runs:[/bold] {trend['run_count']}  "
+        f"[bold]Avg:[/bold] {trend['avg_score']}/100  "
+        f"[bold]Range:[/bold] {trend['min_score']}-{trend['max_score']}",
+        title="checkpoint report",
+        border_style="cyan",
+    ))
+
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Criterion", overflow="fold")
+    t.add_column("Kind", width=4)
+    t.add_column("Pass rate", width=10)
+    t.add_column("Runs", width=6)
+    t.add_column("Stable?", width=8)
+    for text, s in sorted(trend["criteria"].items()):
+        rate = s["pass_rate"]
+        color = "green" if rate >= 0.8 else ("yellow" if rate >= 0.5 else "red")
+        stable = "[yellow]FLAKY[/yellow]" if text in flaky else "[green]ok[/green]"
+        t.add_row(
+            text[:80], s["kind"],
+            f"[{color}]{rate:.0%}[/{color}]",
+            str(s["total"]), stable,
+        )
+    console.print(t)
+
+    if flaky:
+        console.print(f"\n[yellow]{len(flaky)} flaky criterion(a) detected.[/yellow]")
+
+
+# =============================================================================
+# Docker utilities
+# =============================================================================
+
+@main.group("docker")
+def docker_group():
+    """Docker harness utilities."""
+
+
+@docker_group.command("build")
+@click.argument("harness_dir", required=False,
+                type=click.Path(exists=True, file_okay=False), default=".")
+@click.option("--tag", default=None,
+              help="Image tag (default: checkpoint-harness:latest).")
+def docker_build(harness_dir, tag):
+    """Pre-build the harness Docker image without running a scenario."""
+    from .docker.harness_image import build_harness_image
+    tag = tag or "checkpoint-harness:latest"
+    console.print(f"[dim]Building harness image from {harness_dir!r} -> {tag}[/dim]")
+    try:
+        build_harness_image(Path(harness_dir), tag=tag)
+        console.print(f"[green]Built {tag}[/green]")
+    except Exception as e:
+        console.print(f"[red]Build failed: {e}[/red]")
+        sys.exit(1)
+
+
+@main.command("validate")
+@click.argument("scenario_path", type=click.Path(exists=True))
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit structured JSON instead of a table.")
+def validate(scenario_path, as_json):
+    """Validate a scenario file: parse, check required sections, lint criteria patterns.
+
+    Exits 0 if valid, 1 if any errors are found.
+    """
+    from .checker import PATTERNS as _checker_patterns
+
+    path = Path(scenario_path)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # 1. Parse
+    try:
+        scn = parse_file(path)
+    except Exception as exc:
+        errors.append(f"Parse error: {exc}")
+        if as_json:
+            click.echo(json.dumps({"valid": False, "errors": errors, "warnings": []}, indent=2))
+        else:
+            console.print(f"[red]Parse error: {exc}[/red]")
+        sys.exit(1)
+
+    # 2. Required sections
+    if not scn.prompt:
+        errors.append("Missing required section: ## Prompt (or ## Task)")
+    if not scn.criteria:
+        warnings.append("No success criteria found (## Success Criteria / ## Checks)")
+
+    # 3. Criteria pattern coverage
+    unhandled: list[str] = []
+    for crit in scn.criteria:
+        text = crit.text.strip()
+        kind = crit.kind  # "D" or "P"
+        if kind == "D":
+            # PATTERNS is list[tuple[re.Pattern, handler]]; use .search() directly.
+            matched = any(pat.search(text) for pat, _ in _checker_patterns)
+            if not matched:
+                unhandled.append(text)
+
+    if unhandled:
+        lines = []
+        for t in unhandled:
+            lines.append(f"  - {t[:120]}")
+            hint = _suggest_reword(t)
+            if hint:
+                lines.append(f"    -> {hint}")
+        warnings.append(
+            f"{len(unhandled)} [D] criterion(a) have no deterministic pattern match "
+            f"(will fall through to LLM stage 2):\n" + "\n".join(lines)
+        )
+
+    # 4. Clone validity
+    known_clones = {
+        "github", "slack", "stripe", "linear", "supabase", "discord", "google-workspace",
+    }
+    for clone_id in scn.clones:
+        if clone_id not in known_clones:
+            errors.append(f"Unknown clone: {clone_id!r} (known: {', '.join(sorted(known_clones))})")
+
+    # 5. Config key spelling
+    known_config_keys = {
+        "clones", "seed", "seed-file", "seed_file", "seed_name", "runs",
+        "timeout", "tags", "evaluator-model", "evaluator_model",
+    }
+    for key in scn.config:
+        if key not in known_config_keys:
+            warnings.append(f"Unknown config key: {key!r}")
+
+    valid = len(errors) == 0
+
+    if as_json:
+        click.echo(json.dumps({
+            "valid": valid,
+            "scenario": str(path),
+            "title": scn.title,
+            "clones": list(scn.clones),
+            "runs": scn.runs,
+            "criteria_count": len(scn.criteria),
+            "errors": errors,
+            "warnings": warnings,
+        }, indent=2))
+    else:
+        console.print(Panel.fit(
+            f"[bold]{scn.title or path.name}[/bold]\n"
+            f"[dim]clones:[/dim] {', '.join(scn.clones) or '(none)'}\n"
+            f"[dim]criteria:[/dim] {len(scn.criteria)} "
+            f"({sum(1 for c in scn.criteria if c.kind == 'D')} [D], "
+            f"{sum(1 for c in scn.criteria if c.kind == 'P')} [P])\n"
+            f"[dim]runs:[/dim] {scn.runs}",
+            title=f"validate — {path.name}",
+            border_style="cyan",
+        ))
+        if errors:
+            for e in errors:
+                console.print(f"[red]  Error:[/red] {e}")
+        if warnings:
+            for w in warnings:
+                console.print(f"[yellow]  Warning:[/yellow] {w}")
+        if valid:
+            console.print("[green]  Scenario is valid.[/green]")
+        else:
+            console.print(f"[red]  {len(errors)} error(s) found.[/red]")
+
+    sys.exit(0 if valid else 1)
+
+
+@main.command("replay")
+@click.argument("run_id", required=False)
+@click.option("--clone", default=None, help="Filter trace to a specific clone.")
+@click.option("--limit", "-n", default=50, show_default=True, help="Max trace events to show.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit raw JSON trace.")
+def replay(run_id, clone, limit, as_json):
+    """Replay the API trace from a past run to inspect what the agent did.
+
+    Defaults to the most recent run. Useful for debugging failing criteria by
+    seeing exactly which API calls were made and in what order.
+    """
+    record = _load_run_record(run_id)
+    if record is None:
+        if run_id:
+            console.print(f"[red]No run record for id={run_id}[/red]")
+        else:
+            console.print("[red]No last-run pointer. Run `checkpoint run` first.[/red]")
+        sys.exit(1)
+
+    trace = record.get("trace") or []
+
+    # Trace may be a flat list or {clone: [events]} dict (multi-clone runs).
+    if isinstance(trace, dict):
+        if clone:
+            trace = trace.get(clone, [])
+        else:
+            # Flatten all clone traces in order (interleaved by index).
+            merged: list[dict] = []
+            for clone_id, events in trace.items():
+                for ev in events:
+                    merged.append({**ev, "_clone": clone_id})
+            trace = merged
+    elif clone:
+        trace = [ev for ev in trace if ev.get("clone") == clone or ev.get("_clone") == clone]
+
+    if as_json:
+        click.echo(json.dumps(trace[:limit], indent=2, default=str))
+        return
+
+    rid = record.get("run_id", "?")
+    sat = record.get("satisfaction", 0.0)
+    color = "green" if sat == 100 else ("yellow" if sat >= 50 else "red")
+    console.print(Panel.fit(
+        f"[bold]Replay: run {rid[:12]}[/bold]\n"
+        f"[dim]scenario:[/dim] {record.get('scenario', '?')}\n"
+        f"[dim]score:[/dim] [{color}]{sat}/100[/{color}]\n"
+        f"[dim]events:[/dim] {len(trace)} total (showing first {min(limit, len(trace))})",
+        border_style=color,
+        title="checkpoint replay",
+    ))
+
+    t = Table(box=box.SIMPLE_HEAD, show_lines=False)
+    t.add_column("#", style="dim", width=4)
+    t.add_column("Clone", width=16)
+    t.add_column("Method", width=7)
+    t.add_column("Path", overflow="fold")
+    t.add_column("Status", width=6)
+
+    for i, ev in enumerate(trace[:limit]):
+        clone_id = ev.get("_clone") or ev.get("clone") or "—"
+        method = ev.get("method") or ev.get("type") or "—"
+        path = ev.get("path") or ev.get("url") or "—"
+        status = str(ev.get("status") or ev.get("status_code") or "—")
+        t.add_row(str(i + 1), clone_id, method, path[:80], status)
+
+    console.print(t)
 
 
 if __name__ == "__main__":

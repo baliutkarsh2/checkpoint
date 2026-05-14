@@ -110,12 +110,13 @@ def _build_bot_user() -> dict:
 async def _middleware(request: Request, call_next):
     path = request.url.path
     is_introspection = path.startswith(INTROSPECTION_PREFIX)
-    if not is_introspection:
+    is_mcp = path.startswith("/mcp")
+    if not is_introspection and not is_mcp:
         STATE["_counters"]["requests"] += 1
         if not _check_auth(request):
             return JSONResponse(status_code=401, content={"code": 0, "message": "401: Unauthorized"})
     response = await call_next(request)
-    if not is_introspection:
+    if not is_introspection and not is_mcp:
         TRACE.append({
             "method": request.method,
             "path": path,
