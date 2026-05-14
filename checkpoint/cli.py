@@ -30,6 +30,7 @@ from .config import (
 )
 from .failure_analyzer import analyze as analyze_failures
 from .run_record import build_record, write_record, load_last_run, RUNS_DIR
+from .compare_diff import build_compare_diff as _build_compare_diff
 from . import diagnostics as _diag
 
 console = Console()
@@ -295,7 +296,7 @@ def _print_run(r: RunResult) -> None:
         t.add_column("Reasoning", overflow="fold")
         t.add_column("Eval", style="dim", width=14)
         for c in r.criteria:
-            mark = "[green]✓[/green]" if c.passed else "[red]✗[/red]"
+            mark = "[green]PASS[/green]" if c.passed else "[red]FAIL[/red]"
             t.add_row(mark, f"[{c.kind}]", c.text, c.reasoning, c.evaluator)
         console.print(t)
 
@@ -426,7 +427,7 @@ def doctor():
     t.add_column("Check")
     t.add_column("Detail", overflow="fold")
     for c in checks:
-        mark = "[green]✓[/green]" if c.ok else "[red]✗[/red]"
+        mark = "[green]PASS[/green]" if c.ok else "[red]FAIL[/red]"
         t.add_row(mark, c.name, c.detail)
     console.print(t)
     failed = [c for c in checks if not c.ok]
@@ -435,9 +436,9 @@ def doctor():
         console.print("[bold red]Fix the following:[/bold red]")
         for c in failed:
             if c.fix:
-                console.print(f"  [red]✗[/red] {c.name}: [yellow]{c.fix}[/yellow]")
+                console.print(f"  [red]FAIL[/red] {c.name}: [yellow]{c.fix}[/yellow]")
             else:
-                console.print(f"  [red]✗[/red] {c.name}")
+                console.print(f"  [red]FAIL[/red] {c.name}")
         sys.exit(1)
     console.print("[green]All checks passed.[/green]")
     sys.exit(0)
@@ -588,7 +589,7 @@ def scenario_coverage(path, as_json):
     t.add_column("Criterion", overflow="fold")
     t.add_column("Stage 1?", width=9)
     for r in rows:
-        mark = "[green]✓[/green]" if r["stage1"] else "[red]✗[/red]"
+        mark = "[green]PASS[/green]" if r["stage1"] else "[red]FAIL[/red]"
         t.add_row(r["scenario"], r["criterion"][:100], mark)
     console.print(t)
 
@@ -670,7 +671,7 @@ def _print_run_record(record: dict) -> None:
         t.add_column("Eval", style="dim", width=14)
         t.add_column("Reasoning", overflow="fold")
         for c in criteria:
-            mark = "[green]✓[/green]" if c.get("passed") else "[red]✗[/red]"
+            mark = "[green]PASS[/green]" if c.get("passed") else "[red]FAIL[/red]"
             t.add_row(
                 mark,
                 f"[{c.get('kind', '?')}]",
@@ -864,51 +865,6 @@ def compare(run_id_a, run_id_b, as_json):
     _print_compare(diff, run_id_a, run_id_b, rec_a, rec_b)
 
 
-def _build_compare_diff(rec_a: dict, rec_b: dict) -> dict:
-    """Build a structured diff between two run records."""
-    sat_a = rec_a.get("satisfaction", 0.0)
-    sat_b = rec_b.get("satisfaction", 0.0)
-    delta = sat_b - sat_a
-
-    crit_a = {c["text"]: c for c in (rec_a.get("criteria") or [])}
-    crit_b = {c["text"]: c for c in (rec_b.get("criteria") or [])}
-    all_texts = sorted(set(crit_a) | set(crit_b))
-
-    criterion_diffs: list[dict] = []
-    for text in all_texts:
-        ca = crit_a.get(text)
-        cb = crit_b.get(text)
-        pa = ca.get("passed", False) if ca else None
-        pb = cb.get("passed", False) if cb else None
-        if pa == pb:
-            change = "same"
-        elif pa is None:
-            change = "added"
-        elif pb is None:
-            change = "removed"
-        elif pb and not pa:
-            change = "fixed"
-        else:
-            change = "regressed"
-        criterion_diffs.append({
-            "text": text,
-            "baseline_passed": pa,
-            "candidate_passed": pb,
-            "change": change,
-        })
-
-    return {
-        "baseline_score": sat_a,
-        "candidate_score": sat_b,
-        "delta": round(delta, 1),
-        "regressions": [d for d in criterion_diffs if d["change"] == "regressed"],
-        "fixes": [d for d in criterion_diffs if d["change"] == "fixed"],
-        "same": [d for d in criterion_diffs if d["change"] == "same"],
-        "added": [d for d in criterion_diffs if d["change"] == "added"],
-        "removed": [d for d in criterion_diffs if d["change"] == "removed"],
-        "criteria": criterion_diffs,
-    }
-
 
 def _print_compare(diff: dict, id_a: str, id_b: str, rec_a: dict, rec_b: dict) -> None:
     sat_a = diff["baseline_score"]
@@ -930,23 +886,23 @@ def _print_compare(diff: dict, id_a: str, id_b: str, rec_a: dict, rec_b: dict) -
     if diff["regressions"]:
         console.print("\n[bold red]Regressions (passed → failed)[/bold red]")
         for d in diff["regressions"]:
-            console.print(f"  [red]✗[/red] {d['text'][:120]}")
+            console.print(f"  [red]FAIL[/red] {d['text'][:120]}")
 
     if diff["fixes"]:
         console.print("\n[bold green]Fixes (failed → passed)[/bold green]")
         for d in diff["fixes"]:
-            console.print(f"  [green]✓[/green] {d['text'][:120]}")
+            console.print(f"  [green]PASS[/green] {d['text'][:120]}")
 
     if diff["added"]:
         console.print("\n[dim]New criteria (only in candidate)[/dim]")
         for d in diff["added"]:
-            mark = "[green]✓[/green]" if d["candidate_passed"] else "[red]✗[/red]"
+            mark = "[green]PASS[/green]" if d["candidate_passed"] else "[red]FAIL[/red]"
             console.print(f"  {mark} {d['text'][:120]}")
 
     if diff["removed"]:
         console.print("\n[dim]Removed criteria (only in baseline)[/dim]")
         for d in diff["removed"]:
-            mark = "[green]✓[/green]" if d["baseline_passed"] else "[red]✗[/red]"
+            mark = "[green]PASS[/green]" if d["baseline_passed"] else "[red]FAIL[/red]"
             console.print(f"  {mark} {d['text'][:120]}")
 
     if not diff["regressions"] and not diff["fixes"]:
@@ -1285,6 +1241,44 @@ def replay(run_id, clone, limit, as_json):
         t.add_row(str(i + 1), clone_id, method, path[:80], status)
 
     console.print(t)
+
+
+@main.command("serve")
+@click.option("--port", default=4001, show_default=True, help="Port to listen on.")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option(
+    "--scenarios", "scenarios_dir",
+    type=click.Path(file_okay=False),
+    default=".",
+    show_default=True,
+    help="Directory to scan for .md scenario files.",
+)
+@click.option("--open/--no-open", "auto_open", default=False,
+              help="Open the dashboard in the default browser.")
+def serve(port, host, scenarios_dir, auto_open):
+    """Start the checkpoint web dashboard."""
+    import uvicorn
+    import webbrowser
+    from .dashboard.app import create_app
+    from .clone_manager import DEFAULT_REGISTRY
+
+    app = create_app(
+        runs_dir=RUNS_DIR,
+        scenarios_dir=Path(scenarios_dir).resolve(),
+        clone_registry_path=DEFAULT_REGISTRY,
+    )
+    url = f"http://{host}:{port}"
+    console.print(Panel.fit(
+        f"[bold]Dashboard:[/bold]  {url}\n"
+        f"[dim]Runs dir:[/dim]   {RUNS_DIR.resolve()}\n"
+        f"[dim]Scenarios:[/dim]  {Path(scenarios_dir).resolve()}\n\n"
+        f"Press Ctrl-C to stop.",
+        title="checkpoint serve",
+        border_style="green",
+    ))
+    if auto_open:
+        webbrowser.open(url)
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

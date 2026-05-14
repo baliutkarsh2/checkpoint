@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set active = 'runs' %}
+{% block title %}Runs — checkpoint{% endblock %}
+{% block content %}
+<div class="page-title">Run history</div>
+<div class="page-sub">
+  {{ total }} total run(s){% if scenario_filter %}, filtered to "{{ scenario_filter }}"{% endif %}
+</div>
+
+{# Summary stat tiles #}
+<div class="stat-grid">
+  <div class="card">
+    <div class="card-title">Total runs</div>
+    <div class="stat-num">{{ summary.total_runs }}</div>
+    <div class="stat-sub">all time</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Avg score &middot; 30d</div>
+    <div class="stat-num" style="color:{{ summary.avg_score_30d | score_color }}">{{ summary.avg_score_30d }}</div>
+    <div class="stat-sub">/ 100</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Pass rate &middot; 30d</div>
+    <div class="stat-num">{{ summary.pass_rate_30d }}<span style="font-size:18px;color:var(--ink-3)">%</span></div>
+    <div class="stat-sub">runs at 100</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Recent failures</div>
+    <div class="stat-num" style="color:var(--fail)">{{ summary.recent_fail_count }}</div>
+    <div class="stat-sub">last 7 days</div>
+  </div>
+</div>
+
+{# Live clones panel #}
+{% if live_clones %}
+<div class="section-title">Live clones</div>
+<div class="card tight" style="margin-bottom:24px">
+  <table>
+    <thead><tr>
+      <th style="width:18px"></th>
+      <th>Clone</th><th>URL</th><th>MCP URL</th><th>Started</th><th class="mono">PID</th>
+    </tr></thead>
+    <tbody>
+    {% for c in live_clones %}
+    <tr>
+      <td style="width:18px"><span class="live-dot"></span></td>
+      <td><strong>{{ c.id }}</strong></td>
+      <td class="mono">{{ c.url }}</td>
+      <td class="mono">{{ c.mcp_url }}</td>
+      <td class="micro">{{ (c.started_at or '—')[:19] }}</td>
+      <td class="mono">{{ c.pid }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# Filter form #}
+<form method="get" class="filter-row">
+  <input type="search" name="scenario" placeholder="filter by scenario name…"
+         value="{{ scenario_filter or '' }}" style="flex:1; max-width:480px">
+  <button type="submit" class="btn">Filter</button>
+  {% if scenario_filter %}<a href="/" class="btn outline">Clear</a>{% endif %}
+</form>
+
+{# Runs table #}
+<div class="card tight">
+<table>
+  <thead><tr>
+    <th>Run ID</th><th>Scenario</th><th>Score</th><th>Criteria</th>
+    <th>Model</th><th>Timestamp</th>
+  </tr></thead>
+  <tbody>
+  {% for r in runs %}
+  {% set sat = r.satisfaction | int %}
+  {% set color = sat | score_color %}
+  {% set passed = r.criteria | selectattr('passed') | list | length %}
+  {% set total_c = r.criteria | length %}
+  <tr class="row-link" onclick="location.href='/runs/{{ r.run_id }}'">
+    <td class="mono">{{ r.run_id | short_id }}</td>
+    <td>{{ r.scenario or '—' }}</td>
+    <td>
+      <span class="mono" style="color:{{ color }};font-weight:600">{{ sat }}</span>
+      <span class="score-bar"><span class="fill" style="width:{{ sat }}%; background:{{ color }}"></span></span>
+    </td>
+    <td class="mono">{{ passed }}/{{ total_c }}</td>
+    <td class="mono">{{ r.evaluator_model or '—' }}</td>
+    <td class="micro">{{ ((r.env or {}).get('timestamp') or '—')[:19] }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty-state">
+    No runs yet. Run <code>checkpoint run scenarios/</code> to populate this view.
+  </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{# Pagination #}
+{% if total > per_page %}
+<div class="pager">
+  <div>Showing {{ ((page-1)*per_page)+1 }}–{{ [page*per_page, total] | min }} of {{ total }}</div>
+  <div class="links">
+    {% if page > 1 %}
+    <a href="?page={{ page-1 }}{% if scenario_filter %}&scenario={{ scenario_filter }}{% endif %}">&#8249; prev</a>
+    {% endif %}
+    {% if page * per_page < total %}
+    <a href="?page={{ page+1 }}{% if scenario_filter %}&scenario={{ scenario_filter }}{% endif %}">next &#8250;</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
