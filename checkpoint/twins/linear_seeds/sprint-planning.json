@@ -1,0 +1,60 @@
+{
+  "state": {
+    "teams": {
+      "team-engineering": {
+        "id": "team-engineering",
+        "name": "Engineering",
+        "key": "ENG",
+        "description": "Core engineering team",
+        "createdAt": "2025-01-01T00:00:00+00:00"
+      }
+    },
+    "projects": {
+      "proj-q1": {
+        "id": "proj-q1",
+        "name": "Q1 2025 Milestones",
+        "description": "Q1 2025 engineering goals",
+        "state": "started",
+        "teamIds": ["team-engineering"],
+        "createdAt": "2025-01-01T00:00:00+00:00",
+        "updatedAt": "2025-01-01T00:00:00+00:00",
+        "startDate": "2025-01-01",
+        "targetDate": "2025-03-31",
+        "progress": 0.0,
+        "issueCount": 0
+      }
+    },
+    "cycles": {
+      "cycle-1": {
+        "id": "cycle-1",
+        "teamId": "team-engineering",
+        "number": 1,
+        "name": "Sprint 1",
+        "startsAt": "2025-01-20T00:00:00+00:00",
+        "endsAt": "2025-02-03T00:00:00+00:00",
+        "description": "First sprint of the year",
+        "createdAt": "2025-01-18T00:00:00+00:00",
+        "issueCount": 0
+      }
+    },
+    "users": {
+      "user-alice": {"id": "user-alice", "name": "Alice Chen", "email": "alice@acme.test", "displayName": "Alice Chen", "active": true, "admin": true, "createdAt": "2024-12-01T00:00:00+00:00"},
+      "user-bob": {"id": "user-bob", "name": "Bob Smith", "email": "bob@acme.test", "displayName": "Bob Smith", "active": true, "admin": false, "createdAt": "2024-12-01T00:00:00+00:00"},
+      "user-carol": {"id": "user-carol", "name": "Carol Lee", "email": "carol@acme.test", "displayName": "Carol Lee", "active": true, "admin": false, "createdAt": "2024-12-01T00:00:00+00:00"}
+    },
+    "labels": {
+      "label-bug": {"id": "label-bug", "name": "Bug", "color": "#EB5757", "teamId": "team-engineering", "createdAt": "2025-01-01T00:00:00+00:00"},
+      "label-feature": {"id": "label-feature", "name": "Feature", "color": "#5E6AD2", "teamId": "team-engineering", "createdAt": "2025-01-01T00:00:00+00:00"}
+    },
+    "issues": {
+      "issue-sp1": {"id": "issue-sp1", "identifier": "ENG-20", "title": "Auth service performance audit", "description": "Profile and optimize token validation.", "priority": 2, "priorityLabel": "High", "state": {"id": "state-todo", "name": "Todo", "type": "unstarted"}, "stateId": "state-todo", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": [], "labels": [], "projectId": "proj-q1", "cycleId": null, "estimate": 5, "dueDate": null, "createdAt": "2025-01-18T00:00:00+00:00", "updatedAt": "2025-01-18T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-20", "commentCount": 0},
+      "issue-sp2": {"id": "issue-sp2", "identifier": "ENG-21", "title": "Onboarding wizard redesign", "description": "Simplify onboarding to 3 steps.", "priority": 2, "priorityLabel": "High", "state": {"id": "state-todo", "name": "Todo", "type": "unstarted"}, "stateId": "state-todo", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-feature"], "labels": [{"id": "label-feature", "name": "Feature", "color": "#5E6AD2"}], "projectId": "proj-q1", "cycleId": null, "estimate": 8, "dueDate": null, "createdAt": "2025-01-18T00:00:00+00:00", "updatedAt": "2025-01-18T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-21", "commentCount": 0},
+      "issue-sp3": {"id": "issue-sp3", "identifier": "ENG-22", "title": "Fix payment gateway timeout", "description": "Stripe calls timing out in EU region.", "priority": 1, "priorityLabel": "Urgent", "state": {"id": "state-todo", "name": "Todo", "type": "unstarted"}, "stateId": "state-todo", "teamId": "team-engineering", "assigneeId": null, "assignee": null, "labelIds": ["label-bug"], "labels": [{"id": "label-bug", "name": "Bug", "color": "#EB5757"}], "projectId": null, "cycleId": null, "estimate": 3, "dueDate": null, "createdAt": "2025-01-19T00:00:00+00:00", "updatedAt": "2025-01-19T00:00:00+00:00", "completedAt": null, "canceledAt": null, "url": "https://linear.app/checkpoint/issue/ENG-22", "commentCount": 0}
+    },
+    "_counters": {
+      "issue_seq": {"ENG": 22},
+      "requests": 0
+    }
+  },
+  "config": {}
+}

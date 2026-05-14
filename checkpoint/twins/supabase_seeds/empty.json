@@ -1,0 +1,15 @@
+{
+  "state": {
+    "tables": {},
+    "auth_users": {},
+    "storage": {
+      "buckets": {},
+      "objects": {}
+    },
+    "rpc_stubs": {},
+    "_counters": {
+      "requests": 0
+    }
+  },
+  "config": {}
+}

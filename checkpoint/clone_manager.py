@@ -45,12 +45,20 @@ TWIN_APPS = {
     "github": "checkpoint.twins.github:app",
     "slack": "checkpoint.twins.slack:app",
     "stripe": "checkpoint.twins.stripe:app",
+    "linear": "checkpoint.twins.linear:app",
+    "supabase": "checkpoint.twins.supabase:app",
+    "discord": "checkpoint.twins.discord:app",
+    "google-workspace": "checkpoint.twins.google_workspace:app",
 }
 
 _CLONE_TOKEN = {
     "github": "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt",
     "slack": "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx",
     "stripe": "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789",
+    "linear": "lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011",
+    "supabase": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff",
+    "discord": "Bot checkpoint.discord.twin.token.aabbccddeeff0011",
+    "google-workspace": "ya29.checkpoint_google_workspace_token_aabbccddeeff",
 }
 
 
@@ -92,14 +100,18 @@ def _wait_healthy(port: int, host: str = "127.0.0.1", timeout: float = 15.0) -> 
 
 
 def _process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
         return True
-    except ProcessLookupError:
-        return False
     except PermissionError:
-        # process exists, just not ours
+        # Process exists but we can't signal it.
         return True
+    except OSError:
+        # ProcessLookupError (Unix ESRCH) or WinError 87 (Windows: no such
+        # process / invalid parameter) — treat as dead.
+        return False
 
 
 def start(
@@ -234,9 +246,12 @@ def stop(
                 break
             time.sleep(0.1)
         else:
+            # signal.SIGKILL does not exist on Windows; fall back to SIGTERM
+            # (which calls TerminateProcess there — effectively a force-kill).
+            _force_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
             try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
+                os.kill(pid, _force_sig)
+            except OSError:
                 pass
     del registry[clone_id]
     _write_registry(registry_path, registry)

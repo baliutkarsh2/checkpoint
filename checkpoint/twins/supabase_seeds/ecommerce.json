@@ -1,0 +1,162 @@
+{
+  "state": {
+    "tables": {
+      "products": {
+        "columns": ["id", "name", "description", "price", "stock", "category", "active", "created_at", "updated_at"],
+        "rows": [
+          {
+            "id": "prod-001",
+            "name": "Wireless Headphones",
+            "description": "Premium noise-cancelling wireless headphones.",
+            "price": 149.99,
+            "stock": 42,
+            "category": "electronics",
+            "active": true,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "id": "prod-002",
+            "name": "USB-C Hub",
+            "description": "7-in-1 USB-C hub with HDMI, USB 3.0, and SD card reader.",
+            "price": 49.99,
+            "stock": 128,
+            "category": "electronics",
+            "active": true,
+            "created_at": "2025-01-02T00:00:00+00:00",
+            "updated_at": "2025-01-02T00:00:00+00:00"
+          },
+          {
+            "id": "prod-003",
+            "name": "Mechanical Keyboard",
+            "description": "Compact TKL mechanical keyboard with Cherry MX switches.",
+            "price": 89.99,
+            "stock": 0,
+            "category": "electronics",
+            "active": true,
+            "created_at": "2025-01-03T00:00:00+00:00",
+            "updated_at": "2025-01-10T00:00:00+00:00"
+          },
+          {
+            "id": "prod-004",
+            "name": "Laptop Stand",
+            "description": "Adjustable aluminum laptop stand.",
+            "price": 29.99,
+            "stock": 75,
+            "category": "accessories",
+            "active": true,
+            "created_at": "2025-01-04T00:00:00+00:00",
+            "updated_at": "2025-01-04T00:00:00+00:00"
+          }
+        ]
+      },
+      "orders": {
+        "columns": ["id", "customer_email", "status", "total", "items", "created_at", "updated_at"],
+        "rows": [
+          {
+            "id": "order-001",
+            "customer_email": "alice@acme.test",
+            "status": "delivered",
+            "total": 199.98,
+            "items": [{"product_id": "prod-001", "qty": 1, "price": 149.99}, {"product_id": "prod-004", "qty": 1, "price": 29.99}],
+            "created_at": "2025-01-15T10:00:00+00:00",
+            "updated_at": "2025-01-18T14:00:00+00:00"
+          },
+          {
+            "id": "order-002",
+            "customer_email": "bob@acme.test",
+            "status": "processing",
+            "total": 49.99,
+            "items": [{"product_id": "prod-002", "qty": 1, "price": 49.99}],
+            "created_at": "2025-01-20T09:00:00+00:00",
+            "updated_at": "2025-01-20T09:00:00+00:00"
+          }
+        ]
+      },
+      "customers": {
+        "columns": ["id", "email", "name", "phone", "total_orders", "total_spent", "created_at"],
+        "rows": [
+          {
+            "id": "cust-001",
+            "email": "alice@acme.test",
+            "name": "Alice Chen",
+            "phone": "+1-555-0101",
+            "total_orders": 1,
+            "total_spent": 199.98,
+            "created_at": "2025-01-10T00:00:00+00:00"
+          },
+          {
+            "id": "cust-002",
+            "email": "bob@acme.test",
+            "name": "Bob Smith",
+            "phone": null,
+            "total_orders": 1,
+            "total_spent": 49.99,
+            "created_at": "2025-01-19T00:00:00+00:00"
+          }
+        ]
+      }
+    },
+    "auth_users": {
+      "admin-uuid": {
+        "id": "admin-uuid",
+        "email": "admin@acme.test",
+        "role": "service_role",
+        "created_at": "2025-01-01T00:00:00+00:00",
+        "updated_at": "2025-01-01T00:00:00+00:00",
+        "last_sign_in_at": "2025-01-20T00:00:00+00:00",
+        "email_confirmed_at": "2025-01-01T00:01:00+00:00",
+        "user_metadata": {},
+        "app_metadata": {"provider": "email", "role": "admin"}
+      }
+    },
+    "storage": {
+      "buckets": {
+        "product-images": {
+          "id": "product-images",
+          "name": "product-images",
+          "public": true,
+          "created_at": "2025-01-01T00:00:00+00:00",
+          "updated_at": "2025-01-01T00:00:00+00:00",
+          "object_count": 1
+        },
+        "invoices": {
+          "id": "invoices",
+          "name": "invoices",
+          "public": false,
+          "created_at": "2025-01-01T00:00:00+00:00",
+          "updated_at": "2025-01-01T00:00:00+00:00",
+          "object_count": 0
+        }
+      },
+      "objects": {
+        "product-images/prod-001/hero.jpg": {
+          "id": "product-images/prod-001/hero.jpg",
+          "bucket_id": "product-images",
+          "name": "prod-001/hero.jpg",
+          "content_type": "image/jpeg",
+          "size": 204800,
+          "created_at": "2025-01-01T01:00:00+00:00",
+          "updated_at": "2025-01-01T01:00:00+00:00"
+        }
+      }
+    },
+    "rpc_stubs": {
+      "get_top_products": {
+        "description": "Returns top N products by total orders",
+        "returns": [
+          {"product_id": "prod-001", "total_sales": 1},
+          {"product_id": "prod-002", "total_sales": 1}
+        ]
+      },
+      "calculate_order_total": {
+        "description": "Calculates order total with discounts",
+        "returns": {"total": 0, "discount": 0}
+      }
+    },
+    "_counters": {
+      "requests": 0
+    }
+  },
+  "config": {}
+}

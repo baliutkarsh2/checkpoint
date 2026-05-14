@@ -1,0 +1,128 @@
+{
+  "state": {
+    "guilds": {
+      "guild-ops": {
+        "id": "guild-ops",
+        "name": "Ops Team",
+        "icon": null,
+        "description": "Operations and incident response",
+        "owner_id": "user-oncall",
+        "approximate_member_count": 4,
+        "approximate_presence_count": 3,
+        "verification_level": 1,
+        "explicit_content_filter": 0,
+        "features": []
+      }
+    },
+    "channels": {
+      "chan-incidents": {
+        "id": "chan-incidents",
+        "guild_id": "guild-ops",
+        "name": "incidents",
+        "type": 0,
+        "position": 0,
+        "topic": "Active incident tracking",
+        "nsfw": false,
+        "parent_id": null,
+        "permission_overwrites": [],
+        "last_message_id": "msg-001"
+      },
+      "chan-postmortem": {
+        "id": "chan-postmortem",
+        "guild_id": "guild-ops",
+        "name": "postmortem",
+        "type": 0,
+        "position": 1,
+        "topic": "Post-incident reviews",
+        "nsfw": false,
+        "parent_id": null,
+        "permission_overwrites": [],
+        "last_message_id": null
+      },
+      "chan-monitoring": {
+        "id": "chan-monitoring",
+        "guild_id": "guild-ops",
+        "name": "monitoring",
+        "type": 0,
+        "position": 2,
+        "topic": "Automated monitoring alerts",
+        "nsfw": false,
+        "parent_id": null,
+        "permission_overwrites": [],
+        "last_message_id": null
+      }
+    },
+    "messages": {
+      "chan-incidents": [
+        {
+          "id": "msg-001",
+          "channel_id": "chan-incidents",
+          "author": {"id": "user-bot", "username": "monitor-bot", "discriminator": "0000", "bot": true},
+          "content": "🚨 ALERT: Payment service latency > 5s for 3 consecutive checks. P99=8.2s. Started 14:32 UTC.",
+          "timestamp": "2025-01-20T14:32:00+00:00",
+          "edited_timestamp": null,
+          "reactions": [],
+          "pinned": false,
+          "type": 0
+        }
+      ],
+      "chan-postmortem": [],
+      "chan-monitoring": []
+    },
+    "users": {
+      "user-oncall": {"id": "user-oncall", "username": "oncall-engineer", "discriminator": "0001", "avatar": null, "bot": false},
+      "user-sre": {"id": "user-sre", "username": "sre-lead", "discriminator": "0002", "avatar": null, "bot": false},
+      "user-dev": {"id": "user-dev", "username": "dev-alice", "discriminator": "0003", "avatar": null, "bot": false},
+      "user-bot": {"id": "user-bot", "username": "monitor-bot", "discriminator": "0000", "avatar": null, "bot": true}
+    },
+    "members": {
+      "guild-ops": {
+        "user-oncall": {
+          "user": {"id": "user-oncall", "username": "oncall-engineer"},
+          "nick": "On-Call",
+          "roles": ["role-oncall"],
+          "joined_at": "2025-01-01T00:00:00+00:00",
+          "deaf": false,
+          "mute": false
+        },
+        "user-sre": {
+          "user": {"id": "user-sre", "username": "sre-lead"},
+          "nick": "SRE Lead",
+          "roles": ["role-sre"],
+          "joined_at": "2025-01-01T00:00:00+00:00",
+          "deaf": false,
+          "mute": false
+        },
+        "user-dev": {
+          "user": {"id": "user-dev", "username": "dev-alice"},
+          "nick": "Alice",
+          "roles": ["role-dev"],
+          "joined_at": "2025-01-02T00:00:00+00:00",
+          "deaf": false,
+          "mute": false
+        }
+      }
+    },
+    "roles": {
+      "guild-ops": {
+        "role-oncall": {"id": "role-oncall", "name": "On-Call", "color": 16711680, "hoist": true, "permissions": "8", "mentionable": true, "position": 3, "managed": false},
+        "role-sre": {"id": "role-sre", "name": "SRE", "color": 16753920, "hoist": true, "permissions": "104188992", "mentionable": true, "position": 2, "managed": false},
+        "role-dev": {"id": "role-dev", "name": "Developer", "color": 3447003, "hoist": false, "permissions": "104188992", "mentionable": false, "position": 1, "managed": false}
+      }
+    },
+    "webhooks": {
+      "webhook-monitor": {
+        "id": "webhook-monitor",
+        "type": 1,
+        "channel_id": "chan-incidents",
+        "guild_id": "guild-ops",
+        "name": "monitor-bot",
+        "avatar": null,
+        "token": "checkpoint-webhook-token-monitor-aabbcc",
+        "url": "https://discord.com/api/webhooks/webhook-monitor/checkpoint-webhook-token-monitor-aabbcc"
+      }
+    },
+    "_counters": {"snowflake_seq": 2000, "requests": 0}
+  },
+  "config": {}
+}

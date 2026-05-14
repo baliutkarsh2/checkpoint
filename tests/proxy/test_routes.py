@@ -20,6 +20,6 @@ def test_register_overwrites_twin_url():
 
 
 def test_phase3_has_github_slack_stripe():
-    # Phase 3 registered slack.com + api.stripe.com.
+    # Phase 3 registered slack.com + api.stripe.com; later phases added the rest.
     domains = set(all_domains())
-    assert domains == {"api.github.com", "slack.com", "api.stripe.com"}
+    assert {"api.github.com", "slack.com", "api.stripe.com"}.issubset(domains)

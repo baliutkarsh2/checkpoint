@@ -1,0 +1,115 @@
+{
+  "state": {
+    "tables": {
+      "profiles": {
+        "columns": ["id", "username", "full_name", "avatar_url", "website", "created_at", "updated_at"],
+        "rows": [
+          {
+            "id": "user-alice-uuid",
+            "username": "alice",
+            "full_name": "Alice Chen",
+            "avatar_url": null,
+            "website": "https://alice.dev",
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00"
+          },
+          {
+            "id": "user-bob-uuid",
+            "username": "bob",
+            "full_name": "Bob Smith",
+            "avatar_url": null,
+            "website": null,
+            "created_at": "2025-01-02T00:00:00+00:00",
+            "updated_at": "2025-01-02T00:00:00+00:00"
+          }
+        ]
+      },
+      "posts": {
+        "columns": ["id", "title", "body", "author_id", "published", "created_at", "updated_at"],
+        "rows": [
+          {
+            "id": "post-1",
+            "title": "Hello World",
+            "body": "My first post on this platform.",
+            "author_id": "user-alice-uuid",
+            "published": true,
+            "created_at": "2025-01-10T09:00:00+00:00",
+            "updated_at": "2025-01-10T09:00:00+00:00"
+          },
+          {
+            "id": "post-2",
+            "title": "Getting Started with Supabase",
+            "body": "Supabase is an open source Firebase alternative.",
+            "author_id": "user-alice-uuid",
+            "published": true,
+            "created_at": "2025-01-15T10:00:00+00:00",
+            "updated_at": "2025-01-15T10:00:00+00:00"
+          },
+          {
+            "id": "post-3",
+            "title": "Draft post",
+            "body": "Work in progress.",
+            "author_id": "user-bob-uuid",
+            "published": false,
+            "created_at": "2025-01-20T11:00:00+00:00",
+            "updated_at": "2025-01-20T11:00:00+00:00"
+          }
+        ]
+      },
+      "comments": {
+        "columns": ["id", "post_id", "author_id", "body", "created_at"],
+        "rows": [
+          {
+            "id": "comment-1",
+            "post_id": "post-1",
+            "author_id": "user-bob-uuid",
+            "body": "Great post!",
+            "created_at": "2025-01-11T08:00:00+00:00"
+          }
+        ]
+      }
+    },
+    "auth_users": {
+      "user-alice-uuid": {
+        "id": "user-alice-uuid",
+        "email": "alice@acme.test",
+        "role": "authenticated",
+        "created_at": "2025-01-01T00:00:00+00:00",
+        "updated_at": "2025-01-01T00:00:00+00:00",
+        "last_sign_in_at": "2025-01-20T08:00:00+00:00",
+        "email_confirmed_at": "2025-01-01T00:01:00+00:00",
+        "user_metadata": {"full_name": "Alice Chen"},
+        "app_metadata": {"provider": "email"}
+      },
+      "user-bob-uuid": {
+        "id": "user-bob-uuid",
+        "email": "bob@acme.test",
+        "role": "authenticated",
+        "created_at": "2025-01-02T00:00:00+00:00",
+        "updated_at": "2025-01-02T00:00:00+00:00",
+        "last_sign_in_at": "2025-01-18T12:00:00+00:00",
+        "email_confirmed_at": "2025-01-02T00:01:00+00:00",
+        "user_metadata": {"full_name": "Bob Smith"},
+        "app_metadata": {"provider": "email"}
+      }
+    },
+    "storage": {
+      "buckets": {
+        "avatars": {
+          "id": "avatars",
+          "name": "avatars",
+          "public": true,
+          "created_at": "2025-01-01T00:00:00+00:00",
+          "updated_at": "2025-01-01T00:00:00+00:00",
+          "object_count": 0
+        }
+      },
+      "objects": {}
+    },
+    "rpc_stubs": {},
+    "_counters": {
+      "requests": 0
+    }
+  },
+  "config": {}
+}

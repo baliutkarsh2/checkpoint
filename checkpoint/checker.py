@@ -82,6 +82,49 @@ _RESOURCE_MAP: list[tuple[str, str, str]] = [
     ("payment links", "stripe", "payment_links"),
     ("dispute",       "stripe", "disputes"),
     ("disputes",      "stripe", "disputes"),
+    # linear
+    ("linear issue",   "linear", "issues"),
+    ("linear issues",  "linear", "issues"),
+    ("linear project", "linear", "projects"),
+    ("linear projects", "linear", "projects"),
+    ("cycle",          "linear", "cycles"),
+    ("cycles",         "linear", "cycles"),
+    ("sprint",         "linear", "cycles"),
+    ("sprints",        "linear", "cycles"),
+    ("team",           "linear", "teams"),
+    ("teams",          "linear", "teams"),
+    # supabase
+    ("bucket",         "supabase", "buckets"),
+    ("buckets",        "supabase", "buckets"),
+    ("object",         "supabase", "objects"),
+    ("objects",        "supabase", "objects"),
+    ("auth user",      "supabase", "auth_users"),
+    ("auth users",     "supabase", "auth_users"),
+    # discord
+    ("guild",          "discord",  "guilds"),
+    ("guilds",         "discord",  "guilds"),
+    ("discord channel", "discord", "channels"),
+    ("discord channels", "discord", "channels"),
+    ("discord message", "discord", "messages"),
+    ("discord messages", "discord", "messages"),
+    ("role",           "discord",  "roles"),
+    ("roles",          "discord",  "roles"),
+    ("webhook",        "discord",  "webhooks"),
+    ("webhooks",       "discord",  "webhooks"),
+    # google workspace — gmail
+    ("email",          "google-workspace", "gmail_messages"),
+    ("emails",         "google-workspace", "gmail_messages"),
+    ("gmail message",  "google-workspace", "gmail_messages"),
+    ("gmail messages", "google-workspace", "gmail_messages"),
+    ("thread",         "google-workspace", "gmail_threads"),
+    ("threads",        "google-workspace", "gmail_threads"),
+    ("draft",          "google-workspace", "gmail_drafts"),
+    ("drafts",         "google-workspace", "gmail_drafts"),
+    ("gmail label",    "google-workspace", "gmail_labels"),
+    ("gmail labels",   "google-workspace", "gmail_labels"),
+    # google workspace — drive
+    ("drive file",     "google-workspace", "drive_files"),
+    ("drive files",    "google-workspace", "drive_files"),
     # cross-twin
     ("user",          "_any",   "users"),
     ("users",         "_any",   "users"),
@@ -153,6 +196,21 @@ def _collect(state: dict, twin: str, key: str) -> list:
                         for r in (m.get("reactions") or []):
                             out.append(r)
         return out
+
+    if key == "auth_users":
+        # Supabase: auth_users is a dict keyed by user id.
+        raw_au = sub.get("auth_users") or {}
+        if isinstance(raw_au, dict):
+            return list(raw_au.values())
+        return raw_au if isinstance(raw_au, list) else []
+
+    if key in ("buckets", "objects"):
+        # Supabase: buckets and objects are nested under STATE["storage"].
+        storage = sub.get("storage") or {}
+        raw_s = storage.get(key) or {}
+        if isinstance(raw_s, dict):
+            return list(raw_s.values())
+        return raw_s if isinstance(raw_s, list) else []
 
     raw = sub.get(key)
     if isinstance(raw, dict):

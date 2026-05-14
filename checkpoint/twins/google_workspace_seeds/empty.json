@@ -1,0 +1,18 @@
+{
+  "state": {
+    "gmail_threads": {},
+    "gmail_messages": {},
+    "gmail_labels": {},
+    "gmail_drafts": {},
+    "drive_files": {},
+    "drive_permissions": {},
+    "user_profile": {
+      "emailAddress": "user@checkpoint.test",
+      "messagesTotal": 0,
+      "threadsTotal": 0,
+      "historyId": "1"
+    },
+    "_counters": {"requests": 0}
+  },
+  "config": {}
+}

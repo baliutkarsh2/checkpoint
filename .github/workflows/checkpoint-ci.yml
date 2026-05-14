@@ -1,0 +1,85 @@
+name: Checkpoint Agent Eval
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Path to a single scenario file (leave empty to run all)"
+        required: false
+        default: ""
+      clone:
+        description: "Override clone (e.g. linear, supabase, github)"
+        required: false
+        default: ""
+
+jobs:
+  eval:
+    name: Run checkpoint scenarios
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install checkpoint and dependencies
+        run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+
+      - name: Run checkpoint doctor
+        run: checkpoint doctor
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run scenarios
+        run: |
+          SCENARIO="${{ github.event.inputs.scenario }}"
+          CLONE_OVERRIDE="${{ github.event.inputs.clone }}"
+
+          ARGS=""
+          if [ -n "$SCENARIO" ]; then
+            ARGS="$SCENARIO"
+          else
+            ARGS="scenarios/"
+          fi
+
+          if [ -n "$CLONE_OVERRIDE" ]; then
+            ARGS="$ARGS --clone $CLONE_OVERRIDE"
+          fi
+
+          checkpoint run $ARGS \
+            --harness "$HARNESS_CMD" \
+            --trace-out ci-traces.json
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HARNESS_CMD: ${{ vars.CHECKPOINT_HARNESS_CMD || 'python example/harness.py' }}
+          # Per-clone bootstrap tokens (match twin defaults; safe for CI)
+          GITHUB_TOKEN: ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt
+          SLACK_TOKEN: xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx
+          STRIPE_API_KEY: sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789
+          LINEAR_BOOTSTRAP_TOKEN: lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011
+          SUPABASE_BOOTSTRAP_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff
+
+      - name: Upload trace artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-traces-${{ github.run_id }}
+          path: ci-traces.json
+          retention-days: 30
+
+      - name: Upload run records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-run-records-${{ github.run_id }}
+          path: .checkpoint/cache/runs/
+          retention-days: 30
