@@ -47,10 +47,17 @@ export default function LiveRun() {
           ? "info"
           : "warn";
 
+  // Derive agent + mode straight from the cmd args.
+  const harnessDir = (() => {
+    const i = j.cmd.indexOf("--harness-dir");
+    return i >= 0 && i + 1 < j.cmd.length ? j.cmd[i + 1] : null;
+  })();
+  const isDocker = j.cmd.includes("--docker");
+
   return (
     <>
       <PageHead
-        title={`Live run · ${j.scenario}`}
+        title={j.scenario.split(/[\\/]/).pop() || j.scenario}
         sub={
           <>
             Started {fmtTimestamp(j.started_at)} · job{" "}
@@ -72,6 +79,43 @@ export default function LiveRun() {
           ) : undefined
         }
       />
+
+      <div className="card mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-[10px] uppercase font-mono tracking-wider text-ink-3 dark:text-paper-3">
+              Scenario
+            </div>
+            <div className="font-medium text-base mt-0.5 truncate">
+              {j.scenario.split(/[\\/]/).pop()}
+            </div>
+            <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3 truncate mt-0.5">
+              {j.scenario}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase font-mono tracking-wider text-ink-3 dark:text-paper-3">
+              Agent
+            </div>
+            <div className="font-medium text-base mt-0.5">
+              {harnessDir ? harnessDir.split(/[\\/]/).pop() : "default (.checkpoint.json)"}
+            </div>
+            {harnessDir && (
+              <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3 truncate mt-0.5">
+                {harnessDir}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-[10px] uppercase font-mono tracking-wider text-ink-3 dark:text-paper-3">
+              Mode
+            </div>
+            <div className="font-medium text-base mt-0.5">
+              {isDocker ? "docker" : "subprocess"}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="card-tight">
         <div className="border-b border-paper-3 dark:border-ink-3 px-4 py-2 flex justify-between items-center text-xs font-mono">

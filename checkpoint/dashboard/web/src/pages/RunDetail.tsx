@@ -42,8 +42,7 @@ export default function RunDetail() {
         sub={
           <>
             Run <code className="font-mono">{r.run_id}</code> ·{" "}
-            {fmtTimestamp((r.env as { timestamp?: string } | null)?.timestamp)} · model{" "}
-            <code className="font-mono">{r.evaluator_model || "—"}</code>
+            {fmtTimestamp((r.env as { timestamp?: string } | null)?.timestamp)}
           </>
         }
         right={
@@ -53,8 +52,37 @@ export default function RunDetail() {
         }
       />
 
+      {/* Identity strip — what was tested, with what, in what mode */}
+      <div className="card mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <Identity
+            label="Scenario"
+            value={r.scenario || "(inline)"}
+            sub={r.scenario_path}
+            link={
+              r.scenario_path
+                ? `/scenarios/file?path=${encodeURIComponent(r.scenario_path)}`
+                : undefined
+            }
+          />
+          <Identity
+            label="Agent"
+            value={r.harness?.name || "unknown"}
+            sub={r.harness?.dir || r.harness?.cmd || ""}
+          />
+          <Identity
+            label="Mode"
+            value={r.harness?.mode || "—"}
+          />
+          <Identity
+            label="Judge model"
+            value={r.evaluator_model || "—"}
+          />
+        </div>
+      </div>
+
       {/* Score header */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-5 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
         <StatTile label="Satisfaction" value={`${sat} / 100`} color={scoreColor(sat)} />
         <StatTile
           label="Criteria"
@@ -65,6 +93,10 @@ export default function RunDetail() {
               <span>{r.criteria.length}</span>
             </>
           }
+        />
+        <StatTile
+          label="Duration"
+          value={r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
         />
         {r.exit_code !== null && r.exit_code !== undefined && (
           <StatTile
@@ -144,5 +176,38 @@ export default function RunDetail() {
         <pre className="json mt-3">{stableStringify(r.state)}</pre>
       </details>
     </>
+  );
+}
+
+function Identity({
+  label,
+  value,
+  sub,
+  link,
+}: {
+  label: string;
+  value: string;
+  sub?: string | null;
+  link?: string;
+}) {
+  const body = (
+    <>
+      <div className="text-[10px] uppercase font-mono tracking-wider text-ink-3 dark:text-paper-3">
+        {label}
+      </div>
+      <div className="font-medium text-base mt-0.5 truncate">{value}</div>
+      {sub && (
+        <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3 truncate mt-0.5">
+          {sub}
+        </div>
+      )}
+    </>
+  );
+  return link ? (
+    <Link to={link} className="block hover:underline">
+      {body}
+    </Link>
+  ) : (
+    <div>{body}</div>
   );
 }

@@ -13,6 +13,7 @@ export interface Criterion {
 export interface RunRecord {
   run_id: string;
   scenario: string | null;
+  scenario_path: string | null;
   satisfaction: number;
   criteria: Criterion[];
   evaluator_model: string | null;
@@ -23,6 +24,8 @@ export interface RunRecord {
   final_answer: string | null;
   failure_analysis?: Record<string, string> | null;
   stderr?: string | null;
+  harness?: { name?: string; dir?: string; mode?: string; cmd?: string } | null;
+  duration_ms?: number | null;
 }
 
 export interface TraceEvent {
@@ -39,12 +42,49 @@ export interface TraceEvent {
 export interface RunSummary {
   run_id: string;
   scenario: string | null;
+  scenario_path: string | null;
   satisfaction: number;
   criteria_pass: number;
   criteria_total: number;
   evaluator_model: string | null;
   timestamp: string | null;
   exit_code: number | null;
+  // Agent + mode + duration. Older records may have these as null.
+  harness_name: string | null;
+  harness_dir: string | null;
+  mode: "docker" | "subprocess" | null;
+  duration_ms: number | null;
+}
+
+export interface ScenarioDetail {
+  path: string;
+  abs_path: string;
+  title: string;
+  prompt: string;
+  setup: string;
+  expected: string;
+  criteria: { text: string; kind: "D" | "P" }[];
+  config: Record<string, unknown>;
+  clones: string[];
+  raw: string;
+  runs: RunSummary[];
+  stats: { total_runs: number; avg_score: number; pass_rate: number; last_at: string | null };
+}
+
+export interface AgentDetail {
+  agent: AgentInfo;
+  readme: string;
+  runs: RunSummary[];
+  by_scenario: Record<
+    string,
+    { runs: number; avg_score: number; last_score: number | null; last_at: string | null }
+  >;
+  stats: { total_runs: number; avg_score: number; pass_rate: number; last_at: string | null };
+}
+
+export interface SupportedClone {
+  id: string;
+  module: string;
 }
 
 export interface RunsPage {
@@ -177,9 +217,11 @@ async function request<T>(
 export const api = {
   meta: () => request<AppMeta>("/api/meta"),
   summary: () => request<DashboardSummary>("/api/summary"),
-  runs: (params: { scenario?: string; page?: number; per_page?: number } = {}) => {
+  runs: (params: { scenario?: string; agent?: string; mode?: string; page?: number; per_page?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.scenario) q.set("scenario", params.scenario);
+    if (params.agent) q.set("agent", params.agent);
+    if (params.mode) q.set("mode", params.mode);
     if (params.page) q.set("page", String(params.page));
     if (params.per_page) q.set("per_page", String(params.per_page));
     const qs = q.toString();
@@ -194,6 +236,33 @@ export const api = {
     );
   },
   agents: () => request<AgentInfo[]>("/api/agents"),
+  agent: (id: string) => request<AgentDetail>(`/api/agents/${encodeURIComponent(id)}`),
+  scenarioFile: (path: string) =>
+    request<ScenarioDetail>(`/api/scenarios/file?path=${encodeURIComponent(path)}`),
+  clonesSupported: () => request<SupportedClone[]>("/api/clones/supported"),
+  clone: {
+    start: (id: string) =>
+      request<CloneInfo>(`/api/clones/${encodeURIComponent(id)}`, { method: "POST" }),
+    stop: (id: string) =>
+      request<{ id: string; was_running: boolean }>(
+        `/api/clones/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+    seed: (id: string, name: string) =>
+      request<{ ok: boolean; status?: number; error?: string }>(
+        `/api/clones/${encodeURIComponent(id)}/seed/${encodeURIComponent(name)}`,
+        { method: "POST" },
+      ),
+    reset: (id: string) =>
+      request<{ ok: boolean; status?: number; error?: string }>(
+        `/api/clones/${encodeURIComponent(id)}/reset`,
+        { method: "POST" },
+      ),
+    tools: (id: string) =>
+      request<{ ok: boolean; tools: { name: string; description?: string }[] }>(
+        `/api/clones/${encodeURIComponent(id)}/tools`,
+      ),
+  },
   report: (params: { scenario?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.scenario) q.set("scenario", params.scenario);

@@ -17,14 +17,22 @@ import { comparePicks, useComparePicks } from "@/lib/store";
 export default function Runs() {
   const [params, setParams] = useSearchParams();
   const scenario = params.get("scenario") || "";
+  const agent = params.get("agent") || "";
+  const mode = params.get("mode") || "";
   const page = Number(params.get("page") || 1);
   const navigate = useNavigate();
 
   const summaryQ = useQuery({ queryKey: ["summary"], queryFn: api.summary });
   const clonesQ = useQuery({ queryKey: ["clones"], queryFn: api.clones });
   const runsQ = useQuery({
-    queryKey: ["runs", { scenario, page }],
-    queryFn: () => api.runs({ scenario: scenario || undefined, page }),
+    queryKey: ["runs", { scenario, agent, mode, page }],
+    queryFn: () =>
+      api.runs({
+        scenario: scenario || undefined,
+        agent: agent || undefined,
+        mode: mode || undefined,
+        page,
+      }),
   });
   const scenariosQ = useQuery({ queryKey: ["scenarios"], queryFn: () => api.scenarios() });
 
@@ -37,8 +45,10 @@ export default function Runs() {
         title="Run history"
         sub={
           runsQ.data
-            ? `${runsQ.data.total} total run${runsQ.data.total === 1 ? "" : "s"}${
-                scenario ? `, filtered to "${scenario}"` : ""
+            ? `${runsQ.data.total} run${runsQ.data.total === 1 ? "" : "s"}${
+                scenario ? ` · scenario ~ "${scenario}"` : ""
+              }${agent ? ` · agent ~ "${agent}"` : ""}${
+                mode ? ` · mode = ${mode}` : ""
               }`
             : "Loading…"
         }
@@ -131,13 +141,17 @@ export default function Runs() {
 
       {/* Filter form */}
       <form
-        className="flex gap-2 items-center mb-6"
+        className="flex gap-2 items-center mb-6 flex-wrap"
         onSubmit={(e) => {
           e.preventDefault();
-          const v = (e.currentTarget.elements.namedItem("scenario") as HTMLInputElement).value;
+          const f = e.currentTarget.elements;
+          const sv = (f.namedItem("scenario") as HTMLInputElement).value;
+          const av = (f.namedItem("agent") as HTMLInputElement).value;
+          const mv = (f.namedItem("mode") as HTMLSelectElement).value;
           const p = new URLSearchParams(params);
-          if (v) p.set("scenario", v);
-          else p.delete("scenario");
+          if (sv) p.set("scenario", sv); else p.delete("scenario");
+          if (av) p.set("agent", av); else p.delete("agent");
+          if (mv) p.set("mode", mv); else p.delete("mode");
           p.delete("page");
           setParams(p);
         }}
@@ -145,12 +159,29 @@ export default function Runs() {
         <input
           name="scenario"
           type="search"
-          className="input flex-1 max-w-md"
-          placeholder="filter by scenario name…  ( / to focus )"
+          className="input flex-1 min-w-[180px] max-w-xs"
+          placeholder="scenario substring  ( / )"
           defaultValue={scenario}
         />
+        <input
+          name="agent"
+          type="search"
+          className="input min-w-[160px]"
+          placeholder="agent substring"
+          defaultValue={agent}
+        />
+        <select
+          name="mode"
+          className="input"
+          defaultValue={mode}
+          aria-label="Mode filter"
+        >
+          <option value="">all modes</option>
+          <option value="docker">docker</option>
+          <option value="subprocess">subprocess</option>
+        </select>
         <button type="submit" className="btn">Filter</button>
-        {scenario && (
+        {(scenario || agent || mode) && (
           <button
             type="button"
             className="btn-outline"
@@ -171,23 +202,25 @@ export default function Runs() {
               <thead>
                 <tr>
                   <th className="!w-8" title="Pick 2 to compare">⊕</th>
-                  <th>Run ID</th>
+                  <th>Run</th>
                   <th>Scenario</th>
+                  <th>Agent</th>
                   <th>Score</th>
                   <th>Criteria</th>
-                  <th>Model</th>
+                  <th>Mode</th>
+                  <th>Duration</th>
                   <th>Timestamp</th>
                 </tr>
               </thead>
               <tbody>
                 {runsQ.data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={9}>
                       <EmptyState
                         title="No runs yet"
                         hint={
                           <>
-                            Run <code className="font-mono">checkpoint run scenarios/</code> or click <strong>New run</strong> above.
+                            Click <strong>New run</strong> above, or run <code className="font-mono">checkpoint run scenarios/</code> from the CLI.
                           </>
                         }
                       />
@@ -201,7 +234,6 @@ export default function Runs() {
                       key={r.run_id}
                       className="row-link"
                       onClick={(e) => {
-                        // Don't navigate if the click was on the checkbox.
                         if ((e.target as HTMLElement).closest("input")) return;
                         navigate(`/runs/${r.run_id}`);
                       }}
@@ -217,13 +249,29 @@ export default function Runs() {
                       <td className="font-mono text-xs">{shortId(r.run_id)}</td>
                       <td>{r.scenario || "—"}</td>
                       <td>
+                        {r.harness_name ? (
+                          <span className="font-mono text-xs">{r.harness_name}</span>
+                        ) : (
+                          <span className="text-ink-4 text-xs italic">unknown</span>
+                        )}
+                      </td>
+                      <td>
                         <ScoreBar score={r.satisfaction} />
                       </td>
                       <td className="font-mono text-xs">
                         {r.criteria_pass}/{r.criteria_total}
                       </td>
+                      <td>
+                        {r.mode === "docker" ? (
+                          <span className="badge badge-info">docker</span>
+                        ) : r.mode === "subprocess" ? (
+                          <span className="badge">subproc</span>
+                        ) : (
+                          <span className="text-ink-4 text-xs italic">—</span>
+                        )}
+                      </td>
                       <td className="font-mono text-xs">
-                        {r.evaluator_model || "—"}
+                        {r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
                       </td>
                       <td className="text-xs">{fmtTimestamp(r.timestamp)}</td>
                     </tr>

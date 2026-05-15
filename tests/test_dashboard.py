@@ -125,8 +125,14 @@ def test_api_runs_returns_summary_shape(client_with_data):
     data = client_with_data.get("/api/runs").json()
     assert data["total"] == 2
     row = data["rows"][0]
-    assert {"run_id", "scenario", "satisfaction", "criteria_pass", "criteria_total",
-            "evaluator_model", "timestamp", "exit_code"} == set(row.keys())
+    expected = {
+        "run_id", "scenario", "scenario_path", "satisfaction",
+        "criteria_pass", "criteria_total", "evaluator_model",
+        "timestamp", "exit_code",
+        # v0.2 additions — agent identity + duration. None for older records.
+        "harness_name", "harness_dir", "mode", "duration_ms",
+    }
+    assert expected == set(row.keys())
     assert row["criteria_pass"] in (0, 1)
     assert row["criteria_total"] == 1
 
