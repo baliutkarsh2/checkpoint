@@ -111,19 +111,33 @@ checkpoint run scenario.md --docker
 |---|---|
 | `checkpoint init` | Scaffold integration in the current repo |
 | `checkpoint serve` | Start the web dashboard at http://127.0.0.1:4001 |
+| `checkpoint whoami` | Print local identity (version, paths, judge model, OPENAI key) |
+| `checkpoint config show \| set \| get \| unset \| init \| path` | Manage `~/.checkpoint/config.json` |
 | `checkpoint run <scenario.md>` | Run a scenario, print score |
-| `checkpoint run <dir/> --tag smoke` | Run all scenarios filtered by tag |
+| `checkpoint run <dir/> --tag smoke -n 3 --pass-threshold 80` | CI mode: 3 runs, fail if any avg < 80 |
+| `checkpoint run <scn> -o json -q --no-failure-analysis` | Machine-readable summary, no LLM-driven failure analysis |
+| `checkpoint run <scn> --read-only` | Snapshot twin state pre/post; fail if agent wrote anything |
+| `checkpoint run <scn> --rate-limit 50` | Cap requests per twin (currently enforced by github twin) |
+| `checkpoint run <scn> --keep-state` | Don't reseed — start from previous run's state |
+| `checkpoint run <scn> --seed-file ./seed.json --setup-file ./setup.txt` | Override scenario seed/setup at the CLI |
 | `checkpoint validate <scenario.md>` | Parse and lint a scenario file |
 | `checkpoint replay [run_id]` | Replay API trace from a past run |
 | `checkpoint doctor` | Verify environment (Docker, ports, API key) |
 | `checkpoint scenario list` | Enumerate scenarios in cwd |
-| `checkpoint clone start <id>` | Spin up a long-lived twin session |
-| `checkpoint clone inspect <id>` | Show clone metadata and request counts |
+| `checkpoint clone start <id> [--ttl-seconds N --seed NAME]` | Spin up a long-lived twin session |
+| `checkpoint clone list` / `clone status <id>` | List all running twins / show one |
+| `checkpoint clone seed <id> <name>` | Apply a named seed to a running twin |
+| `checkpoint clone reset <id>` | Reset a running twin to factory state |
+| `checkpoint clone tools <id>` | List MCP tools the twin exposes |
+| `checkpoint clone renew <id> --ttl-seconds N` | Extend a twin's TTL metadata |
 | `checkpoint clone stop <id>` | Stop a running twin session |
 | `checkpoint runs list` | List recent run records |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
 | `checkpoint traces detail [run_id]` | Inspect a persisted run record |
 | `checkpoint traces export [run_id] -o out.json` | Export run record to JSON |
+| `checkpoint debug usage` | Aggregate stats: total runs, avg score, LLM/tool calls |
+| `checkpoint debug export <run_id> -o out.json --anonymize` | Sanitize emails/tokens before sharing |
+| `checkpoint debug inspect [run_id]` | Pretty-print a run record (alias for `traces detail`) |
 
 ## More
 
