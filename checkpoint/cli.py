@@ -1255,23 +1255,38 @@ def replay(run_id, clone, limit, as_json):
 )
 @click.option("--open/--no-open", "auto_open", default=False,
               help="Open the dashboard in the default browser.")
-def serve(port, host, scenarios_dir, auto_open):
+@click.option("--judge-model", default="gpt-4o-mini", show_default=True,
+              help="Default judge model surfaced in the dashboard meta + new runs.")
+def serve(port, host, scenarios_dir, auto_open, judge_model):
     """Start the checkpoint web dashboard."""
+    import logging
     import uvicorn
     import webbrowser
     from .dashboard.app import create_app
     from .clone_manager import DEFAULT_REGISTRY
 
+    # Wire stdlib logging once so middleware + watcher logs appear under
+    # uvicorn's color-aware handler.
+    logging.basicConfig(
+        level=os.environ.get("CHECKPOINT_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)-5s %(name)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    scenarios_path = Path(scenarios_dir).resolve()
     app = create_app(
         runs_dir=RUNS_DIR,
-        scenarios_dir=Path(scenarios_dir).resolve(),
+        scenarios_dir=scenarios_path,
         clone_registry_path=DEFAULT_REGISTRY,
+        project_dir=Path.cwd(),
+        judge_model_default=judge_model,
     )
     url = f"http://{host}:{port}"
     console.print(Panel.fit(
         f"[bold]Dashboard:[/bold]  {url}\n"
-        f"[dim]Runs dir:[/dim]   {RUNS_DIR.resolve()}\n"
-        f"[dim]Scenarios:[/dim]  {Path(scenarios_dir).resolve()}\n\n"
+        f"[bold]API docs:[/bold]   {url}/api/docs\n"
+        f"[dim]Runs dir:[/dim]    {RUNS_DIR.resolve()}\n"
+        f"[dim]Scenarios:[/dim]   {scenarios_path}\n\n"
         f"Press Ctrl-C to stop.",
         title="checkpoint serve",
         border_style="green",

@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    font-family: "Geist", system-ui, -apple-system, sans-serif;
+    font-feature-settings: "ss01", "ss02", "cv11";
+    font-variant-numeric: tabular-nums;
+    @apply bg-paper text-ink;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(rgba(10, 10, 10, 0.018) 1px, transparent 1px) 0
+      0 / 3px 3px;
+  }
+
+  /* Dark mode tokens — invert paper/ink. Triggered by `class="dark"` on <html>. */
+  html.dark {
+    color-scheme: dark;
+  }
+  html.dark body {
+    @apply bg-ink-2 text-paper;
+  }
+  html.dark body::before {
+    background: radial-gradient(rgba(245, 242, 234, 0.025) 1px, transparent 1px)
+      0 0 / 3px 3px;
+  }
+}
+
+@layer components {
+  /* Cards: sharp corners + offset shadow */
+  .card {
+    @apply border border-ink bg-paper-2 shadow-offset p-6;
+  }
+  html.dark .card {
+    @apply bg-ink border-paper-3;
+    box-shadow: 6px 6px 0 0 #f5f2ea;
+  }
+  .card-flat {
+    @apply border border-ink bg-paper-2 p-6;
+  }
+  html.dark .card-flat {
+    @apply bg-ink border-paper-3;
+  }
+  .card-tight {
+    @apply border border-ink bg-paper-2 shadow-offset p-0;
+  }
+  html.dark .card-tight {
+    @apply bg-ink border-paper-3;
+    box-shadow: 6px 6px 0 0 #f5f2ea;
+  }
+  .card-title {
+    @apply text-label text-ink-3 font-mono uppercase mb-3;
+  }
+  html.dark .card-title {
+    @apply text-paper-3;
+  }
+
+  /* Stat tiles */
+  .stat-num {
+    @apply text-3xl font-semibold leading-none mt-2 font-mono;
+  }
+  .stat-sub {
+    @apply text-ink-3 text-xs mt-2;
+  }
+  html.dark .stat-sub {
+    @apply text-paper-3;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-block px-2 py-0.5 text-[10.5px] font-mono uppercase tracking-[0.08em] border font-medium;
+  }
+  .badge-pass {
+    @apply text-pass border-pass bg-pass-soft;
+  }
+  .badge-fail {
+    @apply text-fail border-fail bg-fail-soft;
+  }
+  .badge-warn {
+    @apply text-warn border-warn bg-warn-soft;
+  }
+  .badge-info {
+    @apply text-info border-info bg-info-soft;
+  }
+  .badge-judge {
+    @apply text-judge border-judge bg-judge-soft;
+  }
+  .badge-d {
+    @apply text-ink-3 border-ink-5 bg-paper-3;
+  }
+
+  /* Score bar */
+  .score-bar {
+    @apply inline-block w-16 h-1.5 bg-paper-3 border border-ink align-middle;
+  }
+  .score-bar > span {
+    @apply h-full block;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply h-9 px-4 border border-ink bg-ink text-paper font-sans text-[13.5px] cursor-pointer font-medium inline-flex items-center gap-1.5 no-underline;
+  }
+  .btn:hover {
+    background: #1a1a1a;
+  }
+  .btn-outline {
+    @apply h-9 px-4 border border-ink bg-transparent text-ink font-sans text-[13.5px] cursor-pointer font-medium inline-flex items-center gap-1.5 no-underline;
+  }
+  .btn-outline:hover {
+    @apply bg-ink text-paper;
+  }
+  .btn-accent {
+    @apply h-9 px-4 border border-accent bg-accent text-ink font-sans text-[13.5px] cursor-pointer font-medium inline-flex items-center gap-1.5 no-underline;
+  }
+  .btn-accent:hover {
+    background: #5fff7a;
+  }
+  .btn-ghost {
+    @apply h-9 px-2 border-0 bg-transparent text-ink-2 font-sans text-[13.5px] cursor-pointer inline-flex items-center gap-1.5 no-underline;
+  }
+
+  /* Inputs */
+  .input {
+    @apply h-9 border border-ink bg-paper px-3 font-sans text-[13.5px] text-ink outline-none;
+  }
+  .input:focus {
+    box-shadow: 3px 3px 0 0 #2dff5c;
+  }
+  html.dark .input {
+    @apply bg-ink text-paper;
+  }
+
+  /* Tables */
+  .ck-table {
+    @apply w-full border-collapse bg-paper;
+  }
+  html.dark .ck-table {
+    @apply bg-ink-2;
+  }
+  .ck-table thead th {
+    @apply text-label font-mono font-medium uppercase text-ink-3 border-b border-ink bg-paper-2 px-3.5 py-2.5 text-left;
+  }
+  html.dark .ck-table thead th {
+    @apply bg-ink text-paper-3;
+  }
+  .ck-table tbody td {
+    @apply px-3.5 py-3 border-b border-paper-3 text-[13.5px] align-top;
+  }
+  html.dark .ck-table tbody td {
+    @apply border-ink-3;
+  }
+  .ck-table tbody tr.row-link {
+    @apply cursor-pointer;
+  }
+  .ck-table tbody tr.row-link:hover td {
+    @apply bg-paper-2;
+  }
+  html.dark .ck-table tbody tr.row-link:hover td {
+    @apply bg-ink;
+  }
+
+  /* Page chrome */
+  .page-title {
+    @apply text-3xl font-bold leading-tight mb-1.5;
+  }
+  .page-sub {
+    @apply text-ink-3 text-sm mb-7;
+  }
+  html.dark .page-sub {
+    @apply text-paper-3;
+  }
+  .section-title {
+    @apply text-label font-mono uppercase text-ink-3 mt-8 mb-3;
+  }
+  html.dark .section-title {
+    @apply text-paper-3;
+  }
+
+  /* Pre / JSON */
+  pre.json {
+    @apply font-mono text-xs leading-relaxed bg-paper border border-paper-3 p-3.5 overflow-x-auto max-h-[480px] overflow-y-auto whitespace-pre text-ink-2;
+  }
+  html.dark pre.json {
+    @apply bg-ink-2 border-ink-3 text-paper;
+  }
+
+  /* kbd */
+  .kbd {
+    @apply inline-block px-1.5 py-px text-[10px] font-mono border border-ink-5 bg-paper-3 text-ink-2 align-middle;
+  }
+  html.dark .kbd {
+    @apply bg-ink-3 border-ink-3 text-paper-2;
+  }
+}
