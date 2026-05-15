@@ -203,6 +203,16 @@ async def auth_and_limits_middleware(request: Request, call_next):
             documentation_url="https://docs.github.com/rest",
         )
 
+    # 2b. Read-only gate: any mutating method is rejected outright.
+    if STATE["_config"].get("read_only") and method in (
+        "POST", "PATCH", "PUT", "DELETE",
+    ):
+        return gh_error(
+            403,
+            "Read-only mode: writes are blocked by --read-only.",
+            documentation_url="https://docs.github.com/rest",
+        )
+
     # 3. Rate-limit gate (count BEFORE running handler so /repos GET counts)
     STATE["_counters"]["requests"] += 1
     rl = STATE["_config"].get("rate_limit")
@@ -303,6 +313,8 @@ async def set_config(request: Request):
         cfg["rate_limit"] = body["rate_limit"]
     if "permissions_denied" in body:
         cfg["permissions_denied"] = bool(body["permissions_denied"])
+    if "read_only" in body:
+        cfg["read_only"] = bool(body["read_only"])
     return {"ok": True, "config": cfg}
 
 

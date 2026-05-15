@@ -256,3 +256,162 @@ def stop(
     del registry[clone_id]
     _write_registry(registry_path, registry)
     return was_alive
+
+
+# ---------------------------------------------------------------------------
+# Sprint A extensions: list / status / renew / seed / reset / tools.
+# All operate on the same DEFAULT_REGISTRY and never start new processes.
+# ---------------------------------------------------------------------------
+
+def list_all(*, registry_path: Path = DEFAULT_REGISTRY) -> list[dict]:
+    """Return every registered clone enriched with liveness and TTL state.
+
+    Stale entries (process gone) are auto-purged from the registry — this
+    self-heals the file when a daemon dies behind the CLI's back.
+    """
+    registry = _read_registry(registry_path)
+    out: list[dict] = []
+    purged = False
+    for clone_id, entry in list(registry.items()):
+        alive = _process_alive(entry.get("pid", -1))
+        rec = dict(entry)
+        rec["id"] = clone_id
+        rec["alive"] = alive
+        if not alive:
+            del registry[clone_id]
+            purged = True
+        out.append(rec)
+    if purged:
+        _write_registry(registry_path, registry)
+    return out
+
+
+def reset(clone_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict:
+    """POST `/_reset` to a running clone. Returns ``{"ok": bool, ...}``."""
+    entry = _registry_get_alive(clone_id, registry_path)
+    try:
+        r = httpx.post(f"{entry['url']}/_reset", timeout=5.0)
+        return {"ok": r.status_code < 400, "status": r.status_code}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+def seed(clone_id: str, name: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict:
+    """Apply a named seed to a running clone via `/_seed/<name>`."""
+    entry = _registry_get_alive(clone_id, registry_path)
+    try:
+        r = httpx.post(f"{entry['url']}/_seed/{name}", timeout=10.0)
+        ok = r.status_code < 400
+        body = r.json() if r.headers.get("content-type", "").startswith("application/json") else None
+        return {"ok": ok, "status": r.status_code, "body": body}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+def tools(clone_id: str, *, registry_path: Path = DEFAULT_REGISTRY) -> dict:
+    """List MCP tools exposed by a running clone.
+
+    Calls the MCP `tools/list` JSON-RPC method on the clone's `/mcp/`
+    endpoint. Falls back to an empty list if the twin doesn't speak MCP.
+    """
+    entry = _registry_get_alive(clone_id, registry_path)
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {},
+    }
+    try:
+        r = httpx.post(
+            entry["mcp_url"],
+            json=payload,
+            timeout=5.0,
+            headers={"accept": "application/json, text/event-stream"},
+        )
+        if r.status_code != 200:
+            return {"ok": False, "status": r.status_code, "tools": []}
+        # Streamable-HTTP MCP returns SSE-shaped frames; the JSON-RPC
+        # response is the first `data: {...}` line.
+        body = r.text
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                obj = json.loads(line[5:].strip())
+                if obj.get("id") == 1 and isinstance(obj.get("result"), dict):
+                    return {"ok": True, "tools": obj["result"].get("tools", [])}
+        # Plain JSON fallback (some MCP implementations).
+        try:
+            obj = json.loads(body)
+            return {"ok": True, "tools": (obj.get("result") or {}).get("tools", [])}
+        except json.JSONDecodeError:
+            return {"ok": True, "tools": []}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "tools": []}
+
+
+def renew(
+    clone_id: str,
+    *,
+    ttl_seconds: int,
+    registry_path: Path = DEFAULT_REGISTRY,
+) -> dict:
+    """Set / extend the clone's `expires_at` metadata.
+
+    Note: TTL is *advisory* metadata for the dashboard and `clone list`.
+    Checkpoint does not auto-kill expired clones — there is no daemon to
+    enforce it. ``clone stop`` is always a manual decision.
+    """
+    registry = _read_registry(registry_path)
+    if clone_id not in registry:
+        raise KeyError(clone_id)
+    expires_at = time.time() + max(60, int(ttl_seconds))
+    registry[clone_id]["ttl_seconds"] = int(ttl_seconds)
+    registry[clone_id]["expires_at"] = expires_at
+    registry[clone_id]["expires_at_iso"] = datetime.fromtimestamp(
+        expires_at, tz=timezone.utc
+    ).isoformat()
+    _write_registry(registry_path, registry)
+    return registry[clone_id]
+
+
+def configure(
+    clone_id: str,
+    *,
+    rate_limit: int | None = None,
+    permissions_denied: bool | None = None,
+    read_only: bool | None = None,
+    registry_path: Path = DEFAULT_REGISTRY,
+) -> dict:
+    """POST `/_config` to a running clone (rate_limit + read_only knobs).
+
+    Twins that don't recognize a knob silently ignore it. ``rate_limit`` is
+    currently enforced by the GitHub twin; ``read_only`` is enforced by all
+    twins via the runner's pre/post state-snapshot diff.
+    """
+    entry = _registry_get_alive(clone_id, registry_path)
+    body: dict = {}
+    if rate_limit is not None:
+        body["rate_limit"] = int(rate_limit)
+    if permissions_denied is not None:
+        body["permissions_denied"] = bool(permissions_denied)
+    if read_only is not None:
+        body["read_only"] = bool(read_only)
+    if not body:
+        return {"ok": True, "config": {}}
+    try:
+        r = httpx.post(f"{entry['url']}/_config", json=body, timeout=5.0)
+        return {"ok": r.status_code < 400, "status": r.status_code, "applied": body}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
+def _registry_get_alive(clone_id: str, registry_path: Path) -> dict:
+    registry = _read_registry(registry_path)
+    entry = registry.get(clone_id)
+    if not entry:
+        raise KeyError(clone_id)
+    if not _process_alive(entry.get("pid", -1)):
+        # Auto-purge stale entry so the next list reflects truth.
+        del registry[clone_id]
+        _write_registry(registry_path, registry)
+        raise RuntimeError(f"clone {clone_id!r} is registered but the process is gone")
+    return entry

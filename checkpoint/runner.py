@@ -236,6 +236,31 @@ def run_once(
                     # Log but don't abort: a missing key is the most common case.
                     print(f"[checkpoint] seed-from-setup skipped for {clone}: {err}", flush=True)
 
+        # Runtime knobs: --rate-limit / --read-only from `checkpoint run`.
+        # Surfaced via env vars so we don't add new positional args to run_once.
+        rate_limit_env = os.environ.get("CHECKPOINT_RUNTIME_RATE_LIMIT")
+        read_only_env = os.environ.get("CHECKPOINT_RUNTIME_READ_ONLY") == "1"
+        if rate_limit_env or read_only_env:
+            cfg_body: dict = {}
+            if rate_limit_env:
+                try:
+                    cfg_body["rate_limit"] = int(rate_limit_env)
+                except ValueError:
+                    pass
+            if read_only_env:
+                cfg_body["read_only"] = True
+            for clone, port, _ in twins:
+                try:
+                    httpx.post(f"http://127.0.0.1:{port}/_config", json=cfg_body, timeout=2.0)
+                except Exception:
+                    pass  # Twins that don't expose /_config silently no-op.
+
+        # --read-only: snapshot pre-harness state so we can detect any writes.
+        read_only_snapshot: dict[str, dict] = {}
+        if read_only_env:
+            for clone, port, _ in twins:
+                read_only_snapshot[clone] = _fetch_state(port)
+
         env = dict(os.environ)
         env["CHECKPOINT_TASK"] = scenario.prompt
         env["ARCHAL_ENGINE_TASK"] = scenario.prompt
@@ -294,6 +319,21 @@ def run_once(
             result.error = f"Harness exited {proc.returncode}"
             return result
 
+        # --read-only post-run snapshot diff: if state changed, prepend a
+        # synthetic failed criterion and short-circuit evaluation.
+        if read_only_snapshot:
+            post_state = {clone: _fetch_state(port) for clone, port, _ in twins}
+            modified = [c for c in read_only_snapshot if read_only_snapshot[c] != post_state.get(c)]
+            if modified:
+                result.criteria.append(CriterionResult(
+                    text=f"--read-only: no twin writes (modified: {', '.join(modified)})",
+                    kind="D",
+                    passed=False,
+                    reasoning=f"Twin state changed in clone(s): {', '.join(modified)}",
+                    evaluator="read-only-guard",
+                ))
+                # Continue evaluating the rest so the user still sees criterion
+                # results — but the read-only failure will pull the score down.
         _evaluate(scenario, result, judge_model)
         return result
     finally:

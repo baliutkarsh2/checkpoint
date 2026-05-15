@@ -46,8 +46,8 @@ def main():
 @click.option("--harness", default=None, help="Shell command, harness file, harness dir, or harness.json. Falls back to .checkpoint.json/harness.json.")
 @click.option("--task", default=None, help="Inline task (overrides scenario prompt; works without a scenario file).")
 @click.option("--clone", default=None, help="Override scenario clones (comma-separated).")
-@click.option("--runs", type=int, default=None, help="Override number of runs.")
-@click.option("--model", default=None, help="Evaluator model. Overrides scenario/config/env.")
+@click.option("-n", "--runs", type=int, default=None, help="Override number of runs.")
+@click.option("--model", default=None, help="Evaluator (judge) model. Overrides scenario/config/env.")
 @click.option("--timeout", type=int, default=None, help="Override harness timeout (seconds).")
 @click.option("--cwd", type=click.Path(exists=True, file_okay=False), default=None, help="Working dir for the harness.")
 @click.option("--trace-out", type=click.Path(dir_okay=False), default=None, help="Save all-runs trace+state JSON to file.")
@@ -56,7 +56,29 @@ def main():
 @click.option("--docker/--no-docker", default=False, help="Run the harness inside Docker with the TLS sidecar.")
 @click.option("--harness-dir", type=click.Path(exists=True, file_okay=False), default=None, help="Harness directory containing Dockerfile (docker mode).")
 @click.option("--docker-logs", is_flag=True, default=False, help="Stream harness container logs to stderr in real time (docker mode only).")
-def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session, docker, harness_dir, docker_logs):
+@click.option("--pass-threshold", type=int, default=None,
+              help="Exit 1 if any scenario's avg satisfaction score falls below this (0-100). CI-friendly.")
+@click.option("-o", "--output", "output_format", type=click.Choice(["table", "json"]), default="table",
+              help="Output format. `json` emits a single machine-readable summary and suppresses table rendering.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+              help="Suppress per-run banners and panels; print only final summary (and JSON if -o json).")
+@click.option("--rate-limit", type=int, default=None,
+              help="Cap requests per twin (clones that support it return 429 after the limit; only github currently enforces).")
+@click.option("--read-only", is_flag=True, default=False,
+              help="Snapshot twin state pre-run, fail the run if state changed (no agent writes allowed).")
+@click.option("--no-failure-analysis", is_flag=True, default=False,
+              help="Skip the LLM-driven failure_analysis step (saves an LLM call per failed run).")
+@click.option("--seed-file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Override scenario seed-file (single-clone or `clone=path` comma-separated for multi-clone).")
+@click.option("--setup-file", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Override scenario `## Setup` prose with the contents of this file.")
+@click.option("--keep-state", is_flag=True, default=False,
+              help="Don't reseed twin(s) before this run — keep state from a previous run.")
+@click.option("--fresh-seed", is_flag=True, default=False,
+              help="Force re-applying seed even if --keep-state was set previously (default behavior).")
+def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session,
+        docker, harness_dir, docker_logs, pass_threshold, output_format, quiet, rate_limit,
+        read_only, no_failure_analysis, seed_file, setup_file, keep_state, fresh_seed):
     """Run scenario(s) against the agent harness.
 
     SCENARIO_PATH may be a single .md file or a directory of scenarios.
@@ -92,19 +114,51 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         sys.exit(2)
     scenario_files, is_directory = resolved
 
+    # Surface runtime knobs to the runner via env vars (kept out of run_once
+    # signatures to avoid a 7-arg function and to remain backwards-compatible).
+    if rate_limit is not None:
+        os.environ["CHECKPOINT_RUNTIME_RATE_LIMIT"] = str(rate_limit)
+    if read_only:
+        os.environ["CHECKPOINT_RUNTIME_READ_ONLY"] = "1"
+
+    if quiet and output_format != "json":
+        # Quiet mode without JSON still emits the final per-scenario score line
+        # but suppresses the noisy rich panels per individual run.
+        os.environ["CHECKPOINT_RUNTIME_QUIET"] = "1"
+
     # --- Iterate scenarios with --tag filter ---
     any_failed = False
     any_run = False
     all_run_dumps: list[dict] = []
+    json_summary: list[dict] = []  # populated when --output json
+    threshold_violation = False
     for scn_path in scenario_files:
         scenario = parse_file(scn_path) if scn_path else Scenario()
         if task:
             scenario.prompt = task
 
+        # CLI overrides for seed-file / setup-file / keep-state / fresh-seed
+        # take effect BEFORE the runner sees the scenario config.
+        if seed_file:
+            scenario.config["seed-file"] = seed_file
+        if setup_file:
+            try:
+                scenario.setup = Path(setup_file).read_text(encoding="utf-8")
+            except OSError as e:
+                console.print(f"[red]--setup-file: cannot read {setup_file}: {e}[/red]")
+                sys.exit(2)
+        if keep_state and not fresh_seed:
+            # Strip any seed config so the runner's seed step short-circuits.
+            for k in ("seed", "seed_name", "seed-file", "seed_file"):
+                scenario.config.pop(k, None)
+            # Also strip Setup prose so SCN-08 setup-derived seeding doesn't fire.
+            scenario.setup = ""
+
         # SCN-10: --tag filter (only applies when iterating a directory).
         if tag and is_directory:
             if not matches_tag(scenario.config.get("tags"), tag):
-                console.print(f"[dim]skip (tag mismatch): {scn_path}[/dim]")
+                if not quiet:
+                    console.print(f"[dim]skip (tag mismatch): {scn_path}[/dim]")
                 continue
 
         # --- Merge config defaults from .checkpoint.json ---
@@ -151,19 +205,20 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
             env_value=os.environ.get("ARCHAL_MODEL"),
         )
 
-        console.print(Panel.fit(
-            f"[bold]{scenario.title or 'Untitled scenario'}[/bold]\n"
-            f"[dim]clone:[/dim] {', '.join(scenario.clones)}\n"
-            f"[dim]runs:[/dim]  {scenario.runs}\n"
-            f"[dim]judge:[/dim] {resolution.model} [dim]({resolution.source})[/dim]",
-            title=f"checkpoint run — {Path(scn_path).name if scn_path else 'inline'}",
-            border_style="cyan",
-        ))
+        if not quiet:
+            console.print(Panel.fit(
+                f"[bold]{scenario.title or 'Untitled scenario'}[/bold]\n"
+                f"[dim]clone:[/dim] {', '.join(scenario.clones)}\n"
+                f"[dim]runs:[/dim]  {scenario.runs}\n"
+                f"[dim]judge:[/dim] {resolution.model} [dim]({resolution.source})[/dim]",
+                title=f"checkpoint run — {Path(scn_path).name if scn_path else 'inline'}",
+                border_style="cyan",
+            ))
 
-        if scenario.prompt:
-            preview = scenario.prompt[:240]
-            suffix = "…" if len(scenario.prompt) > 240 else ""
-            console.print(f"[dim]Task:[/dim] {preview}{suffix}")
+            if scenario.prompt:
+                preview = scenario.prompt[:240]
+                suffix = "…" if len(scenario.prompt) > 240 else ""
+                console.print(f"[dim]Task:[/dim] {preview}{suffix}")
 
         # On Windows, shlex.split with posix=True treats backslashes as escape
         # chars, mangling Windows paths. posix=False preserves them as literals.
@@ -171,7 +226,8 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
 
         results: list[RunResult] = []
         for i in range(scenario.runs):
-            console.print(f"\n[bold]Run {i + 1}/{scenario.runs}[/bold]")
+            if not quiet:
+                console.print(f"\n[bold]Run {i + 1}/{scenario.runs}[/bold]")
             if docker:
                 from .docker.runner import docker_run_once
                 hdir = Path(harness_dir or cwd or ".").resolve()
@@ -179,10 +235,21 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
             else:
                 r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=resolution.model)
             results.append(r)
-            _print_run(r)
+            if not quiet and output_format != "json":
+                _print_run(r)
 
-        if scenario.runs > 1:
+        if scenario.runs > 1 and not quiet and output_format != "json":
             _print_summary(results)
+
+        # --pass-threshold: avg score over this scenario's runs
+        if pass_threshold is not None:
+            avg_score = sum(r.score for r in results) / len(results) if results else 0
+            if avg_score < pass_threshold:
+                threshold_violation = True
+                if not quiet and output_format != "json":
+                    console.print(
+                        f"[red]threshold {pass_threshold} not met: avg {avg_score:.0f}/100[/red]"
+                    )
 
         for r in results:
             all_run_dumps.append({
@@ -201,7 +268,26 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
                 evaluator_model=resolution.model,
                 evaluator_model_source=resolution.source,
                 task=scenario.prompt,
+                skip_failure_analysis=no_failure_analysis,
             )
+
+        # Build the JSON summary entry for this scenario.
+        if output_format == "json":
+            json_summary.append({
+                "scenario": scenario.title or (Path(scn_path).name if scn_path else "<inline>"),
+                "scenario_path": str(scn_path) if scn_path else None,
+                "runs": len(results),
+                "satisfaction_avg": (sum(r.score for r in results) / len(results)) if results else 0,
+                "satisfaction_min": min(r.score for r in results) if results else 0,
+                "satisfaction_max": max(r.score for r in results) if results else 0,
+                "complete": all(r.complete for r in results),
+                "judge_model": resolution.model,
+                "criteria_total": len(results[0].criteria) if results and results[0].criteria else 0,
+                "criteria_pass_per_run": [
+                    sum(1 for c in (r.criteria or []) if c.passed) for r in results
+                ],
+                "exit_codes": [r.exit_code for r in results],
+            })
 
         any_run = True
         if not all(r.complete and r.score == 100.0 for r in results):
@@ -209,11 +295,26 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
 
     if trace_out:
         Path(trace_out).write_text(json.dumps(all_run_dumps, indent=2))
-        console.print(f"[dim]Trace written to {trace_out}[/dim]")
+        if not quiet:
+            console.print(f"[dim]Trace written to {trace_out}[/dim]")
+
+    if output_format == "json":
+        click.echo(json.dumps({
+            "scenarios": json_summary,
+            "scenarios_run": len(json_summary),
+            "any_failed": any_failed,
+            "threshold_violation": threshold_violation,
+            "pass_threshold": pass_threshold,
+        }, indent=2, default=str))
 
     if not any_run:
-        console.print("[yellow]No scenarios matched the filter.[/yellow]")
+        if not quiet and output_format != "json":
+            console.print("[yellow]No scenarios matched the filter.[/yellow]")
         sys.exit(0)
+    # CI exit semantics: --pass-threshold takes precedence over the default
+    # "all 100" gate so users can require, say, 80 instead of perfection.
+    if pass_threshold is not None:
+        sys.exit(1 if threshold_violation else 0)
     if any_failed:
         sys.exit(1)
 
@@ -320,6 +421,7 @@ def _persist_run_record(
     evaluator_model: str,
     evaluator_model_source: str,
     task: str,
+    skip_failure_analysis: bool = False,
 ) -> None:
     """Build, optionally enrich with failure analysis, write to disk.
 
@@ -327,7 +429,7 @@ def _persist_run_record(
     """
     failure_analysis: dict[str, str] = {}
     failed_texts = [c.text for c in r.criteria if not c.passed] if r.criteria else []
-    if r.complete and failed_texts:
+    if r.complete and failed_texts and not skip_failure_analysis:
         try:
             failure_analysis = analyze_failures(
                 failed_texts,
@@ -712,20 +814,38 @@ def clone():
 
 @clone.command("start")
 @click.argument("clone_id")
-def clone_start(clone_id):
-    """CLI-07: start a long-lived twin session (github/slack/stripe)."""
+@click.option("--ttl-seconds", type=int, default=None,
+              help="Set TTL metadata for `clone list` (advisory; not auto-killed).")
+@click.option("--seed", "seed_name", default=None,
+              help="Apply a named seed immediately after the clone starts.")
+def clone_start(clone_id, ttl_seconds, seed_name):
+    """CLI-07: start a long-lived twin session (github/slack/stripe/etc)."""
     from . import clone_manager
     try:
         entry = clone_manager.start(clone_id)
     except (ValueError, RuntimeError) as e:
         console.print(f"[red]clone start {clone_id}: {e}[/red]")
         sys.exit(1)
+    if ttl_seconds:
+        try:
+            entry = clone_manager.renew(clone_id, ttl_seconds=ttl_seconds)
+        except (KeyError, RuntimeError):
+            pass
+    if seed_name:
+        result = clone_manager.seed(clone_id, seed_name)
+        if not result.get("ok"):
+            console.print(
+                f"[yellow]Started, but seed {seed_name!r} failed: "
+                f"{result.get('error') or result.get('status')}[/yellow]"
+            )
     console.print(Panel.fit(
         f"[bold]Clone {clone_id} started[/bold]\n"
         f"[dim]URL:[/dim]      {entry['url']}\n"
         f"[dim]MCP URL:[/dim]  {entry['mcp_url']}\n"
         f"[dim]Token:[/dim]    {entry['token']}\n"
-        f"[dim]PID:[/dim]      {entry['pid']}",
+        f"[dim]PID:[/dim]      {entry['pid']}"
+        + (f"\n[dim]Expires:[/dim]  {entry.get('expires_at_iso', '')}" if ttl_seconds else "")
+        + (f"\n[dim]Seed:[/dim]     {seed_name}" if seed_name else ""),
         border_style="green",
     ))
 
@@ -1294,6 +1414,458 @@ def serve(port, host, scenarios_dir, auto_open, judge_model):
     if auto_open:
         webbrowser.open(url)
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+# =============================================================================
+# whoami — local-only identity / environment summary
+# =============================================================================
+
+
+@main.command("whoami")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit machine-readable JSON.")
+def whoami(as_json):
+    """Print local Checkpoint identity (version, paths, judge model, runs).
+
+    Checkpoint is a local tool — there is no remote workspace and no login.
+    `whoami` is the developer-facing equivalent: everything you need to know
+    about *this* installation in one place.
+    """
+    from . import identity
+    ident = identity.collect()
+    if as_json:
+        click.echo(json.dumps(identity.to_dict(ident), indent=2))
+        return
+    t = Table(box=box.SIMPLE_HEAD, show_header=False)
+    t.add_column("Field", style="dim", width=22)
+    t.add_column("Value", overflow="fold")
+    t.add_row("Version", ident.version)
+    t.add_row("Python", ident.python)
+    t.add_row("Platform", ident.platform)
+    t.add_row("Home", ident.home)
+    t.add_row("User config", ident.user_config or "[dim]not created — run `checkpoint config init`[/dim]")
+    t.add_row("Project config", ident.project_config or "[dim]none in cwd[/dim]")
+    t.add_row("Scenarios dir", ident.scenarios_dir)
+    t.add_row("Runs dir", ident.runs_dir)
+    t.add_row("Cached runs", str(ident.runs_count))
+    t.add_row("Live clones", str(ident.live_clones))
+    t.add_row(
+        "Judge model",
+        f"{ident.judge_model} [dim]({ident.judge_model_source})[/dim]",
+    )
+    t.add_row(
+        "OPENAI_API_KEY",
+        "[green]set[/green]" if ident.openai_key_present else "[red]missing[/red]",
+    )
+    console.print(t)
+
+
+# =============================================================================
+# config — user-level config file (~/.checkpoint/config.json)
+# =============================================================================
+
+
+@main.group("config")
+def config_group():
+    """Manage user-level config at ~/.checkpoint/config.json.
+
+    User config holds personal defaults (judge model, scenarios dir, etc.)
+    and is consulted with this precedence:
+
+        flag  >  project .checkpoint.json  >  user config  >  env  >  built-in default
+
+    The ``env:NAME`` syntax indirects through the environment:
+    ``checkpoint config set engine.openai_api_key env:OPENAI_API_KEY``.
+    """
+
+
+@config_group.command("path")
+def config_path_cmd():
+    """Print the path to the user config file (created or not)."""
+    from .user_config import config_path as _cp
+    click.echo(str(_cp()))
+
+
+@config_group.command("init")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite an existing config file.")
+def config_init(force):
+    """Create ~/.checkpoint/config.json with sensible defaults."""
+    from .user_config import UserConfig, config_path as _cp
+    p = _cp()
+    if p.exists() and not force:
+        console.print(f"[yellow]Config already exists at {p}. Use --force to overwrite.[/yellow]")
+        sys.exit(1)
+    cfg = UserConfig(data={}, path=p)
+    cfg.set("defaults.judge_model", "gpt-4o-mini")
+    cfg.set("defaults.pass_threshold", 100)
+    cfg.set("dashboard.port", 4001)
+    cfg.set("dashboard.host", "127.0.0.1")
+    cfg.set("telemetry.enabled", False)
+    cfg.save()
+    console.print(f"[green]Wrote {p}[/green]")
+
+
+@config_group.command("show")
+@click.option("--json", "as_json", is_flag=True, default=False)
+@click.option("--reveal-env", is_flag=True, default=False,
+              help="Resolve env: indirections (default: show env: literally).")
+def config_show(as_json, reveal_env):
+    """Show all keys in the user config."""
+    from .user_config import UserConfig, KNOWN_KEYS
+    cfg = UserConfig.load()
+    flat = cfg.flatten()
+    if reveal_env:
+        flat = {k: cfg.get(k, resolve_env=True) for k in flat}
+    if as_json:
+        click.echo(json.dumps(flat, indent=2, default=str))
+        return
+    if not flat:
+        console.print(
+            f"[yellow]No user config at {cfg.path}.[/yellow] "
+            f"Run [bold]checkpoint config init[/bold] to create one."
+        )
+        return
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Key", style="dim", overflow="fold")
+    t.add_column("Value", overflow="fold")
+    t.add_column("Description", overflow="fold")
+    for k, v in flat.items():
+        t.add_row(k, _fmt_config_value(v), KNOWN_KEYS.get(k, ""))
+    console.print(t)
+    console.print(f"[dim]Source: {cfg.path}[/dim]")
+
+
+@config_group.command("get")
+@click.argument("key")
+@click.option("--reveal-env", is_flag=True, default=False)
+def config_get(key, reveal_env):
+    """Print a single key's value (use --reveal-env to resolve env: indirection)."""
+    from .user_config import UserConfig
+    cfg = UserConfig.load()
+    val = cfg.get(key, resolve_env=reveal_env)
+    if val is None:
+        sys.exit(1)
+    click.echo(_fmt_config_value(val))
+
+
+@config_group.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key, value):
+    """Set a key. Values starting with `env:` indirect through the environment.
+
+    Examples:
+        checkpoint config set defaults.judge_model gpt-4o
+        checkpoint config set defaults.pass_threshold 80
+        checkpoint config set engine.openai_api_key env:OPENAI_API_KEY
+    """
+    from .user_config import UserConfig, KNOWN_KEYS
+    if key not in KNOWN_KEYS:
+        console.print(
+            f"[yellow]Warning: '{key}' is not a known config key. "
+            f"Set anyway. (See `checkpoint config show` for known keys.)[/yellow]"
+        )
+    cfg = UserConfig.load()
+    cfg.set(key, value)
+    cfg.save()
+    console.print(f"[green]{key} = {value}[/green]")
+
+
+@config_group.command("unset")
+@click.argument("key")
+def config_unset(key):
+    """Delete a config key."""
+    from .user_config import UserConfig
+    cfg = UserConfig.load()
+    if cfg.unset(key):
+        cfg.save()
+        console.print(f"[green]Removed {key}[/green]")
+    else:
+        console.print(f"[yellow]{key} was not set[/yellow]")
+        sys.exit(1)
+
+
+def _fmt_config_value(v) -> str:
+    if v is None:
+        return "[dim](unset)[/dim]"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
+
+
+# =============================================================================
+# debug — usage stats, run export with anonymization
+# =============================================================================
+
+
+@main.group("debug")
+def debug_group():
+    """Diagnostics: usage stats, anonymized exports, environment readiness."""
+
+
+@debug_group.command("doctor")
+def debug_doctor_alias():
+    """Alias for `checkpoint doctor` — environment readiness check."""
+    from click.testing import CliRunner
+    # Re-invoke the existing top-level doctor command.
+    from .cli import doctor as _d
+    ctx = click.Context(_d)
+    _d.invoke(ctx)
+
+
+@debug_group.command("usage")
+@click.option("--json", "as_json", is_flag=True, default=False)
+def debug_usage(as_json):
+    """Aggregate usage stats from cached runs (counts, scores, model spend)."""
+    if not RUNS_DIR.exists():
+        rows: list[dict] = []
+    else:
+        rows = []
+        for f in RUNS_DIR.glob("*.json"):
+            try:
+                rows.append(json.loads(f.read_text(encoding="utf-8", errors="replace")))
+            except (json.JSONDecodeError, OSError):
+                continue
+    summary = _build_usage_summary(rows)
+    if as_json:
+        click.echo(json.dumps(summary, indent=2))
+        return
+    t = Table(box=box.SIMPLE_HEAD, show_header=False)
+    t.add_column("Metric", style="dim", width=24)
+    t.add_column("Value", overflow="fold")
+    t.add_row("Total runs", str(summary["total_runs"]))
+    t.add_row("Distinct scenarios", str(summary["distinct_scenarios"]))
+    t.add_row("Avg satisfaction", f"{summary['avg_satisfaction']:.1f}/100")
+    t.add_row("Pass rate (=100)", f"{summary['pass_rate_pct']:.1f}%")
+    t.add_row("Models seen", ", ".join(summary["models"]) or "[dim](none)[/dim]")
+    t.add_row("LLM calls (total)", str(summary["llm_calls_total"]))
+    t.add_row("Tool calls (total)", str(summary["tool_calls_total"]))
+    t.add_row("Earliest run", summary["earliest"] or "[dim]—[/dim]")
+    t.add_row("Latest run", summary["latest"] or "[dim]—[/dim]")
+    console.print(t)
+
+
+@debug_group.command("export")
+@click.argument("run_id", required=False)
+@click.option("--output", "-o", required=True, type=click.Path(dir_okay=False),
+              help="Where to write the JSON.")
+@click.option("--anonymize", is_flag=True, default=False,
+              help="Strip PII-shaped values (emails, tokens, names) before writing.")
+def debug_export(run_id, output, anonymize):
+    """Export a run record to JSON (optionally with --anonymize for sharing).
+
+    Anonymization: rewrites likely-PII fields (emails, tokens, repo paths,
+    user names) to deterministic placeholders so traces can be shared in bug
+    reports or screenshots without leaking information.
+    """
+    record = _load_run_record(run_id)
+    if record is None:
+        console.print("[red]No run record found.[/red]")
+        sys.exit(1)
+    if anonymize:
+        record = _anonymize_record(record)
+    Path(output).write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+    rid = record.get("run_id", "?")[:12]
+    console.print(f"[green]Exported {rid} -> {output}{' (anonymized)' if anonymize else ''}[/green]")
+
+
+@debug_group.command("inspect")
+@click.argument("run_id", required=False)
+def debug_inspect(run_id):
+    """Pretty-print a run record (alias for `traces detail`)."""
+    record = _load_run_record(run_id)
+    if record is None:
+        console.print("[red]No run record found.[/red]")
+        sys.exit(1)
+    _print_run_record(record)
+
+
+def _build_usage_summary(rows: list[dict]) -> dict:
+    if not rows:
+        return {
+            "total_runs": 0, "distinct_scenarios": 0, "avg_satisfaction": 0.0,
+            "pass_rate_pct": 0.0, "models": [], "llm_calls_total": 0,
+            "tool_calls_total": 0, "earliest": None, "latest": None,
+        }
+    sats = [float(r.get("satisfaction") or 0) for r in rows]
+    scenarios = {r.get("scenario") for r in rows if r.get("scenario")}
+    models = sorted({r.get("evaluator_model") for r in rows if r.get("evaluator_model")})
+    timestamps = sorted([
+        (r.get("env") or {}).get("timestamp", "")
+        for r in rows
+        if (r.get("env") or {}).get("timestamp")
+    ])
+    llm_total = sum(int((r.get("metrics") or {}).get("llmCallCount") or 0) for r in rows)
+    tool_total = sum(int((r.get("metrics") or {}).get("toolCallCount") or 0) for r in rows)
+    return {
+        "total_runs": len(rows),
+        "distinct_scenarios": len(scenarios),
+        "avg_satisfaction": sum(sats) / len(sats) if sats else 0.0,
+        "pass_rate_pct": 100.0 * sum(1 for s in sats if s >= 100) / len(sats),
+        "models": models,
+        "llm_calls_total": llm_total,
+        "tool_calls_total": tool_total,
+        "earliest": timestamps[0] if timestamps else None,
+        "latest": timestamps[-1] if timestamps else None,
+    }
+
+
+_PII_RE = {
+    "email": __import__("re").compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
+    "ghp_token": __import__("re").compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    "bearer": __import__("re").compile(r"\bsk-[A-Za-z0-9-_]{16,}\b"),
+}
+
+
+def _anonymize_record(record: dict) -> dict:
+    """Return a deep-copied record with PII scrubbed.
+
+    Conservative substitutions only — preserves shape so the trace remains
+    useful for debugging:
+      * emails -> ``user@example.com``
+      * GitHub PATs -> ``ghp_REDACTED``
+      * OpenAI-shaped keys -> ``sk-REDACTED``
+    """
+    text = json.dumps(record, default=str)
+    text = _PII_RE["email"].sub("user@example.com", text)
+    text = _PII_RE["ghp_token"].sub("ghp_REDACTED", text)
+    text = _PII_RE["bearer"].sub("sk-REDACTED", text)
+    return json.loads(text)
+
+
+# =============================================================================
+# clone — additional subcommands (status, list, renew, seed, reset, tools)
+# =============================================================================
+
+
+@clone.command("status")
+@click.argument("clone_id")
+def clone_status(clone_id):
+    """Show clone metadata + state/request counts (alias for `inspect`)."""
+    ctx = click.get_current_context()
+    ctx.invoke(clone_inspect, clone_id=clone_id)
+
+
+@clone.command("list")
+@click.option("--json", "as_json", is_flag=True, default=False)
+def clone_list(as_json):
+    """List all registered clones (alive + recently stale)."""
+    from . import clone_manager
+    rows = clone_manager.list_all()
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    if not rows:
+        console.print("[yellow]No registered clones.[/yellow]")
+        return
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("ID", style="bold")
+    t.add_column("Alive")
+    t.add_column("URL", overflow="fold")
+    t.add_column("PID")
+    t.add_column("Started", overflow="fold")
+    t.add_column("TTL", overflow="fold")
+    for r in rows:
+        alive = "[green]yes[/green]" if r.get("alive") else "[red]no[/red]"
+        ttl = r.get("expires_at_iso") or "[dim]∞[/dim]"
+        t.add_row(
+            str(r.get("id", "?")),
+            alive,
+            str(r.get("url", "?")),
+            str(r.get("pid", "?")),
+            str(r.get("started_at", "?")),
+            ttl,
+        )
+    console.print(t)
+
+
+@clone.command("renew")
+@click.argument("clone_id")
+@click.option("--ttl-seconds", type=int, default=3600, show_default=True,
+              help="Seconds until expiry (advisory metadata only).")
+def clone_renew(clone_id, ttl_seconds):
+    """Set / extend the clone's TTL (advisory — Checkpoint doesn't auto-kill)."""
+    from . import clone_manager
+    try:
+        entry = clone_manager.renew(clone_id, ttl_seconds=ttl_seconds)
+    except KeyError:
+        console.print(f"[red]Clone {clone_id!r} not in registry.[/red]")
+        sys.exit(1)
+    console.print(
+        f"[green]Renewed {clone_id}.[/green] "
+        f"Expires at {entry['expires_at_iso']} ({ttl_seconds}s)."
+    )
+
+
+@clone.command("seed")
+@click.argument("clone_id")
+@click.argument("seed_name")
+def clone_seed(clone_id, seed_name):
+    """Apply a named seed to a running clone (POSTs `/_seed/<name>`)."""
+    from . import clone_manager
+    try:
+        result = clone_manager.seed(clone_id, seed_name)
+    except (KeyError, RuntimeError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    if result.get("ok"):
+        console.print(f"[green]Applied seed {seed_name!r} to {clone_id}.[/green]")
+    else:
+        err = result.get("error") or f"HTTP {result.get('status')}"
+        console.print(f"[red]Seed failed: {err}[/red]")
+        sys.exit(1)
+
+
+@clone.command("reset")
+@click.argument("clone_id")
+def clone_reset(clone_id):
+    """Reset a running clone to its factory state (POSTs `/_reset`)."""
+    from . import clone_manager
+    try:
+        result = clone_manager.reset(clone_id)
+    except (KeyError, RuntimeError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    if result.get("ok"):
+        console.print(f"[green]Reset {clone_id}.[/green]")
+    else:
+        err = result.get("error") or f"HTTP {result.get('status')}"
+        console.print(f"[red]Reset failed: {err}[/red]")
+        sys.exit(1)
+
+
+@clone.command("tools")
+@click.argument("clone_id")
+@click.option("--json", "as_json", is_flag=True, default=False)
+def clone_tools(clone_id, as_json):
+    """List MCP tools exposed by a running clone."""
+    from . import clone_manager
+    try:
+        result = clone_manager.tools(clone_id)
+    except (KeyError, RuntimeError) as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    tools = result.get("tools") or []
+    if as_json:
+        click.echo(json.dumps(tools, indent=2, default=str))
+        return
+    if not tools:
+        console.print(
+            f"[yellow]No MCP tools found for {clone_id} "
+            f"(twin may not expose an MCP surface, or is unreachable).[/yellow]"
+        )
+        return
+    t = Table(box=box.SIMPLE_HEAD)
+    t.add_column("Name", style="bold")
+    t.add_column("Description", overflow="fold")
+    for tool in tools:
+        t.add_row(
+            str(tool.get("name", "?")),
+            str(tool.get("description", ""))[:120],
+        )
+    console.print(t)
+    console.print(f"[dim]{len(tools)} tools.[/dim]")
 
 
 if __name__ == "__main__":
