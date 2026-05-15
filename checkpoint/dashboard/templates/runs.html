@@ -68,6 +68,7 @@
 <div class="card tight">
 <table>
   <thead><tr>
+    <th style="width:30px" title="select 2 to compare">&#9866;</th>
     <th>Run ID</th><th>Scenario</th><th>Score</th><th>Criteria</th>
     <th>Model</th><th>Timestamp</th>
   </tr></thead>
@@ -78,6 +79,7 @@
   {% set passed = r.criteria | selectattr('passed') | list | length %}
   {% set total_c = r.criteria | length %}
   <tr class="row-link" onclick="location.href='/runs/{{ r.run_id }}'">
+    <td class="pick-col"><input type="checkbox" class="cmp-pick" value="{{ r.run_id }}" aria-label="pick run {{ r.run_id | short_id }} to compare"></td>
     <td class="mono">{{ r.run_id | short_id }}</td>
     <td>{{ r.scenario or '—' }}</td>
     <td>
@@ -89,7 +91,7 @@
     <td class="micro">{{ ((r.env or {}).get('timestamp') or '—')[:19] }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="6" class="empty-state">
+  <tr><td colspan="7" class="empty-state">
     No runs yet. Run <code>checkpoint run scenarios/</code> to populate this view.
   </td></tr>
   {% endfor %}
