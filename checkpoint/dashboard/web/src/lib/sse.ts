@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-// Generic Server-Sent Events hook. Reconnects on error with exponential backoff.
-// Each named event invokes the matching listener with the parsed JSON payload.
+// Generic Server-Sent Events hook. Reconnects on error with exponential
+// backoff *unless* the server has signalled a clean end of stream — that
+// matters for one-shot streams like job logs which the server closes after
+// the terminal "ended" event.
 export type SSEListeners = Record<string, (payload: unknown) => void>;
 
 export function useEventSource(
@@ -14,20 +16,24 @@ export function useEventSource(
   const listenersRef = useRef(listeners);
   listenersRef.current = listeners;
 
-  const [status, setStatus] = useState<"connecting" | "open" | "closed">(
-    "connecting",
+  const [status, setStatus] = useState<"connecting" | "open" | "closed" | "ended">(
+    enabled ? "connecting" : "closed",
   );
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setStatus("closed");
+      return;
+    }
 
     let es: EventSource | null = null;
     let backoff = 500;
     let cancelled = false;
+    let stopReconnect = false;
     let timer: number | null = null;
 
     const connect = () => {
-      if (cancelled) return;
+      if (cancelled || stopReconnect) return;
       es = new EventSource(url);
       setStatus("connecting");
 
@@ -36,14 +42,20 @@ export function useEventSource(
         setStatus("open");
       };
       es.onerror = () => {
-        setStatus("closed");
         es?.close();
-        if (cancelled) return;
+        if (cancelled || stopReconnect) {
+          setStatus(stopReconnect ? "ended" : "closed");
+          return;
+        }
+        setStatus("closed");
         timer = window.setTimeout(connect, backoff);
         backoff = Math.min(backoff * 2, 8_000);
       };
 
-      // Subscribe to every named event the caller cares about.
+      // Subscribe to every named event the caller cares about. The reserved
+      // "ended" event tells us the server has closed the stream intentionally;
+      // we set stopReconnect so the next onerror (when the connection drops
+      // cleanly) doesn't trigger a reconnect.
       Object.keys(listenersRef.current).forEach((evt) => {
         es!.addEventListener(evt, (e: MessageEvent) => {
           let payload: unknown = e.data;
@@ -53,6 +65,12 @@ export function useEventSource(
             // leave raw
           }
           listenersRef.current[evt]?.(payload);
+          if (evt === "ended") {
+            stopReconnect = true;
+            // Close immediately; don't wait for the server-side timeout.
+            es?.close();
+            setStatus("ended");
+          }
         });
       });
     };
@@ -68,8 +86,9 @@ export function useEventSource(
   return status;
 }
 
-// Streams a job's stdout/stderr live. Yields lines as they arrive plus a final
-// "ended" event with the exit code.
+// Streams a job's stdout/stderr live. Yields lines as they arrive plus a
+// terminal "ended" event with the exit code. Once `ended` fires, the
+// underlying EventSource is closed and no reconnects are attempted.
 export function useJobStream(jobId: string | null) {
   const [lines, setLines] = useState<string[]>([]);
   const [ended, setEnded] = useState<{ exit_code: number; status: string } | null>(
