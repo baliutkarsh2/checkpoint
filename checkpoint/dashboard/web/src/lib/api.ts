@@ -114,7 +114,7 @@ export interface CompareDiff {
 export interface RunJob {
   job_id: string;
   scenario: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   started_at: string;
   ended_at: string | null;
   exit_code: number | null;
@@ -128,6 +128,15 @@ export interface AppMeta {
   runs_dir: string;
   scenarios_dir: string;
   judge_model_default: string;
+}
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  path: string;
+  abs_path: string;
+  description: string;
+  source: "bundled" | "init" | "local";
 }
 
 class ApiError extends Error {
@@ -184,6 +193,7 @@ export const api = {
       `/api/scenarios${q}`,
     );
   },
+  agents: () => request<AgentInfo[]>("/api/agents"),
   report: (params: { scenario?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.scenario) q.set("scenario", params.scenario);

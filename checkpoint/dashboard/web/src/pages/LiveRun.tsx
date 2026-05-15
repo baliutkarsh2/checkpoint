@@ -17,7 +17,14 @@ export default function LiveRun() {
     queryKey: ["jobs", jobId],
     queryFn: () => api.jobs.get(jobId),
     enabled: Boolean(jobId),
-    refetchInterval: 2_000,
+    // Poll while the job is still running, then stop. Without this gate the
+    // page would hammer /api/jobs/:id every 2s forever after the job ended.
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s && (s === "succeeded" || s === "failed" || s === "cancelled")
+        ? false
+        : 2_000;
+    },
   });
   const stream = useJobStream(jobId || null);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -74,9 +81,11 @@ export default function LiveRun() {
               className={
                 stream.status === "open"
                   ? "text-pass"
-                  : stream.status === "closed"
-                    ? "text-fail"
-                    : "text-warn"
+                  : stream.status === "ended"
+                    ? "text-ink-3"
+                    : stream.status === "closed"
+                      ? "text-fail"
+                      : "text-warn"
               }
             >
               {stream.status}

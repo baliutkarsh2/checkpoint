@@ -17,7 +17,16 @@ from checkpoint.dashboard.app import create_app
 @pytest.fixture
 def empty_dirs(tmp_path):
     (tmp_path / "runs").mkdir()
-    (tmp_path / "scenarios").mkdir()
+    scn = tmp_path / "scenarios"
+    scn.mkdir()
+    # Drop a real scenario file so POST /api/jobs's path-resolution step
+    # can find something — these tests only care about middleware behaviour,
+    # not the actual run.
+    (scn / "x.md").write_text(
+        "# x\n## Prompt\nnoop\n## Success Criteria\n- [D] anything\n"
+        "## Config\nclones: github\n",
+        encoding="utf-8",
+    )
     return tmp_path
 
 

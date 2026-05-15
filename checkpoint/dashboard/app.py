@@ -33,6 +33,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..analytics import compute_trend, detect_flaky, load_runs_for_scenario
 from ..compare_diff import build_compare_diff
 from ..scenario import parse_file
+from . import agents as agent_discovery
 from .events import EventBus, FilesystemWatcher
 from .jobs import JobManager
 from .metrics import Metrics
@@ -364,6 +365,16 @@ def create_app(
     @app.get("/api/clones", tags=["clones"])
     def api_clones():
         return _load_clones(clone_registry_path)
+
+    @app.get("/api/agents", tags=["agents"])
+    def api_agents():
+        """Auto-discovered harness directories the RunLauncher can pick from.
+
+        Scans examples/agents/, harness/, and agents/ under project_dir for
+        any directory containing both a Dockerfile and a harness.py. Result
+        is cached for 5s to avoid hammering the FS on dropdown re-renders.
+        """
+        return agent_discovery.discover(project_dir or Path.cwd())
 
     # -----------------------------------------------------------------------
     # Jobs (start/list/get/cancel + log SSE)

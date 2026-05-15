@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shlex
 import sys
 import uuid
@@ -29,6 +30,10 @@ from typing import Literal
 from .events import EventBus
 
 log = logging.getLogger("checkpoint.dashboard.jobs")
+
+# Match a hex run-id basename of a .json file anywhere in a line. Survives
+# Rich's whitespace-wrap of the "Run record: <path>" CLI output.
+_RUN_RECORD_PATH_RE = re.compile(r"([0-9a-f]{12,})\.json")
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
@@ -176,9 +181,12 @@ class JobManager:
                         break
                     line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
                     await self._broadcast_log(job, line)
-                    if line.startswith("Run record:") and " " in line:
-                        # The CLI prints the path of the run record JSON as the last line.
-                        job.run_id = Path(line.split()[-1]).stem
+                    # Find a 12+ char hex run_id followed by .json anywhere on
+                    # the line — robust against Rich's terminal-width wrapping
+                    # of the "Run record: <path>" line.
+                    m = _RUN_RECORD_PATH_RE.search(line)
+                    if m:
+                        job.run_id = m.group(1)
 
                 rc = await proc.wait()
                 job.exit_code = rc
