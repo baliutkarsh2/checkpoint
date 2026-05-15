@@ -1,0 +1,54 @@
+# Self-host stack for the checkpoint dashboard.
+#
+# Usage:
+#   1. cp .env.example .env  &&  edit .env (set OPENAI_API_KEY at minimum)
+#   2. docker compose up -d
+#   3. open http://127.0.0.1:4001
+#
+# What this gives you:
+#   - The dashboard at :4001
+#   - Persistent volume `checkpoint-data` for runs, config, scenarios
+#   - Optional bearer-token auth (set CHECKPOINT_DASHBOARD_API_KEY in .env)
+#   - Healthcheck so `docker compose ps` shows green
+#
+# What this does NOT give you (deliberately):
+#   - Spawning Docker-mode jobs from the dashboard. POST /api/jobs in this
+#     container would need the host docker socket. To enable, uncomment the
+#     `volumes` line below — but be aware that mounting the socket gives the
+#     dashboard root-equivalent access to the host. Read DEPLOYMENT.md first.
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: checkpoint:latest
+    container_name: checkpoint-dashboard
+    restart: unless-stopped
+    ports:
+      - "${CHECKPOINT_PORT:-4001}:4001"
+    environment:
+      - PORT=4001
+      - CHECKPOINT_HOME=/data/config
+      - CHECKPOINT_LOG_LEVEL=${CHECKPOINT_LOG_LEVEL:-INFO}
+      - CHECKPOINT_DASHBOARD_API_KEY=${CHECKPOINT_DASHBOARD_API_KEY:-}
+      - CHECKPOINT_DASHBOARD_AUTH_READS=${CHECKPOINT_DASHBOARD_AUTH_READS:-}
+      - CHECKPOINT_DASHBOARD_READ_ONLY=${CHECKPOINT_DASHBOARD_READ_ONLY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - checkpoint-data:/data
+      # Uncomment to enable Docker-mode jobs spawned from POST /api/jobs.
+      # SECURITY: gives the container root-equivalent host access. Only do
+      # this on a machine you fully trust, behind bearer-token auth, and
+      # behind a firewall.
+      # - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4001/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  checkpoint-data:
+    driver: local
