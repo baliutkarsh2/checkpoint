@@ -59,7 +59,7 @@ def test_tag_filter_runs_only_matching_scenarios(echo_harness, tmp_path: Path, m
 
     runner = CliRunner()
     result = runner.invoke(main, [
-        "run", str(scn_dir),
+        "run", str(scn_dir), "--no-docker",
         "--harness", f"{sys.executable} {echo_harness}",
         "--tag", "smoke",
     ])
@@ -79,7 +79,7 @@ def test_tag_filter_all_skipped_exits_zero(echo_harness, tmp_path: Path, monkeyp
 
     runner = CliRunner()
     result = runner.invoke(main, [
-        "run", str(scn_dir),
+        "run", str(scn_dir), "--no-docker",
         "--harness", f"{sys.executable} {echo_harness}",
         "--tag", "smoke",
     ])
@@ -102,7 +102,7 @@ def test_dot_checkpoint_json_autoload(echo_harness, tmp_path: Path, monkeypatch)
 
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    result = runner.invoke(main, ["run", str(scn)])
+    result = runner.invoke(main, ["run", str(scn), "--no-docker"])
     assert result.exit_code == 0, result.output
     assert "Score:" in result.output
 
@@ -120,7 +120,7 @@ def test_harness_json_autoload(echo_harness, tmp_path: Path, monkeypatch):
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["run", str(scn), "--harness", str(hdir)])
+    result = runner.invoke(main, ["run", str(scn), "--no-docker", "--harness", str(hdir)])
     assert result.exit_code == 0, result.output
 
 
@@ -135,7 +135,7 @@ def test_evaluator_source_recorded_in_trace_out(echo_harness, tmp_path: Path, mo
     trace_path = tmp_path / "trace.json"
     runner = CliRunner()
     result = runner.invoke(main, [
-        "run", str(scn),
+        "run", str(scn), "--no-docker",
         "--harness", f"{sys.executable} {echo_harness}",
         "--trace-out", str(trace_path),
     ])
@@ -155,7 +155,7 @@ def test_evaluator_flag_overrides_scenario(echo_harness, tmp_path: Path, monkeyp
     trace_path = tmp_path / "trace.json"
     runner = CliRunner()
     result = runner.invoke(main, [
-        "run", str(scn),
+        "run", str(scn), "--no-docker",
         "--harness", f"{sys.executable} {echo_harness}",
         "--model", "gpt-test-flag",
         "--trace-out", str(trace_path),
@@ -177,7 +177,7 @@ def test_reuse_session_flag_is_noop(echo_harness, tmp_path: Path, monkeypatch):
     )
     runner = CliRunner()
     result = runner.invoke(main, [
-        "run", str(scn),
+        "run", str(scn), "--no-docker",
         "--harness", f"{sys.executable} {echo_harness}",
         "--reuse-session",
     ])

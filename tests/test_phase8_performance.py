@@ -56,6 +56,7 @@ def test_cold_start_local_under_budget() -> None:
         "checkpoint.cli",
         "run",
         str(SMOKE_SCENARIO),
+        "--no-docker",
         "--harness",
         f"{sys.executable} {FAKE_HARNESS}",
     ]
