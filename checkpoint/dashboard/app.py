@@ -371,8 +371,34 @@ def create_app(
 
     @app.post("/api/jobs", status_code=201, tags=["jobs"])
     async def start_job(body: StartJobBody):
+        # Resolve the scenario path. The SPA dropdown returns paths relative
+        # to scenarios_dir (e.g. "github-happy-path.md") but the spawned
+        # `checkpoint run` runs with cwd=project_dir, so a bare filename won't
+        # be found. Try in order: cwd-relative, scenarios_dir-relative,
+        # absolute. Reject early with a clear 400 instead of letting the CLI
+        # error out 30s later.
+        candidates = [
+            (project_dir or Path.cwd()) / body.scenario,
+            scenarios_dir / body.scenario,
+            Path(body.scenario),
+        ]
+        resolved: Path | None = None
+        for c in candidates:
+            if c.is_file():
+                resolved = c.resolve()
+                break
+        if resolved is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"scenario not found: {body.scenario!r}. "
+                    f"Tried {[str(c) for c in candidates]}"
+                ),
+            )
+        # Pass the absolute path through so the spawned subprocess finds it
+        # regardless of cwd.
         job = await jobs.start(
-            body.scenario,
+            str(resolved),
             docker=body.docker,
             harness_dir=body.harness,
         )
