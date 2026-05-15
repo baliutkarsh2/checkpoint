@@ -59,7 +59,8 @@ def test_config_path_prints_path(isolated_home):
 def test_config_show_when_unset(isolated_home):
     r = CliRunner().invoke(main, ["config", "show"])
     assert r.exit_code == 0
-    assert "No user config" in r.output or "config init" in r.output
+    flat = " ".join(r.output.split())
+    assert "No user config" in flat or "config init" in flat
 
 
 def test_config_init_creates_file(isolated_home):
@@ -72,7 +73,10 @@ def test_config_init_refuses_overwrite_without_force(isolated_home):
     CliRunner().invoke(main, ["config", "init"])
     r = CliRunner().invoke(main, ["config", "init"])
     assert r.exit_code == 1
-    assert "Use --force" in r.output
+    # Rich may wrap the message across newlines depending on terminal width;
+    # collapse whitespace before checking so the assertion is wrap-tolerant.
+    flat = " ".join(r.output.split())
+    assert "Use --force" in flat
 
 
 def test_config_init_with_force_overwrites(isolated_home):
@@ -97,7 +101,8 @@ def test_config_set_get_unset_roundtrip(isolated_home):
 def test_config_set_warns_on_unknown_key(isolated_home):
     r = CliRunner().invoke(main, ["config", "set", "totally.unknown.key", "x"])
     assert r.exit_code == 0
-    assert "not a known config key" in r.output
+    flat = " ".join(r.output.split())
+    assert "not a known config key" in flat
 
 
 def test_config_show_json(isolated_home):
@@ -195,7 +200,8 @@ def test_clone_list_empty(isolated_home, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     r = CliRunner().invoke(main, ["clone", "list"])
     assert r.exit_code == 0
-    assert "No registered clones" in r.output
+    flat = " ".join(r.output.split())
+    assert "No registered clones" in flat
 
 
 def test_clone_list_json_empty(isolated_home, tmp_path, monkeypatch):
@@ -209,7 +215,8 @@ def test_clone_status_unregistered(isolated_home, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     r = CliRunner().invoke(main, ["clone", "status", "github"])
     assert r.exit_code == 1
-    assert "No registered clone" in r.output
+    flat = " ".join(r.output.split())
+    assert "No registered clone" in flat
 
 
 def test_clone_renew_unregistered(isolated_home, tmp_path, monkeypatch):
