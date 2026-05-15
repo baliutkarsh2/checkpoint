@@ -34,12 +34,29 @@ jobs:
       - name: Install checkpoint and dependencies
         run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
 
+      # Detect whether the repo has an OPENAI_API_KEY secret configured.
+      # Fork PRs and repos that haven't set the secret will skip the LLM-
+      # dependent steps below cleanly instead of failing the whole workflow.
+      - name: Check for OPENAI_API_KEY
+        id: api_key_check
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::warning::OPENAI_API_KEY secret not set; skipping LLM-judged scenario run."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run checkpoint doctor
+        if: steps.api_key_check.outputs.skip != 'true'
         run: checkpoint doctor
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Run scenarios
+        if: steps.api_key_check.outputs.skip != 'true'
         run: |
           SCENARIO="${{ github.event.inputs.scenario }}"
           CLONE_OVERRIDE="${{ github.event.inputs.clone }}"
@@ -71,17 +88,92 @@ jobs:
           GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN: ya29.checkpoint_google_workspace_token_aabbccddeeff
 
       - name: Upload trace artifact
-        if: always()
+        if: always() && steps.api_key_check.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-traces-${{ github.run_id }}
           path: ci-traces.json
           retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload run records
-        if: always()
+        if: always() && steps.api_key_check.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-run-records-${{ github.run_id }}
           path: .checkpoint/cache/runs/
           retention-days: 30
+          if-no-files-found: ignore
+
+  build-and-test:
+    name: Build SPA + run pytest + verify wheel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: checkpoint/dashboard/web/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # 1. Rebuild the SPA from source. The committed bundle in
+      # checkpoint/dashboard/static/ MUST match what `npm run build` produces;
+      # otherwise the next step will fail and force the contributor to
+      # commit the fresh bundle. (JupyterLab pattern.)
+      - name: Build dashboard SPA
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Verify committed SPA bundle matches a fresh build
+        run: |
+          if ! git diff --quiet -- checkpoint/dashboard/static/; then
+            echo "::error::checkpoint/dashboard/static/ is stale."
+            echo "Run \`cd checkpoint/dashboard/web && npm ci && npm run build\` and commit the result."
+            git diff --stat -- checkpoint/dashboard/static/
+            exit 1
+          fi
+
+      # 2. Install Python deps + run the full pytest suite.
+      - name: Install package with dev extras
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest tests/ -q
+
+      # 3. Build sdist + wheel and prove the SPA is inside.
+      - name: Build sdist + wheel
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Verify wheel ships the SPA bundle
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          whl = sorted(glob.glob("dist/*.whl"))[-1]
+          names = zipfile.ZipFile(whl).namelist()
+          if not any("dashboard/static/index.html" in n for n in names):
+              sys.exit(f"FAIL: {whl} is missing the SPA bundle")
+          print("OK:", whl, "ships dashboard/static/index.html")
+          PY
+
+      - name: Upload built distributions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkpoint-dist-${{ github.run_id }}
+          path: dist/*
+          retention-days: 14

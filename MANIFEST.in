@@ -1,0 +1,8 @@
+# Belt-and-suspenders for older setuptools whose package-data globbing
+# sometimes drops nested static asset trees. pyproject.toml already declares
+# checkpoint/dashboard/static/**/* as package-data; this just guarantees the
+# sdist tarball includes the same files.
+recursive-include checkpoint/dashboard/static *
+recursive-include checkpoint/init_templates *
+include README.md
+include LICENSE
