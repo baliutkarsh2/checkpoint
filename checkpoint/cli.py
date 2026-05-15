@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -248,16 +249,27 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         # chars, mangling Windows paths. posix=False preserves them as literals.
         harness_cmd = shlex.split(harness_cmd_str, posix=sys.platform != "win32") if harness_cmd_str else []
 
+        # Snapshot harness identity so it lands in every run record. Without
+        # this the dashboard can't tell you which agent produced a run.
+        harness_meta = _build_harness_meta(
+            harness_cmd_str=harness_cmd_str,
+            harness_dir=harness_dir,
+            docker=docker,
+        )
+
         results: list[RunResult] = []
+        durations_ms: list[float] = []
         for i in range(scenario.runs):
             if not quiet:
                 console.print(f"\n[bold]Run {i + 1}/{scenario.runs}[/bold]")
+            _t0 = time.perf_counter()
             if docker:
                 from .docker.runner import docker_run_once
                 hdir = Path(harness_dir or cwd or ".").resolve()
                 r = docker_run_once(scenario, harness_cmd, hdir, cwd=cwd, judge_model=resolution.model, verbose=docker_logs)
             else:
                 r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=resolution.model)
+            durations_ms.append((time.perf_counter() - _t0) * 1000)
             results.append(r)
             if not quiet and output_format != "json":
                 _print_run(r)
@@ -284,7 +296,7 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
             })
 
         # EV-05 + EV-06: per-run failure analysis + persisted run record.
-        for r in results:
+        for r, dur_ms in zip(results, durations_ms):
             _persist_run_record(
                 r,
                 scenario_name=scenario.title or (Path(scn_path).name if scn_path else "<inline>"),
@@ -293,6 +305,8 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
                 evaluator_model_source=resolution.source,
                 task=scenario.prompt,
                 skip_failure_analysis=no_failure_analysis,
+                harness=harness_meta,
+                duration_ms=round(dur_ms, 1),
             )
 
         # Build the JSON summary entry for this scenario.
@@ -341,6 +355,48 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         sys.exit(1 if threshold_violation else 0)
     if any_failed:
         sys.exit(1)
+
+
+def _build_harness_meta(
+    *,
+    harness_cmd_str: str | None,
+    harness_dir: str | None,
+    docker: bool,
+) -> dict:
+    """Snapshot the agent identity that will land in every run record.
+
+    Shapes:
+      docker:     {name, dir (relative-to-cwd if possible), mode: "docker"}
+      subprocess: {name (basename of the script or "inline"), cmd, mode: "subprocess"}
+
+    "name" is what the dashboard renders prominently — keep it short and
+    stable. "dir" / "cmd" are the full identity.
+    """
+    if docker:
+        d = Path(harness_dir or ".").resolve()
+        try:
+            rel = d.relative_to(Path.cwd().resolve()).as_posix()
+        except ValueError:
+            rel = str(d)
+        return {
+            "name": d.name or "harness",
+            "dir": rel,
+            "mode": "docker",
+        }
+    # Subprocess mode: the harness is a shell command.
+    cmd = (harness_cmd_str or "").strip()
+    if not cmd:
+        return {"name": "(none)", "cmd": "", "mode": "subprocess"}
+    # Pick a friendly name: the basename of the .py file if there is one,
+    # otherwise the first token of the command.
+    name = "subprocess"
+    for tok in shlex.split(cmd, posix=sys.platform != "win32"):
+        if tok.endswith(".py"):
+            name = Path(tok).stem
+            break
+    else:
+        name = Path(cmd.split()[0]).stem if cmd.split() else "subprocess"
+    return {"name": name, "cmd": cmd, "mode": "subprocess"}
 
 
 def _normalize_harness_arg(harness_str: str) -> str:
@@ -446,6 +502,8 @@ def _persist_run_record(
     evaluator_model_source: str,
     task: str,
     skip_failure_analysis: bool = False,
+    harness: dict | None = None,
+    duration_ms: float | None = None,
 ) -> None:
     """Build, optionally enrich with failure analysis, write to disk.
 
@@ -482,6 +540,8 @@ def _persist_run_record(
         metrics=getattr(r, "metrics", None),
         agent_trace=getattr(r, "agent_trace", None),
         failure_analysis=failure_analysis or None,
+        harness=harness,
+        duration_ms=duration_ms,
     )
     try:
         path = write_record(record)

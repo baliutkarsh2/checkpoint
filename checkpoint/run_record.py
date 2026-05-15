@@ -80,6 +80,10 @@ def build_record(
     failure_analysis: dict[str, str] | None = None,
     run_id: str | None = None,
     timestamp: str | None = None,
+    # Agent + mode metadata (added v0.2; older records will be missing these
+    # fields and the dashboard renders them as "—").
+    harness: dict | None = None,
+    duration_ms: float | None = None,
 ) -> dict:
     ts = timestamp or _utc_iso()
     rid = run_id or make_run_id(scenario_path, ts)
@@ -97,6 +101,8 @@ def build_record(
         "state": _truncate_state_for_record(state),
         "error": error,
         "exit_code": exit_code,
+        "harness": harness,             # {name, dir, mode: docker|subprocess, cmd}
+        "duration_ms": duration_ms,
         "env": {
             "timestamp": ts,
             "host": platform.node(),

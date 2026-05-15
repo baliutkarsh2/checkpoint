@@ -71,20 +71,33 @@ def _record_summary(rec: dict) -> dict:
     every record's full trace+state were inlined.
     """
     crits = rec.get("criteria") or []
+    h = rec.get("harness") or {}
     return {
         "run_id": rec.get("run_id", ""),
         "scenario": rec.get("scenario"),
+        "scenario_path": rec.get("scenario_path"),
         "satisfaction": float(rec.get("satisfaction") or 0),
         "criteria_pass": sum(1 for c in crits if c.get("passed")),
         "criteria_total": len(crits),
         "evaluator_model": rec.get("evaluator_model"),
         "timestamp": (rec.get("env") or {}).get("timestamp"),
         "exit_code": rec.get("exit_code"),
+        # Agent / mode / duration — added v0.2. Older records will have None.
+        "harness_name": h.get("name"),
+        "harness_dir": h.get("dir"),
+        "mode": h.get("mode"),
+        "duration_ms": rec.get("duration_ms"),
     }
 
 
 def _list_runs(
-    runs_dir: Path, scenario: str = "", per_page: int = 50, page: int = 1
+    runs_dir: Path,
+    scenario: str = "",
+    per_page: int = 50,
+    page: int = 1,
+    *,
+    agent_filter: str = "",
+    mode_filter: str = "",
 ) -> tuple[list[dict], int]:
     if not runs_dir.exists():
         return [], 0
@@ -93,20 +106,107 @@ def _list_runs(
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
-    pattern = scenario.lower()
+    scn_pattern = scenario.lower()
+    agent_pattern = agent_filter.lower()
+    mode_pattern = (mode_filter or "").lower()
     rows: list[dict] = []
     for f in files:
         try:
             rec = json.loads(f.read_text(encoding="utf-8", errors="replace"))
         except (json.JSONDecodeError, OSError):
             continue
-        if pattern and pattern not in (rec.get("scenario") or "").lower():
+        if scn_pattern and scn_pattern not in (rec.get("scenario") or "").lower():
             continue
+        if agent_pattern:
+            h = rec.get("harness") or {}
+            blob = f"{h.get('name', '')} {h.get('dir', '')}".lower()
+            if agent_pattern not in blob:
+                continue
+        if mode_pattern:
+            h = rec.get("harness") or {}
+            if (h.get("mode") or "").lower() != mode_pattern:
+                continue
         rows.append(rec)
     total = len(rows)
     start = (page - 1) * per_page
     sliced = rows[start : start + per_page]
     return [_record_summary(r) for r in sliced], total
+
+
+def _runs_for_agent(runs_dir: Path, agent: dict) -> list[dict]:
+    """All run summaries that this agent produced.
+
+    We match by the absolute or relative `dir` of the harness — that's stable
+    across re-renames of the friendly `name`.
+    """
+    if not runs_dir.exists():
+        return []
+    abs_path = (agent or {}).get("abs_path") or ""
+    rel_path = (agent or {}).get("path") or ""
+    out: list[dict] = []
+    for f in sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8", errors="replace"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        h = rec.get("harness") or {}
+        d = h.get("dir") or ""
+        if d and (d == rel_path or d == abs_path or d.endswith("/" + rel_path)):
+            out.append(_record_summary(rec))
+    return out
+
+
+def _runs_for_scenario(runs_dir: Path, scenario_name: str) -> list[dict]:
+    if not runs_dir.exists() or not scenario_name:
+        return []
+    pattern = scenario_name.lower()
+    out: list[dict] = []
+    for f in sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8", errors="replace"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if (rec.get("scenario") or "").lower() == pattern:
+            out.append(_record_summary(rec))
+    return out
+
+
+def _runs_grouped_by_scenario(rows: list[dict]) -> dict[str, dict]:
+    """{scenario: {runs:int, avg:float, last_score:float, last_at:str}}."""
+    out: dict[str, dict] = {}
+    for r in rows:
+        key = r.get("scenario") or "(unknown)"
+        bucket = out.setdefault(key, {"runs": 0, "scores": [], "last_score": None, "last_at": None})
+        bucket["runs"] += 1
+        bucket["scores"].append(float(r.get("satisfaction") or 0))
+        if bucket["last_at"] is None:
+            bucket["last_at"] = r.get("timestamp")
+            bucket["last_score"] = float(r.get("satisfaction") or 0)
+    return {
+        k: {
+            "runs": v["runs"],
+            "avg_score": round(sum(v["scores"]) / len(v["scores"]), 1) if v["scores"] else 0,
+            "last_score": v["last_score"],
+            "last_at": v["last_at"],
+        }
+        for k, v in out.items()
+    }
+
+
+def _agent_stats(rows: list[dict]) -> dict:
+    if not rows:
+        return {"total_runs": 0, "avg_score": 0.0, "pass_rate": 0.0, "last_at": None}
+    scores = [float(r.get("satisfaction") or 0) for r in rows]
+    return {
+        "total_runs": len(rows),
+        "avg_score": round(sum(scores) / len(scores), 1),
+        "pass_rate": round(100 * sum(1 for s in scores if s >= 100) / len(scores), 1),
+        "last_at": rows[0].get("timestamp"),
+    }
+
+
+def _scenario_stats(rows: list[dict]) -> dict:
+    return _agent_stats(rows)
 
 
 def _build_summary(runs_dir: Path) -> dict:
@@ -312,10 +412,13 @@ def create_app(
     @app.get("/api/runs", tags=["runs"])
     def api_runs(
         scenario: str = "",
+        agent: str = "",
+        mode: str = "",
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=500),
     ):
-        rows, total = _list_runs(runs_dir, scenario, per_page, page)
+        rows, total = _list_runs(runs_dir, scenario, per_page, page,
+                                 agent_filter=agent, mode_filter=mode)
         return {"rows": rows, "total": total, "page": page, "per_page": per_page}
 
     @app.get("/api/runs/{run_id}", tags=["runs"])
@@ -375,6 +478,116 @@ def create_app(
         is cached for 5s to avoid hammering the FS on dropdown re-renders.
         """
         return agent_discovery.discover(project_dir or Path.cwd())
+
+    @app.get("/api/agents/{agent_id}", tags=["agents"])
+    def api_agent_detail(agent_id: str):
+        """One agent + its full README + a roll-up of every run it produced.
+
+        We accept the agent's slug (e.g. ``examples--agents--openai-tools``)
+        and resolve it back to a discovered entry.
+        """
+        agents_list = agent_discovery.discover(project_dir or Path.cwd())
+        agent = next((a for a in agents_list if a["id"] == agent_id), None)
+        if agent is None:
+            raise HTTPException(404, f"agent {agent_id!r} not found")
+        readme_path = Path(agent["abs_path"]) / "README.md"
+        readme = readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
+        # Roll up every run that mentions this agent.
+        runs = _runs_for_agent(runs_dir, agent)
+        scenarios = _runs_grouped_by_scenario(runs)
+        return {
+            "agent": agent,
+            "readme": readme,
+            "runs": runs,
+            "by_scenario": scenarios,
+            "stats": _agent_stats(runs),
+        }
+
+    @app.get("/api/scenarios/file", tags=["scenarios"])
+    def api_scenario_detail(path: str):
+        """One scenario: parsed sections + raw markdown + run history.
+
+        Path is relative to scenarios_dir (matches the dropdown values
+        returned by /api/scenarios).
+        """
+        # Resolve safely under scenarios_dir to defeat traversal attempts.
+        target = (scenarios_dir / path).resolve()
+        try:
+            target.relative_to(scenarios_dir.resolve())
+        except ValueError:
+            raise HTTPException(400, "scenario path escapes scenarios_dir")
+        if not target.is_file():
+            raise HTTPException(404, f"scenario {path!r} not found")
+        try:
+            scn = parse_file(target)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, f"could not parse scenario: {e}")
+        runs = _runs_for_scenario(runs_dir, scn.title or target.stem)
+        return {
+            "path": path,
+            "abs_path": str(target),
+            "title": scn.title,
+            "prompt": scn.prompt,
+            "setup": scn.setup,
+            "expected": scn.expected,
+            "criteria": [
+                {"text": c.text, "kind": c.kind} for c in scn.criteria
+            ],
+            "config": scn.config,
+            "clones": scn.clones,
+            "raw": target.read_text(encoding="utf-8"),
+            "runs": runs,
+            "stats": _scenario_stats(runs),
+        }
+
+    # -----------------------------------------------------------------------
+    # Clones (live registry + management proxies)
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/clones/{clone_id}", tags=["clones"], status_code=201)
+    def api_clone_start(clone_id: str):
+        from .. import clone_manager
+        try:
+            entry = clone_manager.start(clone_id)
+        except (ValueError, RuntimeError) as e:
+            raise HTTPException(400, str(e))
+        return {"id": clone_id, **entry}
+
+    @app.delete("/api/clones/{clone_id}", tags=["clones"])
+    def api_clone_stop(clone_id: str):
+        from .. import clone_manager
+        was_running = clone_manager.stop(clone_id)
+        return {"id": clone_id, "was_running": was_running}
+
+    @app.post("/api/clones/{clone_id}/seed/{seed_name}", tags=["clones"])
+    def api_clone_seed(clone_id: str, seed_name: str):
+        from .. import clone_manager
+        try:
+            return clone_manager.seed(clone_id, seed_name)
+        except (KeyError, RuntimeError) as e:
+            raise HTTPException(404, str(e))
+
+    @app.post("/api/clones/{clone_id}/reset", tags=["clones"])
+    def api_clone_reset(clone_id: str):
+        from .. import clone_manager
+        try:
+            return clone_manager.reset(clone_id)
+        except (KeyError, RuntimeError) as e:
+            raise HTTPException(404, str(e))
+
+    @app.get("/api/clones/{clone_id}/tools", tags=["clones"])
+    def api_clone_tools(clone_id: str):
+        from .. import clone_manager
+        try:
+            return clone_manager.tools(clone_id)
+        except (KeyError, RuntimeError) as e:
+            raise HTTPException(404, str(e))
+
+    @app.get("/api/clones/supported", tags=["clones"])
+    def api_clones_supported():
+        """Static list of clones the system knows how to spawn."""
+        from ..clone_manager import TWIN_APPS
+        return [{"id": k, "module": v} for k, v in sorted(TWIN_APPS.items())]
 
     # -----------------------------------------------------------------------
     # Jobs (start/list/get/cancel + log SSE)
