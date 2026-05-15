@@ -38,7 +38,9 @@ from .jobs import JobManager
 from .metrics import Metrics
 from .middleware import (
     AccessLogMiddleware,
+    BearerAuthMiddleware,
     RateLimitMiddleware,
+    ReadOnlyJobsMiddleware,
     RequestIdMiddleware,
 )
 
@@ -272,8 +274,11 @@ def create_app(
     )
 
     # Middleware order matters: outermost runs first on request, last on response.
+    # Auth + read-only run BEFORE access log so blocked requests still log.
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RateLimitMiddleware, max_writes=30, window_s=10.0)
+    app.add_middleware(ReadOnlyJobsMiddleware)
+    app.add_middleware(BearerAuthMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
     # -----------------------------------------------------------------------

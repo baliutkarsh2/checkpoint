@@ -53,7 +53,8 @@ def main():
 @click.option("--trace-out", type=click.Path(dir_okay=False), default=None, help="Save all-runs trace+state JSON to file.")
 @click.option("--tag", default=None, help="Filter scenarios in a directory by `tags:` config (comma-sep).")
 @click.option("--reuse-session", is_flag=True, default=False, help="(stub) Reuse hosted session; no-op in v1.")
-@click.option("--docker/--no-docker", default=False, help="Run the harness inside Docker with the TLS sidecar.")
+@click.option("--docker/--no-docker", default=True, show_default=True,
+              help="Run the harness inside Docker with the TLS sidecar so real SDKs (PyGithub, supabase-py, ...) hit production URLs and get transparently routed to twins. Pass --no-docker for fast in-process runs (subprocess mode); useful for unit-test-style scenarios.")
 @click.option("--harness-dir", type=click.Path(exists=True, file_okay=False), default=None, help="Harness directory containing Dockerfile (docker mode).")
 @click.option("--docker-logs", is_flag=True, default=False, help="Stream harness container logs to stderr in real time (docker mode only).")
 @click.option("--pass-threshold", type=int, default=None,
@@ -125,6 +126,29 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         # Quiet mode without JSON still emits the final per-scenario score line
         # but suppresses the noisy rich panels per individual run.
         os.environ["CHECKPOINT_RUNTIME_QUIET"] = "1"
+
+    # Docker-mode preflight: verify the daemon is reachable BEFORE we spend
+    # time spinning up twins / building images. The CHECKPOINT_NO_DOCKER env
+    # var is an escape hatch for environments where Docker is intentionally
+    # unavailable but `--docker` is still on by default (e.g. nested CI).
+    if docker:
+        if os.environ.get("CHECKPOINT_NO_DOCKER") == "1":
+            if not quiet:
+                console.print(
+                    "[yellow]CHECKPOINT_NO_DOCKER=1 set; falling back to subprocess mode.[/yellow]"
+                )
+            docker = False
+        else:
+            try:
+                import docker as _docker_pkg
+                _docker_pkg.from_env().ping()
+            except Exception as _e:
+                console.print(
+                    "[red]Docker is the default run mode but the daemon is unreachable.[/red]\n"
+                    f"[red]  -> {_e}[/red]\n"
+                    "[dim]Either start Docker, or pass [bold]--no-docker[/bold] to use subprocess mode (real SDKs against production URLs will not work).[/dim]"
+                )
+                sys.exit(2)
 
     # --- Iterate scenarios with --tag filter ---
     any_failed = False

@@ -308,7 +308,9 @@ function RunLauncher({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [scenario, setScenario] = useState(scenarios[0]?.path || "");
-  const [docker, setDocker] = useState(false);
+  // Docker is the default run mode — customers' agents call real SDKs that
+  // need TLS interception. Toggle off only for fast in-process iteration.
+  const [docker, setDocker] = useState(true);
   const [harness, setHarness] = useState("");
 
   const startMut = useMutation({

@@ -31,7 +31,9 @@ def test_readme_has_install_section() -> None:
 
 def test_readme_has_quickstart_section() -> None:
     text = README.read_text()
-    assert "\n## Quickstart\n" in text, "README missing `## Quickstart`"
+    # Allow `## Quickstart`, `## Quickstart — your own agent`, etc. — the
+    # README has multiple Quickstart variants since v0.2 (one per onboarding path).
+    assert "\n## Quickstart" in text, "README missing `## Quickstart` heading"
 
 
 def test_readme_has_mental_model_section() -> None:

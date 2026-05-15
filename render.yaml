@@ -1,0 +1,35 @@
+# Render.com Blueprint — one-click deploy.
+#
+# Usage:
+#   1. Push this repo to GitHub.
+#   2. Go to https://render.com/deploy and select your repo (or use the
+#      "Deploy to Render" button in DEPLOYMENT.md).
+#   3. Set OPENAI_API_KEY and (recommended) CHECKPOINT_DASHBOARD_API_KEY
+#      in the dashboard's Environment tab.
+#
+# What you get: a Render web service backed by a 1 GB persistent disk,
+# auto-deployed on every push to main.
+
+services:
+  - type: web
+    name: checkpoint-dashboard
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter             # bump to "standard" for production traffic
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 4001
+      - key: CHECKPOINT_HOME
+        value: /data/config
+      - key: CHECKPOINT_LOG_LEVEL
+        value: INFO
+      - key: OPENAI_API_KEY
+        sync: false           # set in the Render dashboard, not in the file
+      - key: CHECKPOINT_DASHBOARD_API_KEY
+        generateValue: true   # Render auto-generates a strong secret
+    disk:
+      name: checkpoint-data
+      mountPath: /data
+      sizeGB: 1

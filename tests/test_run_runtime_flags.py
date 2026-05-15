@@ -73,7 +73,7 @@ def test_run_json_output_contains_summary(isolated_home, scenario_in_tmp, monkey
     monkeypatch.setattr(_cli, "run_once", fake_run_once)
 
     r = CliRunner().invoke(
-        main, ["run", str(scenario_in_tmp), "-o", "json", "-q",
+        main, ["run", str(scenario_in_tmp), "--no-docker", "-o", "json", "-q",
                "--harness", _harness_arg(), "--no-failure-analysis"]
     )
     assert r.exit_code == 0, r.output
@@ -93,7 +93,7 @@ def test_run_json_output_contains_summary(isolated_home, scenario_in_tmp, monkey
 def test_pass_threshold_below_score_exits_one(isolated_home, scenario_in_tmp):
     """Setting threshold to 200 (impossible) must exit 1."""
     r = CliRunner().invoke(
-        main, ["run", str(scenario_in_tmp), "-q",
+        main, ["run", str(scenario_in_tmp), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--pass-threshold", "200",
                "--no-failure-analysis"]
@@ -104,7 +104,7 @@ def test_pass_threshold_below_score_exits_one(isolated_home, scenario_in_tmp):
 def test_pass_threshold_at_or_below_score_exits_zero(isolated_home, scenario_in_tmp):
     """Setting threshold to 0 always passes."""
     r = CliRunner().invoke(
-        main, ["run", str(scenario_in_tmp), "-q",
+        main, ["run", str(scenario_in_tmp), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--pass-threshold", "0",
                "--no-failure-analysis"]
@@ -149,7 +149,7 @@ def test_keep_state_removes_seed_keys(isolated_home, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     r = CliRunner().invoke(
-        main, ["run", str(scn), "-q",
+        main, ["run", str(scn), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--keep-state",
                "--no-failure-analysis"]
@@ -189,7 +189,7 @@ def test_seed_file_flag_overrides_scenario(isolated_home, tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     r = CliRunner().invoke(
-        main, ["run", str(scn), "-q",
+        main, ["run", str(scn), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--seed-file", str(seed),
                "--no-failure-analysis"]
@@ -228,7 +228,7 @@ def test_setup_file_flag_replaces_setup_prose(isolated_home, tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
 
     r = CliRunner().invoke(
-        main, ["run", str(scn), "-q",
+        main, ["run", str(scn), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--setup-file", str(setup),
                "--no-failure-analysis"]
@@ -263,7 +263,7 @@ def test_rate_limit_flag_sets_env(isolated_home, scenario_in_tmp, monkeypatch):
     import checkpoint.cli as _cli
     monkeypatch.setattr(_cli, "run_once", fake_run_once)
     r = CliRunner().invoke(
-        main, ["run", str(scenario_in_tmp), "-q",
+        main, ["run", str(scenario_in_tmp), "--no-docker", "-q",
                "--harness", _harness_arg(),
                "--rate-limit", "5", "--read-only",
                "--no-failure-analysis"]

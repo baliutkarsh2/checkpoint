@@ -1,0 +1,47 @@
+# Fly.io config — one-command deploy of the checkpoint dashboard.
+#
+# Usage:
+#   1. flyctl launch --copy-config --no-deploy --name <your-app>   # first time
+#   2. flyctl secrets set OPENAI_API_KEY=sk-...
+#   3. flyctl secrets set CHECKPOINT_DASHBOARD_API_KEY=$(openssl rand -hex 32)
+#   4. flyctl volumes create checkpoint_data --size 1 --region <your-region>
+#   5. flyctl deploy
+#
+# Pricing note: a single shared-cpu-1x machine + 1 GB volume is well within
+# Fly's free / hobby tier as of 2026.
+
+app = "checkpoint-dashboard"        # change to your app name
+primary_region = "ord"              # change to your closest region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "4001"
+  CHECKPOINT_HOME = "/data/config"
+  CHECKPOINT_LOG_LEVEL = "INFO"
+
+[mounts]
+  source = "checkpoint_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 4001
+  force_https = true
+  auto_stop_machines = "stop"   # scale to zero when idle to save credits
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

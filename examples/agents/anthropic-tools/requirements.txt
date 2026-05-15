@@ -1,0 +1,6 @@
+anthropic>=0.39
+PyGithub>=2.3
+supabase>=2.4
+slack_sdk>=3.27
+httpx>=0.27
+requests>=2.31
