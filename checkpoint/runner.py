@@ -33,6 +33,7 @@ class RunResult:
     exit_code: int
     trace: list
     state: dict
+    stdout: str = ""
     criteria: list[CriterionResult] = field(default_factory=list)
     error: str | None = None
     failure_analysis: dict[str, str] | None = None
@@ -313,6 +314,7 @@ def run_once(
             exit_code=proc.returncode,
             trace=_merge_trace_for_clones(per_trace),
             state=_merge_state_for_clones(per_state),
+            stdout=proc.stdout or "",
         )
 
         if proc.returncode != 0:

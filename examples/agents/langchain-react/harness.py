@@ -93,6 +93,35 @@ def linear_create_issue(team_id: str, title: str, description: str = "") -> str:
 TOOLS = [github_create_issue, github_list_issues, linear_create_issue]
 
 
+def _lc_msg_to_dict(m) -> dict:
+    """Normalize a LangChain message into {role, content} for the chat view."""
+    if isinstance(m, tuple) and len(m) == 2:
+        return {"role": m[0], "content": m[1]}
+    role = getattr(m, "type", None) or "message"
+    # Map LC's "human" to "user", "ai" to "assistant" — the dashboard expects
+    # the OpenAI-shaped role names.
+    role = {"human": "user", "ai": "assistant"}.get(role, role)
+    content = getattr(m, "content", "")
+    if not isinstance(content, str):
+        try:
+            content = json.dumps(content, default=str)
+        except Exception:
+            content = str(content)
+    return {"role": role, "content": content}
+
+
+def _lc_tool_call(m) -> dict | None:
+    """Extract tool-call info from an LC ToolMessage / AIMessage."""
+    if getattr(m, "type", "") == "tool":
+        return {
+            "name": getattr(m, "name", "") or "(tool)",
+            "input": {},  # LC ToolMessage doesn't carry input separately
+            "output": getattr(m, "content", ""),
+            "status": "ok",
+        }
+    return None
+
+
 def main():
     llm = ChatOpenAI(model=MODEL, temperature=0)
     agent = create_react_agent(llm, TOOLS)
@@ -105,22 +134,48 @@ def main():
         ]
     })
 
+    msgs_raw = result.get("messages", [])
+    messages = [_lc_msg_to_dict(m) for m in msgs_raw]
+    tool_calls_log = [tc for tc in (_lc_tool_call(m) for m in msgs_raw) if tc]
+    # LangChain doesn't expose usage as cleanly; best-effort sum across AIMessages.
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    for m in msgs_raw:
+        u = getattr(m, "usage_metadata", None)
+        if not u:
+            continue
+        usage_total["prompt_tokens"] += u.get("input_tokens", 0) or 0
+        usage_total["completion_tokens"] += u.get("output_tokens", 0) or 0
+        usage_total["total_tokens"] += u.get("total_tokens", 0) or 0
+
     # Last AI message is the final answer.
-    last = result["messages"][-1]
+    last = msgs_raw[-1] if msgs_raw else None
     final_text = getattr(last, "content", "") or ""
+    if not isinstance(final_text, str):
+        final_text = json.dumps(final_text, default=str)
+
     out_dir = os.environ.get("ARCHAL_OUT_DIR", "/archal-out")
     try:
         os.makedirs(out_dir, exist_ok=True)
-        # Count messages as a proxy for steps.
         with open(f"{out_dir}/metrics.json", "w") as f:
-            json.dump({"version": 1, "llmCallCount": len(result["messages"]) // 2,
-                       "toolCallCount": sum(
-                           1 for m in result["messages"]
-                           if getattr(m, "type", "") == "tool"),
-                       "toolErrorCount": 0, "exitReason": "completed",
-                       "provider": "openai", "model": MODEL}, f)
+            json.dump({
+                "version": 1,
+                "llmCallCount": sum(1 for m in msgs_raw if getattr(m, "type", "") == "ai"),
+                "toolCallCount": len(tool_calls_log),
+                "toolErrorCount": 0,
+                "exitReason": "completed",
+                "provider": "openai", "model": MODEL,
+                "promptTokens": usage_total["prompt_tokens"],
+                "completionTokens": usage_total["completion_tokens"],
+                "totalTokens": usage_total["total_tokens"],
+            }, f)
         with open(f"{out_dir}/agent-trace.json", "w") as f:
-            json.dump({"version": 1, "final": final_text, "events": []}, f)
+            json.dump({
+                "version": 2, "final": final_text, "events": [],
+                "messages": messages,
+                "tool_calls": tool_calls_log,
+                "usage": usage_total,
+                "provider": "openai+langchain", "model": MODEL,
+            }, f, default=str)
     except OSError as e:
         _log(f"[archal-out] write failed: {e}")
 

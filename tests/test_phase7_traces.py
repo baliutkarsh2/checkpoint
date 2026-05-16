@@ -28,6 +28,9 @@ def _make_record(run_id: str = "abcd12345678") -> dict:
         "evaluator_model_source": "default",
         "failure_analysis": {"the agent was kind": "Trace entry #3 used 'no.'"},
         "final_answer": "ok",
+        "stdout": "full stdout",
+        "stderr": "",
+        "agent_trace": {"messages": [{"role": "assistant", "content": "ok"}]},
         "trace": [],
         "state": {"repositories": [], "issues": [{"number": 1}]},
         "error": None,
@@ -82,3 +85,28 @@ def test_traces_export(tmp_path, monkeypatch):
     loaded = json.loads(out.read_text())
     assert loaded["run_id"] == rec["run_id"]
     assert loaded["satisfaction"] == 80.0
+
+
+def test_traces_telemetry_prints_report(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rec = _make_record()
+    rr.write_record(rec)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["traces", "telemetry"])
+    assert result.exit_code == 0, result.output
+    assert "Telemetry" in result.output
+    assert "agent messages" in result.output
+
+
+def test_traces_telemetry_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rec = _make_record()
+    rr.write_record(rec)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["traces", "telemetry", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["chat"]["messages"][0]["content"] == "ok"
+    assert data["transcript"]["stdout"] == "full stdout"

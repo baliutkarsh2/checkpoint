@@ -10,6 +10,9 @@ import Report from "./pages/Report";
 import Compare from "./pages/Compare";
 import LiveRun from "./pages/LiveRun";
 import Clones from "./pages/Clones";
+import Doctor from "./pages/Doctor";
+import Config from "./pages/Config";
+import Validate from "./pages/Validate";
 import NotFound from "./pages/NotFound";
 
 export default function App() {
@@ -27,6 +30,9 @@ export default function App() {
         <Route path="/report" element={<Report />} />
         <Route path="/compare" element={<Compare />} />
         <Route path="/live/:jobId" element={<LiveRun />} />
+        <Route path="/doctor" element={<Doctor />} />
+        <Route path="/config" element={<Config />} />
+        <Route path="/validate" element={<Validate />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>

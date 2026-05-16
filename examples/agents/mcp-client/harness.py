@@ -49,6 +49,31 @@ def _to_anthropic_tool(t) -> dict:
     }
 
 
+MESSAGES_FOR_TRACE: list[dict] = []
+TOOL_CALLS_LOG: list[dict] = []
+USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+def _content_to_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    out: list[str] = []
+    for b in content:
+        bt = getattr(b, "type", None) or (b.get("type") if isinstance(b, dict) else None)
+        if bt == "text":
+            out.append(getattr(b, "text", "") or (b.get("text", "") if isinstance(b, dict) else ""))
+        elif bt == "tool_use":
+            n = getattr(b, "name", None) or (b.get("name") if isinstance(b, dict) else None)
+            i = getattr(b, "input", None) or (b.get("input") if isinstance(b, dict) else None)
+            out.append(f"[tool_use {n}({json.dumps(i, default=str)})]")
+        elif bt == "tool_result":
+            c = getattr(b, "content", None) or (b.get("content") if isinstance(b, dict) else None)
+            out.append(f"[tool_result {c}]")
+    return "\n".join(p for p in out if p)
+
+
 async def run_agent():
     global LLM_CALLS, TOOL_CALLS
     client = Anthropic()
@@ -76,6 +101,13 @@ async def run_agent():
                         "final text response naming every entity you touched."
                     ),
                 )
+                u = getattr(resp, "usage", None)
+                if u is not None:
+                    inp = getattr(u, "input_tokens", 0) or 0
+                    outp = getattr(u, "output_tokens", 0) or 0
+                    USAGE["prompt_tokens"] += inp
+                    USAGE["completion_tokens"] += outp
+                    USAGE["total_tokens"] += inp + outp
                 messages.append({"role": "assistant", "content": resp.content})
 
                 if resp.stop_reason != "tool_use":
@@ -90,16 +122,21 @@ async def run_agent():
                     if getattr(block, "type", "") != "tool_use":
                         continue
                     TOOL_CALLS += 1
+                    args = block.input or {}
                     try:
-                        result = await session.call_tool(block.name, block.input or {})
-                        # Tool result content blocks → JSON-able shape
+                        result = await session.call_tool(block.name, args)
                         payload = [
                             {"type": getattr(c, "type", "text"),
                              "text": getattr(c, "text", str(c))}
                             for c in (result.content or [])
                         ]
+                        status = "ok"
                     except Exception as e:
                         payload = [{"type": "text", "text": f"error: {e}"}]
+                        status = "error"
+                    TOOL_CALLS_LOG.append({
+                        "name": block.name, "input": args, "output": payload, "status": status,
+                    })
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -108,6 +145,11 @@ async def run_agent():
                 messages.append({"role": "user", "content": tool_results})
             else:
                 final_text = final_text or "Reached max steps."
+            # Flatten messages for the dashboard's chat view.
+            MESSAGES_FOR_TRACE.extend(
+                {"role": m.get("role", ""), "content": _content_to_text(m.get("content"))}
+                for m in messages
+            )
             return final_text
 
 
@@ -117,12 +159,22 @@ def main():
     try:
         os.makedirs(out_dir, exist_ok=True)
         with open(f"{out_dir}/metrics.json", "w") as f:
-            json.dump({"version": 1, "llmCallCount": LLM_CALLS,
-                       "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
-                       "exitReason": "completed", "provider": "anthropic+mcp",
-                       "model": MODEL}, f)
+            json.dump({
+                "version": 1, "llmCallCount": LLM_CALLS,
+                "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
+                "exitReason": "completed", "provider": "anthropic+mcp", "model": MODEL,
+                "promptTokens": USAGE["prompt_tokens"],
+                "completionTokens": USAGE["completion_tokens"],
+                "totalTokens": USAGE["total_tokens"],
+            }, f)
         with open(f"{out_dir}/agent-trace.json", "w") as f:
-            json.dump({"version": 1, "final": final_text, "events": []}, f)
+            json.dump({
+                "version": 2, "final": final_text, "events": [],
+                "messages": MESSAGES_FOR_TRACE,
+                "tool_calls": TOOL_CALLS_LOG,
+                "usage": USAGE,
+                "provider": "anthropic+mcp", "model": MODEL,
+            }, f, default=str)
     except OSError as e:
         _log(f"[archal-out] write failed: {e}")
     print(json.dumps({"text": final_text}))

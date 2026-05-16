@@ -199,6 +199,9 @@ def main():
         )},
         {"role": "user", "content": TASK},
     ]
+    # Telemetry captured for the dashboard's chat / tool-calls / metrics views.
+    tool_calls_log: list[dict] = []
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     final_text = ""
     for step in range(MAX_STEPS):
         LLM_CALLS += 1
@@ -206,6 +209,11 @@ def main():
         resp = oai.chat.completions.create(
             model=MODEL, messages=messages, tools=TOOLS, tool_choice="auto",
         )
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            usage_total["prompt_tokens"] += getattr(u, "prompt_tokens", 0) or 0
+            usage_total["completion_tokens"] += getattr(u, "completion_tokens", 0) or 0
+            usage_total["total_tokens"] += getattr(u, "total_tokens", 0) or 0
         msg = resp.choices[0].message
         messages.append(_assistant_msg(msg))
         if not msg.tool_calls:
@@ -220,8 +228,13 @@ def main():
             fn = DISPATCH.get(name)
             try:
                 result = fn(**args) if fn else {"error": f"unknown tool: {name}"}
+                status = "error" if isinstance(result, dict) and "error" in result else "ok"
             except Exception as e:
                 result = {"error": f"tool call failed: {e}"}
+                status = "error"
+            tool_calls_log.append({
+                "name": name, "input": args, "output": result, "status": status,
+            })
             messages.append({"role": "tool", "tool_call_id": tc.id,
                              "content": json.dumps(result)})
     else:
@@ -231,12 +244,26 @@ def main():
     try:
         os.makedirs(out_dir, exist_ok=True)
         with open(f"{out_dir}/metrics.json", "w") as f:
-            json.dump({"version": 1, "llmCallCount": LLM_CALLS,
-                       "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
-                       "exitReason": "completed", "provider": "openai",
-                       "model": MODEL}, f)
+            json.dump({
+                "version": 1, "llmCallCount": LLM_CALLS,
+                "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
+                "exitReason": "completed", "provider": "openai", "model": MODEL,
+                # Token usage — surfaced as separate metrics so the dashboard
+                # can compute cost estimates without parsing nested structures.
+                "promptTokens": usage_total["prompt_tokens"],
+                "completionTokens": usage_total["completion_tokens"],
+                "totalTokens": usage_total["total_tokens"],
+            }, f)
         with open(f"{out_dir}/agent-trace.json", "w") as f:
-            json.dump({"version": 1, "final": final_text, "events": TRACE}, f)
+            json.dump({
+                "version": 2, "final": final_text, "events": TRACE,
+                # Full conversation transcript + per-call tool log so the
+                # dashboard's Chat + Tools tabs have real data.
+                "messages": messages,
+                "tool_calls": tool_calls_log,
+                "usage": usage_total,
+                "provider": "openai", "model": MODEL,
+            }, f, default=str)
     except OSError as e:
         _log(f"[archal-out] write failed: {e}")
 

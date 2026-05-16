@@ -136,10 +136,38 @@ TOOLS = [
 ]
 
 
+def _content_to_text(content) -> str:
+    """Anthropic responses are lists of blocks; flatten to a UI-friendly string."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    out_parts: list[str] = []
+    for b in content:
+        bt = getattr(b, "type", None) or (b.get("type") if isinstance(b, dict) else None)
+        if bt == "text":
+            out_parts.append(getattr(b, "text", "") or (b.get("text", "") if isinstance(b, dict) else ""))
+        elif bt == "tool_use":
+            name = getattr(b, "name", None) or (b.get("name") if isinstance(b, dict) else None)
+            inp = getattr(b, "input", None) or (b.get("input") if isinstance(b, dict) else None)
+            out_parts.append(f"[tool_use {name}({json.dumps(inp, default=str)})]")
+        elif bt == "tool_result":
+            content_inner = getattr(b, "content", None) or (b.get("content") if isinstance(b, dict) else None)
+            out_parts.append(f"[tool_result {content_inner}]")
+    return "\n".join(p for p in out_parts if p)
+
+
+def _msg_to_dict(m: dict) -> dict:
+    """Normalize an Anthropic-style message into the dashboard's chat shape."""
+    return {"role": m.get("role", ""), "content": _content_to_text(m.get("content"))}
+
+
 def main():
     global LLM_CALLS
     client = Anthropic()
     messages: list[dict] = [{"role": "user", "content": TASK}]
+    tool_calls_log: list[dict] = []
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     final_text = ""
 
     for step in range(MAX_STEPS):
@@ -157,6 +185,14 @@ def main():
                 "(issue numbers, IDs, channel names)."
             ),
         )
+        # Anthropic exposes usage on the response object.
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            inp = getattr(u, "input_tokens", 0) or 0
+            outp = getattr(u, "output_tokens", 0) or 0
+            usage_total["prompt_tokens"] += inp
+            usage_total["completion_tokens"] += outp
+            usage_total["total_tokens"] += inp + outp
 
         # Echo the assistant message back into history.
         messages.append({"role": "assistant", "content": resp.content})
@@ -174,10 +210,16 @@ def main():
             if getattr(block, "type", "") != "tool_use":
                 continue
             fn = DISPATCH.get(block.name)
+            args = block.input or {}
             try:
-                result = fn(**(block.input or {})) if fn else {"error": f"unknown tool: {block.name}"}
+                result = fn(**args) if fn else {"error": f"unknown tool: {block.name}"}
+                status = "error" if isinstance(result, dict) and "error" in result else "ok"
             except Exception as e:
                 result = {"error": f"tool call failed: {e}"}
+                status = "error"
+            tool_calls_log.append({
+                "name": block.name, "input": args, "output": result, "status": status,
+            })
             tool_results.append({"type": "tool_result",
                                  "tool_use_id": block.id,
                                  "content": json.dumps(result)})
@@ -189,12 +231,22 @@ def main():
     try:
         os.makedirs(out_dir, exist_ok=True)
         with open(f"{out_dir}/metrics.json", "w") as f:
-            json.dump({"version": 1, "llmCallCount": LLM_CALLS,
-                       "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
-                       "exitReason": "completed", "provider": "anthropic",
-                       "model": MODEL}, f)
+            json.dump({
+                "version": 1, "llmCallCount": LLM_CALLS,
+                "toolCallCount": TOOL_CALLS, "toolErrorCount": 0,
+                "exitReason": "completed", "provider": "anthropic", "model": MODEL,
+                "promptTokens": usage_total["prompt_tokens"],
+                "completionTokens": usage_total["completion_tokens"],
+                "totalTokens": usage_total["total_tokens"],
+            }, f)
         with open(f"{out_dir}/agent-trace.json", "w") as f:
-            json.dump({"version": 1, "final": final_text, "events": TRACE}, f)
+            json.dump({
+                "version": 2, "final": final_text, "events": TRACE,
+                "messages": [_msg_to_dict(m) for m in messages],
+                "tool_calls": tool_calls_log,
+                "usage": usage_total,
+                "provider": "anthropic", "model": MODEL,
+            }, f, default=str)
     except OSError as e:
         _log(f"[archal-out] write failed: {e}")
 

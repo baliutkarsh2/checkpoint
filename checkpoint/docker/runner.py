@@ -444,6 +444,7 @@ def docker_run_once(
             exit_code=exit_code,
             trace=merged_trace,
             state=merged_state,
+            stdout=stdout,
             metrics=metrics,
             agent_trace=agent_trace,
         )
