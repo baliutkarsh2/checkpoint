@@ -8,7 +8,6 @@ import {
   Download,
   FileJson,
   ListTree,
-  MessageSquareText,
   TerminalSquare,
   Wrench,
 } from "lucide-react";
@@ -23,7 +22,7 @@ import {
 } from "@/components/bits";
 import TraceTimeline from "@/components/TraceTimeline";
 
-type Tab = "process" | "chat" | "tools" | "judge" | "data";
+type Tab = "process" | "tools" | "judge" | "data";
 
 function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
   const trace = Array.isArray(r.trace) ? r.trace : [];
@@ -273,22 +272,18 @@ export default function RunDetail() {
         <TabButton active={tab === "process"} onClick={() => setTab("process")} icon={<ListTree size={14} />}>
           Process
         </TabButton>
-        <TabButton active={tab === "chat"} onClick={() => setTab("chat")} icon={<MessageSquareText size={14} />}>
-          Chat
-        </TabButton>
         <TabButton active={tab === "tools"} onClick={() => setTab("tools")} icon={<Wrench size={14} />}>
-          Tools
+          Tool calls
         </TabButton>
         <TabButton active={tab === "judge"} onClick={() => setTab("judge")} icon={<Check size={14} />}>
           Judge
         </TabButton>
         <TabButton active={tab === "data"} onClick={() => setTab("data")} icon={<TerminalSquare size={14} />}>
-          Data
+          Raw data
         </TabButton>
       </div>
 
       {tab === "process" && <ProcessPanel report={t} />}
-      {tab === "chat" && <ChatPanel report={t} />}
       {tab === "tools" && <ToolsPanel report={t} />}
       {tab === "judge" && <JudgePanel report={t} />}
       {tab === "data" && <DataPanel report={t} />}
@@ -488,36 +483,60 @@ function CommandShelf({ commands }: { commands: Record<string, string> }) {
 }
 
 function ProcessPanel({ report: t }: { report: TelemetryReport }) {
+  // Failure-first: when criteria failed, lead with a diagnosis card so the
+  // user sees "what went wrong" before drowning in the full timeline.
+  const failed = (t.judge.criteria || []).filter((c) => !c.passed);
+  const failureAnalysis = t.judge.failure_analysis || {};
+  const hasFailures = failed.length > 0 || !!t.transcript.error;
+
   return (
     <div className="grid xl:grid-cols-[1fr_360px] gap-5">
-      <div className="card-tight">
-        <table className="ck-table">
-          <thead>
-            <tr>
-              <th className="!w-20">Kind</th>
-              <th>Step</th>
-              <th className="!w-24">Status</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {t.timeline.map((step, i) => (
-              <tr key={i}>
-                <td><Badge variant={step.status === "error" ? "fail" : step.kind === "judge" ? "judge" : "info"}>{step.kind}</Badge></td>
-                <td>
-                  <div className="font-medium">{step.label}</div>
-                  {step.timestamp && (
-                    <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3">
-                      {fmtTimestamp(step.timestamp)}
-                    </div>
-                  )}
-                </td>
-                <td className="font-mono text-xs">{step.status}</td>
-                <td className="text-xs text-ink-3 dark:text-paper-3">{step.detail || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-5">
+        {hasFailures && (
+          <FailureDiagnosis
+            failed={failed}
+            failureAnalysis={failureAnalysis}
+            error={t.transcript.error}
+            finalAnswer={t.transcript.final_answer}
+          />
+        )}
+
+        <div>
+          <div className="card-title">Process timeline ({t.timeline.length} steps)</div>
+          <div className="card-tight">
+            <table className="ck-table">
+              <thead>
+                <tr>
+                  <th className="!w-20">Kind</th>
+                  <th>Step</th>
+                  <th className="!w-24">Status</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {t.timeline.map((step, i) => (
+                  <tr key={i}>
+                    <td>
+                      <Badge variant={step.status === "error" ? "fail" : step.kind === "judge" ? "judge" : "info"}>
+                        {step.kind}
+                      </Badge>
+                    </td>
+                    <td>
+                      <div className="font-medium">{step.label}</div>
+                      {step.timestamp && (
+                        <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3">
+                          {fmtTimestamp(step.timestamp)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="font-mono text-xs">{step.status}</td>
+                    <td className="text-xs text-ink-3 dark:text-paper-3">{step.detail || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
       <div className="space-y-4">
         <MetricBlock metrics={t.metrics} />
@@ -530,45 +549,86 @@ function ProcessPanel({ report: t }: { report: TelemetryReport }) {
   );
 }
 
-function ChatPanel({ report: t }: { report: TelemetryReport }) {
-  const messages = t.chat.messages || [];
+/**
+ * The "what went wrong" card that leads ProcessPanel for any failed run.
+ * Two-tier layout: each failed criterion + its judge reasoning, then any
+ * LLM-generated failure_analysis prose underneath.
+ */
+function FailureDiagnosis({
+  failed,
+  failureAnalysis,
+  error,
+  finalAnswer,
+}: {
+  failed: TelemetryReport["judge"]["criteria"];
+  failureAnalysis: Record<string, string>;
+  error: string | null;
+  finalAnswer: string;
+}) {
   return (
-    <div className="grid xl:grid-cols-[1fr_420px] gap-5">
-      <div className="space-y-3">
-        {messages.length === 0 ? (
-          <div className="card text-sm text-ink-3 dark:text-paper-3">
-            No structured agent chat was emitted. The raw stdout stream is preserved on the right.
+    <div className="card border-fail bg-fail-soft">
+      <div className="card-title !text-fail">What went wrong</div>
+
+      {error && (
+        <div className="mb-3 p-2 bg-fail/10 border-l-2 border-fail">
+          <div className="text-[10px] uppercase font-mono tracking-wider text-fail">
+            Run error
           </div>
-        ) : (
-          messages.map((m) => (
-            <div key={m.index} className="card">
-              <div className="flex justify-between gap-3 mb-3">
-                <Badge variant={m.role === "assistant" ? "info" : m.role === "tool" ? "judge" : "d"}>
-                  {m.role}
-                </Badge>
-                <span className="text-[11px] font-mono text-ink-4 dark:text-paper-3">
-                  #{m.index}{m.timestamp ? ` · ${fmtTimestamp(m.timestamp)}` : ""}
-                </span>
+          <div className="font-mono text-xs mt-1">{error}</div>
+        </div>
+      )}
+
+      {failed.length === 0 && !error && (
+        <div className="text-sm text-ink-3 dark:text-paper-3">No failed criteria.</div>
+      )}
+
+      <ul className="space-y-3">
+        {failed.map((c, i) => (
+          <li key={i} className="border-l-2 border-fail pl-3">
+            <div className="flex items-start gap-2">
+              <Badge variant={c.kind === "P" ? "judge" : "d"}>{c.kind}</Badge>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm">{c.text}</div>
+                {c.reasoning && (
+                  <div className="text-xs text-ink-3 dark:text-paper-3 mt-1 italic">
+                    Judge said: {c.reasoning}
+                  </div>
+                )}
+                {c.evaluator && (
+                  <div className="text-[10px] font-mono text-ink-4 dark:text-paper-3 mt-1">
+                    evaluator: {c.evaluator}
+                  </div>
+                )}
               </div>
-              <pre className="whitespace-pre-wrap text-sm font-sans leading-relaxed">{m.content || "(empty)"}</pre>
             </div>
-          ))
-        )}
-      </div>
-      <div className="space-y-4">
-        <details className="card" open>
-          <summary className="cursor-pointer font-medium">stdout</summary>
-          <pre className="json mt-3">{t.transcript.stdout || "(empty)"}</pre>
+          </li>
+        ))}
+      </ul>
+
+      {Object.keys(failureAnalysis).length > 0 && (
+        <details className="mt-3 border-t border-fail/30 pt-2">
+          <summary className="cursor-pointer text-xs font-medium text-fail">
+            LLM root-cause analysis
+          </summary>
+          <div className="mt-2 space-y-2">
+            {Object.entries(failureAnalysis).map(([crit, why]) => (
+              <div key={crit} className="text-xs">
+                <strong className="block">{crit}</strong>
+                <p className="text-ink-2 dark:text-paper-2 whitespace-pre-wrap">{why}</p>
+              </div>
+            ))}
+          </div>
         </details>
-        <details className="card" open={Boolean(t.transcript.stderr)}>
-          <summary className="cursor-pointer font-medium">stderr</summary>
-          <pre className="json mt-3">{t.transcript.stderr || "(empty)"}</pre>
+      )}
+
+      {finalAnswer && (
+        <details className="mt-3 border-t border-fail/30 pt-2">
+          <summary className="cursor-pointer text-xs font-medium text-fail">
+            What the agent said at the end
+          </summary>
+          <pre className="text-xs whitespace-pre-wrap mt-2 font-mono">{finalAnswer}</pre>
         </details>
-        <details className="card">
-          <summary className="cursor-pointer font-medium">raw agent trace</summary>
-          <pre className="json mt-3">{stableStringify(t.chat.raw)}</pre>
-        </details>
-      </div>
+      )}
     </div>
   );
 }

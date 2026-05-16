@@ -1,25 +1,18 @@
 # Set up Checkpoint in your existing agent repo
 
-This is the canonical guide for **integrating Checkpoint into an agent you've
-already built**. If you're starting from scratch, follow the
-[README quickstart](README.md) instead.
-
-Total setup time: **~5 minutes** for the first scenario to run.
+Goal: get Checkpoint testing your agent **without touching a single line of
+your agent code**. Setup time: ~2 minutes.
 
 ---
 
-## Prerequisites
+## The model
 
-- Python 3.10+
-- Docker running (default run mode — your agent's real SDKs get
-  TLS-intercepted to local twins)
-- An OpenAI API key for the LLM judge:
-  `export OPENAI_API_KEY=sk-...`
+You don't write a "harness" in Python. You describe **how Checkpoint should
+invoke your existing agent** in a tiny `harness.json`. Checkpoint runs the
+command for every scenario and injects the task via env / arg / stdin.
 
-> Don't have Docker handy? Pass `--no-docker` to run in subprocess mode.
-> Your agent will need to read `CHECKPOINT_<CLONE>_URL` env vars instead of
-> hitting production URLs. Subprocess mode is fast but doesn't exercise the
-> real SDK code path.
+That's it. Your agent doesn't import `checkpoint`. Your agent doesn't even
+know Checkpoint exists.
 
 ---
 
@@ -27,91 +20,74 @@ Total setup time: **~5 minutes** for the first scenario to run.
 
 ```bash
 pip install checkpoint
+export OPENAI_API_KEY=sk-...   # used by the LLM judge
 ```
 
-You can do this in your project's venv or globally. The package brings its
-own `checkpoint` CLI command.
+Docker should be running — that's the default run mode so your agent's real
+SDKs (PyGithub, supabase-py, etc.) get TLS-intercepted to local twins. For
+fast iteration without Docker, pass `--no-docker` on the CLI.
 
 ---
 
-## 2. Scaffold into your repo
+## 2. Point Checkpoint at your agent
 
-From your agent repo's root:
+In your agent repo's root:
 
 ```bash
-cd /path/to/your-agent-repo
-checkpoint init --template openai-agents
+checkpoint init --command "python my_agent.py"
 ```
 
-Templates available:
+That's the whole zero-code step. `init` writes:
 
-| Template          | When to use                                    |
-|-------------------|------------------------------------------------|
-| `openai-agents`   | OpenAI Agents SDK + MCP                        |
-| `anthropic`       | Anthropic Claude + MCP                         |
-| `langchain`       | LangChain ReAct                                |
-| `raw`             | Plain `requests` — any framework, any language |
+| File                          | What it is                                              |
+|-------------------------------|---------------------------------------------------------|
+| `harness.json`                | Declarative spec describing how to run your agent       |
+| `.checkpoint.json`            | Project defaults (clones, judge model)                  |
+| `scenarios/quickstart.md`     | Starter scenario you can edit                           |
+| `.gitignore`                  | Adds `.checkpoint/` for cache + run records             |
 
-This writes:
+**No Python file gets written into your repo.** Your code stays untouched.
 
+### How your agent receives the task
+
+By default, Checkpoint sets the env var `CHECKPOINT_TASK` to the scenario's
+prompt before running your command. Three other delivery modes:
+
+| Need                                      | Flag                                         |
+|-------------------------------------------|----------------------------------------------|
+| Pass as a CLI arg                         | `--task-via arg --task-arg --prompt`         |
+| Pipe via stdin                            | `--task-via stdin`                           |
+| Wire it some other way (you handle it)    | `--task-via none`                            |
+| Use a custom env var name                 | `--task-env MY_PROMPT_VAR`                   |
+
+Examples:
+
+```bash
+# Your agent already reads CHECKPOINT_TASK (or any env var you name):
+checkpoint init --command "python my_agent.py"
+
+# Your agent takes the task as a CLI flag:
+checkpoint init --command "node agent.js" --task-via arg --task-arg --prompt
+
+# Your agent reads the task from stdin:
+checkpoint init --command "./run-agent.sh" --task-via stdin
+
+# Use your agent's existing Dockerfile for real-SDK fidelity:
+checkpoint init --command "python my_agent.py" --dockerfile ./Dockerfile
 ```
-your-repo/
-├── .checkpoint.json          # config (clones, default harness, judge model)
-├── harness.py                # the shim Checkpoint invokes
-├── harness.json              # harness manifest (env, command)
-├── scenario.md               # starter scenario you can edit
-├── .claude/
-│   ├── skills/checkpoint/SKILL.md          # for Claude Code users
-│   └── commands/checkpoint-test.md         # `/checkpoint-test` slash command
-└── (your existing files untouched)
-```
-
-Existing files are **never overwritten** — re-running `checkpoint init` is safe.
 
 ---
 
-## 3. Wire `harness.py` to your agent
+## 3. Write or pick a scenario
 
-Open `harness.py` and edit the agent loop to call into your existing code.
-The contract is:
-
-1. **Read** the task from `CHECKPOINT_TASK` env var.
-2. **Call your agent** with that task.
-3. **Print** `{"text": "...final answer..."}` to stdout.
-4. **Exit 0** on success.
-
-Example:
-
-```python
-import json, os, sys
-from my_agent import answer  # ← your existing code
-
-task = os.environ["CHECKPOINT_TASK"]
-result = answer(task)
-print(json.dumps({"text": result}))
-```
-
-If your agent uses real SDKs (PyGithub, supabase-py, slack_sdk, etc.) in
-Docker mode, **they'll work unmodified** — the Checkpoint sidecar TLS-
-intercepts production URLs and routes them to the twins. Your agent doesn't
-need to know about Checkpoint.
-
-> **Look at [`examples/agents/`](examples/agents/) for four full reference
-> implementations** (OpenAI tools, Anthropic tools, LangChain ReAct, MCP
-> client) — each is a complete Dockerized harness you can copy and adapt.
-
----
-
-## 4. Pick or write a scenario
-
-Scenarios live as markdown files. The `init` command drops a starter at
-`scenario.md`:
+A scenario is a markdown file with a prompt and pass/fail criteria.
+`checkpoint init` drops a starter at `scenarios/quickstart.md`:
 
 ```markdown
-# My first scenario
+# Quickstart
 
 ## Prompt
-File a GitHub issue in `acme/webapp` titled "Login broken" with the symptoms.
+File a GitHub issue in `acme/webapp` titled "Login broken" with the symptom.
 
 ## Success Criteria
 - [D] An issue titled "Login broken" exists
@@ -124,45 +100,56 @@ timeout: 60
 ```
 
 `[D]` = deterministic (regex/state lookup, free). `[P]` = perception
-(GPT-judged, ~1 LLM call). You can mix and match.
+(GPT-judged, ~1 LLM call). Mix and match.
 
-To use the **bundled** scenarios that ship with Checkpoint:
+To use the bundled scenarios that ship with Checkpoint:
 
 ```bash
-checkpoint scenario list                          # lists 16 bundled ones
-checkpoint validate scenarios/<file>.md           # lint before running
+checkpoint scenario list                # 16 bundled ones
+checkpoint validate scenarios/<file>.md # lint before running
 ```
 
 ---
 
-## 5. Run it
-
-CLI:
+## 4. Run it
 
 ```bash
-checkpoint run scenario.md
-# or, for the bundled ones:
-checkpoint run scenarios/github-happy-path.md
-```
+# CLI:
+checkpoint run scenarios/quickstart.md
 
-Dashboard (recommended for iteration):
-
-```bash
-checkpoint serve         # opens http://127.0.0.1:4001
+# Dashboard (recommended for iteration):
+checkpoint serve   # http://127.0.0.1:4001
 ```
 
 From the dashboard you can:
-- See every past run with full agent conversation, tool calls, twin state
+- Browse every past run and see **exactly what failed and why** — the Process tab leads with a red "What went wrong" card listing each failed criterion + the judge's reasoning
 - Compare two runs side-by-side
 - Launch new runs and watch them stream live
 - Manage live clones (start/stop/seed/reset) without leaving the browser
-- Browse scenarios and agents with click-through detail pages
+- Pick agent + scenario from dropdowns and hit Run
+
+---
+
+## Output contract (only one rule)
+
+Your agent should print its final answer to stdout. Two acceptable shapes:
+
+```python
+# JSON (recommended — clearer for the dashboard's "final answer" view):
+print(json.dumps({"text": "Created issue #42"}))
+
+# Or plain text — anything you print is treated as the final answer:
+print("Created issue #42")
+```
+
+Exit 0 on success, non-zero on agent failure.
+
+If your agent already prints SOMETHING to stdout at the end of its run, no
+change needed.
 
 ---
 
 ## CI integration
-
-Once a scenario is green locally, add Checkpoint to CI:
 
 ```yaml
 - name: Run Checkpoint scenarios
@@ -177,8 +164,22 @@ Once a scenario is green locally, add Checkpoint to CI:
 ```
 
 Exit code 1 if any scenario's avg score drops below the threshold. Run
-records are written to `.checkpoint/cache/runs/*.json`; upload them as
-artifacts and a shared dashboard can read them.
+records land in `.checkpoint/cache/runs/*.json`; upload them as artifacts
+and a shared dashboard can read them.
+
+---
+
+## Inline run (skip init entirely)
+
+For one-off testing, you can skip `init` and pass `--command` directly:
+
+```bash
+checkpoint run scenarios/github-happy-path.md \
+  --command "python my_agent.py" \
+  --no-docker
+```
+
+No `harness.json` file needed at all.
 
 ---
 
@@ -187,10 +188,25 @@ artifacts and a shared dashboard can read them.
 | Symptom                                  | Look here                                              |
 |------------------------------------------|--------------------------------------------------------|
 | `Docker daemon not reachable`            | Start Docker, or pass `--no-docker` for fast iteration |
-| Real SDK calls return `Bad credentials`  | Sidecar intercept didn't fire — re-check `harness.py`'s entrypoint combines system + sidecar CAs |
-| Score is 0/100 but tests look correct    | Scenario has no `## Success Criteria` section          |
-| Dashboard shows `agent=unknown` on runs  | The run record was written by an older CLI version — re-run with v0.2+ |
-| Score is 100/100 but you don't trust it  | Open the run in the dashboard, inspect the conversation in the Chat tab, replay tool calls one by one |
+| `Harness executable not found`           | Your `--command` references a missing binary — verify the path |
+| Score is 0/100, exit code -1             | Your agent crashed before printing anything — check the Process tab in the dashboard for stderr |
+| Score is 0/100 but agent looks correct   | Your scenario has no `## Success Criteria` section, or your agent's output didn't match the expected shape |
+| Real SDK calls return `Bad credentials`  | Docker sidecar intercept didn't fire — re-check that your Dockerfile inherits the CA cert (the example agents under `examples/agents/` show how) |
 
 For everything else: `checkpoint doctor` (CLI) or **Setup → Doctor** in the
 dashboard.
+
+---
+
+## Existing-style harness (Python file, opt-in)
+
+If you'd rather have a starter Python harness you can edit:
+
+```bash
+checkpoint init --template openai-agents
+# templates: raw | anthropic | openai-agents | langchain
+```
+
+This writes a `harness.py` you wire to your agent. The four example agents
+under [`examples/agents/`](examples/agents/) are full Dockerized references
+in this style.

@@ -266,6 +266,10 @@ def run_once(
         env["CHECKPOINT_TASK"] = scenario.prompt
         env["ARCHAL_ENGINE_TASK"] = scenario.prompt
         env["ARCHAL_ENGINE_MODE"] = "local"
+        # Honor a custom task-env-var name set via --task-env on the CLI.
+        custom_task_env = os.environ.get("CHECKPOINT_TASK_ENV")
+        if custom_task_env and custom_task_env != "CHECKPOINT_TASK":
+            env[custom_task_env] = scenario.prompt
         first_clone, first_port, _ = twins[0]
         env["CHECKPOINT_BASE_URL"] = f"http://127.0.0.1:{first_port}"
         for clone, port, _ in twins:
@@ -274,14 +278,32 @@ def run_once(
             if tok:
                 env[tok[0]] = tok[1]
 
+        # Zero-code path: support --task-via=arg|stdin set via the CLI
+        # via the CHECKPOINT_TASK_VIA / CHECKPOINT_TASK_ARG sentinel env vars.
+        # The cli.py `run` handler sets these when --command is used so the
+        # runner doesn't need a richer signature.
+        task_via = os.environ.get("CHECKPOINT_TASK_VIA", "env")
+        stdin_payload: str | None = None
+        cmd = list(harness_cmd)
+        if task_via == "arg":
+            task_arg = os.environ.get("CHECKPOINT_TASK_ARG")
+            if task_arg:
+                cmd.extend([task_arg, scenario.prompt])
+            else:
+                cmd.append(scenario.prompt)
+        elif task_via == "stdin":
+            stdin_payload = scenario.prompt
+        # "none" → caller has wired the task into the env via spec.env
+
         try:
             proc = subprocess.run(
-                harness_cmd,
+                cmd,
                 cwd=cwd,
                 env=env,
                 capture_output=True,
                 text=True,
                 timeout=scenario.timeout,
+                input=stdin_payload,
             )
         except FileNotFoundError as e:
             per_state = {clone: _fetch_state(port) for clone, port, _ in twins}

@@ -46,6 +46,16 @@ def main():
 @main.command()
 @click.argument("scenario_path", required=False, type=click.Path(exists=True))
 @click.option("--harness", default=None, help="Shell command, harness file, harness dir, or harness.json. Falls back to .checkpoint.json/harness.json.")
+@click.option("--command", "inline_command", default=None,
+              help="Inline command for your existing agent (e.g. `python my_agent.py`). "
+                   "Checkpoint runs it for every scenario and injects the task via env "
+                   "(CHECKPOINT_TASK by default). No harness.py file needed.")
+@click.option("--task-via", type=click.Choice(["env", "arg", "stdin", "none"]),
+              default=None, help="How to give your agent the task. Default `env`.")
+@click.option("--task-env", default=None,
+              help="Env var to set with the task when --task-via=env. Default CHECKPOINT_TASK.")
+@click.option("--task-arg", default=None,
+              help="Arg flag to use when --task-via=arg (e.g. `--prompt`). Task value follows.")
 @click.option("--task", default=None, help="Inline task (overrides scenario prompt; works without a scenario file).")
 @click.option("--clone", default=None, help="Override scenario clones (comma-separated).")
 @click.option("-n", "--runs", type=int, default=None, help="Override number of runs.")
@@ -79,7 +89,8 @@ def main():
               help="Don't reseed twin(s) before this run — keep state from a previous run.")
 @click.option("--fresh-seed", is_flag=True, default=False,
               help="Force re-applying seed even if --keep-state was set previously (default behavior).")
-def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session,
+def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
+        task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session,
         docker, harness_dir, docker_logs, pass_threshold, output_format, quiet, rate_limit,
         read_only, no_failure_analysis, seed_file, setup_file, keep_state, fresh_seed):
     """Run scenario(s) against the agent harness.
@@ -95,13 +106,49 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         console.print("[dim]--reuse-session: hosted sessions unavailable in local v1; ignoring.[/dim]")
 
     # --- Resolve harness command ---
-    harness_cmd_str = harness
-    if not harness_cmd_str:
-        # Try harness.json first, then .checkpoint.json.
-        if harness_cfg.path:
-            harness_cmd_str = f"{sys.executable} {harness_cfg.path}"
-        elif ckpt_cfg.harness_path:
-            harness_cmd_str = f"{sys.executable} {ckpt_cfg.harness_path}"
+    # Priority: --command (inline, zero-code) > --harness > harness.json > .checkpoint.json
+    extra_env: dict[str, str] = {}
+    if inline_command:
+        # Zero-code path: pass the user's command verbatim. The runner already
+        # shlex-splits it with the right posix flag for the platform. Task
+        # injection happens via the sentinel env vars below.
+        harness_cmd_str = inline_command
+        chosen_via = task_via or "env"
+        if chosen_via == "env":
+            # Default — runner injects CHECKPOINT_TASK as env var (already does).
+            if task_env and task_env != "CHECKPOINT_TASK":
+                extra_env["CHECKPOINT_TASK_ENV"] = task_env
+        elif chosen_via == "arg":
+            extra_env["CHECKPOINT_TASK_VIA"] = "arg"
+            if task_arg:
+                extra_env["CHECKPOINT_TASK_ARG"] = task_arg
+        elif chosen_via == "stdin":
+            extra_env["CHECKPOINT_TASK_VIA"] = "stdin"
+        elif chosen_via == "none":
+            extra_env["CHECKPOINT_TASK_VIA"] = "none"
+    else:
+        harness_cmd_str = harness
+        if not harness_cmd_str:
+            # Try a v2 declarative harness.json first (command-based, zero
+            # user code). Fall back to legacy {"path": "..."} or to
+            # .checkpoint.json's harness.path.
+            v2_spec = _maybe_load_v2_harness(harness_cfg.source_path)
+            if v2_spec is not None:
+                harness_cmd_str = " ".join(v2_spec.argv)
+                if v2_spec.task_via != "env":
+                    extra_env["CHECKPOINT_TASK_VIA"] = v2_spec.task_via
+                if v2_spec.task_arg and v2_spec.task_via == "arg":
+                    extra_env["CHECKPOINT_TASK_ARG"] = v2_spec.task_arg
+                for k, v in v2_spec.env.items():
+                    extra_env.setdefault(k, v)
+            elif harness_cfg.path:
+                harness_cmd_str = f"{sys.executable} {harness_cfg.path}"
+            elif ckpt_cfg.harness_path:
+                harness_cmd_str = f"{sys.executable} {ckpt_cfg.harness_path}"
+
+    # Push extra env into the process so the runner picks it up.
+    for k, v in extra_env.items():
+        os.environ[k] = v
 
     if harness_cmd_str:
         harness_cmd_str = _normalize_harness_arg(harness_cmd_str)
@@ -358,6 +405,28 @@ def run(scenario_path, harness, task, clone, runs, model, timeout, cwd, trace_ou
         sys.exit(1)
 
 
+def _maybe_load_v2_harness(source_path: str | None):
+    """If a harness.json with v2 fields (command/argv/docker) is at source_path,
+    return a HarnessSpec. Otherwise None (caller falls back to legacy path)."""
+    if not source_path:
+        return None
+    p = Path(source_path)
+    if not p.is_file():
+        return None
+    try:
+        from .harness_spec import load_manifest
+        spec = load_manifest(p)
+    except Exception:
+        return None
+    # Only treat as v2 if it had a command/argv/docker section; a bare
+    # {"path": "..."} should keep flowing through the legacy code so we
+    # don't change its behavior.
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if any(k in raw for k in ("command", "argv", "docker")):
+        return spec
+    return None
+
+
 def _build_harness_meta(
     *,
     harness_cmd_str: str | None,
@@ -578,18 +647,70 @@ def _print_summary(results: list[RunResult]) -> None:
 @main.command("init")
 @click.argument("target_dir", required=False, type=click.Path(file_okay=False), default=".")
 @click.option(
-    "--template",
-    default="raw",
-    show_default=True,
-    type=click.Choice(["raw", "anthropic", "openai-agents", "langchain"], case_sensitive=False),
-    help="Harness template to scaffold (raw=plain requests, anthropic=Claude SDK, openai-agents=OpenAI Agents SDK, langchain=LangChain).",
+    "--command", "command",
+    default=None,
+    help="Shell command that runs your existing agent (e.g. 'python my_agent.py'). "
+         "Checkpoint will inject the scenario task via env / arg / stdin. "
+         "Use this for the zero-code path — NO Python file gets written into your repo.",
 )
-def init_cmd(target_dir, template):
-    """CLI-04: scaffold a Checkpoint integration in TARGET_DIR (default cwd)."""
+@click.option(
+    "--task-via",
+    type=click.Choice(["env", "arg", "stdin", "none"], case_sensitive=False),
+    default="env", show_default=True,
+    help="How to give your agent the scenario task.",
+)
+@click.option(
+    "--task-env", default="CHECKPOINT_TASK", show_default=True,
+    help="Env var name to set with the task when --task-via=env.",
+)
+@click.option(
+    "--task-arg", default=None,
+    help="Arg flag to use when --task-via=arg (e.g. --prompt). Task value follows.",
+)
+@click.option(
+    "--dockerfile", default=None, type=click.Path(),
+    help="Point at an existing Dockerfile to use Docker mode (real-SDK fidelity).",
+)
+@click.option(
+    "--name", default=None,
+    help="Friendly name for your agent (shown in the dashboard).",
+)
+@click.option(
+    "--template",
+    default=None,
+    type=click.Choice(["raw", "anthropic", "openai-agents", "langchain"], case_sensitive=False),
+    help="Legacy: scaffold a starter Python harness file instead of harness.json. "
+         "Most users want --command instead.",
+)
+def init_cmd(target_dir, command, task_via, task_env, task_arg, dockerfile, name, template):
+    """Scaffold a Checkpoint integration in TARGET_DIR (default cwd).
+
+    \b
+    Quick start — your agent already runs as `python my_agent.py`:
+        checkpoint init --command "python my_agent.py"
+        checkpoint run scenarios/quickstart.md
+
+    \b
+    Already have a Dockerfile for your agent?
+        checkpoint init --command "python my_agent.py" --dockerfile ./Dockerfile
+
+    \b
+    Need to pipe the task via a CLI flag instead of env?
+        checkpoint init --command "node agent.js" --task-via arg --task-arg --prompt
+    """
     from . import init as _init
 
     try:
-        result = _init.scaffold(target_dir, template=template)
+        result = _init.scaffold(
+            target_dir,
+            command=command,
+            task_via=task_via,
+            task_env=task_env,
+            task_arg=task_arg,
+            dockerfile=dockerfile,
+            name=name,
+            template=template,
+        )
     except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]init failed: {e}[/red]")
         sys.exit(1)
