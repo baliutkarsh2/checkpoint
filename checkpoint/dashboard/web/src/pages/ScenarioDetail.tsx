@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play, Settings2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtTimestamp, scoreColor, shortId } from "@/lib/format";
 import {
@@ -176,10 +177,31 @@ export default function ScenarioDetail() {
 function RunButton({ scenarioPath }: { scenarioPath: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [advanced, setAdvanced] = useState(false);
+  const [docker, setDocker] = useState(true);
+  const [runs, setRuns] = useState(1);
+  const [timeout, setTimeoutValue] = useState("");
+  const [model, setModel] = useState("");
+  const [clone, setClone] = useState("");
+  const [rateLimit, setRateLimit] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
+  const [keepState, setKeepState] = useState(false);
+  const [noFailureAnalysis, setNoFailureAnalysis] = useState(false);
   const agentsQ = useQuery({ queryKey: ["agents"], queryFn: api.agents });
   const startMut = useMutation({
     mutationFn: (harness: string) =>
-      api.jobs.start(scenarioPath, { docker: true, harness }),
+      api.jobs.start(scenarioPath, {
+        docker,
+        harness,
+        runs,
+        timeout: timeout ? Number(timeout) : undefined,
+        model: model || undefined,
+        clone: clone || undefined,
+        rate_limit: rateLimit ? Number(rateLimit) : undefined,
+        read_only: readOnly,
+        keep_state: keepState,
+        no_failure_analysis: noFailureAnalysis,
+      }),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       navigate(`/live/${job.job_id}`);
@@ -194,30 +216,79 @@ function RunButton({ scenarioPath }: { scenarioPath: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <select
-        id="agent-pick"
-        className="input !text-xs"
-        defaultValue={agents[0].path}
-      >
-        {agents.map((a) => (
-          <option key={a.id} value={a.path}>
-            [{a.source}] {a.name}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className="btn-accent"
-        disabled={startMut.isPending}
-        onClick={() => {
-          const sel = document.getElementById("agent-pick") as HTMLSelectElement | null;
-          startMut.mutate(sel?.value || agents[0].path);
-        }}
-      >
-        <Play size={14} />
-        {startMut.isPending ? "Starting…" : "Run"}
-      </button>
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-2">
+        <select
+          id="agent-pick"
+          className="input !text-xs max-w-[220px]"
+          defaultValue={agents[0].path}
+        >
+          {agents.map((a) => (
+            <option key={a.id} value={a.path}>
+              [{a.source}] {a.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="btn-outline"
+          onClick={() => setAdvanced((v) => !v)}
+          title="Run settings"
+        >
+          <Settings2 size={14} />
+        </button>
+        <button
+          type="button"
+          className="btn-accent"
+          disabled={startMut.isPending}
+          onClick={() => {
+            const sel = document.getElementById("agent-pick") as HTMLSelectElement | null;
+            startMut.mutate(sel?.value || agents[0].path);
+          }}
+        >
+          <Play size={14} />
+          {startMut.isPending ? "Starting…" : "Run"}
+        </button>
+      </div>
+      {advanced && (
+        <div className="card-flat !p-3 w-[min(680px,calc(100vw-2rem))]">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <label className="text-xs">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Mode</span>
+              <select className="input w-full" value={docker ? "docker" : "subprocess"} onChange={(e) => setDocker(e.target.value === "docker")}>
+                <option value="docker">docker</option>
+                <option value="subprocess">subprocess</option>
+              </select>
+            </label>
+            <label className="text-xs">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Runs</span>
+              <input className="input w-full" type="number" min={1} value={runs} onChange={(e) => setRuns(Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <label className="text-xs">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Timeout</span>
+              <input className="input w-full" type="number" min={1} value={timeout} onChange={(e) => setTimeoutValue(e.target.value)} />
+            </label>
+            <label className="text-xs">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Rate limit</span>
+              <input className="input w-full" type="number" min={1} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
+            </label>
+            <label className="text-xs md:col-span-2">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Judge model</span>
+              <input className="input w-full" value={model} onChange={(e) => setModel(e.target.value)} placeholder="default" />
+            </label>
+            <label className="text-xs md:col-span-2">
+              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Clone override</span>
+              <input className="input w-full" value={clone} onChange={(e) => setClone(e.target.value)} placeholder="github,slack" />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-3 mt-3 text-xs">
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> read-only</label>
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={keepState} onChange={(e) => setKeepState(e.target.checked)} /> keep state</label>
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={noFailureAnalysis} onChange={(e) => setNoFailureAnalysis(e.target.checked)} /> skip failure analysis</label>
+          </div>
+        </div>
+      )}
+      {startMut.isError && <ErrorBox error={startMut.error} />}
     </div>
   );
 }

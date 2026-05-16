@@ -30,6 +30,17 @@ def _record(run_id, scenario, sat, criteria=None):
         "trace": [],
         "state": {},
         "exit_code": 0,
+        "stdout": "agent stdout",
+        "stderr": "",
+        "agent_trace": {
+            "messages": [
+                {"role": "user", "content": "do X"},
+                {"role": "assistant", "content": "done"},
+            ],
+            "tool_calls": [
+                {"name": "github.create_issue", "input": {"title": "Bug"}, "output": {"ok": True}},
+            ],
+        },
     }
 
 
@@ -164,6 +175,16 @@ def test_api_run_detail_returns_full_record(client_with_data):
 
 def test_api_run_detail_404(client_with_data):
     assert client_with_data.get("/api/runs/nope").status_code == 404
+
+
+def test_api_run_telemetry_returns_full_process_report(client_with_data):
+    data = client_with_data.get("/api/runs/abc123abc123/telemetry").json()
+    assert data["run_id"] == "abc123abc123"
+    assert data["summary"]["agent_message_count"] == 2
+    assert data["chat"]["messages"][1]["content"] == "done"
+    assert data["tool_calls"][0]["name"] == "github.create_issue"
+    assert data["transcript"]["stdout"] == "agent stdout"
+    assert "rerun" in data["cli"]
 
 
 # ---------------------------------------------------------------------------

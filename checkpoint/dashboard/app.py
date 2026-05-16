@@ -33,6 +33,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..analytics import compute_trend, detect_flaky, load_runs_for_scenario
 from ..compare_diff import build_compare_diff
 from ..scenario import parse_file
+from ..telemetry import build_telemetry_report
 from . import agents as agent_discovery
 from .events import EventBus, FilesystemWatcher
 from .jobs import JobManager
@@ -319,8 +320,20 @@ class StartJobBody(BaseModel):
     docker: bool = False
     harness: str | None = Field(
         default=None,
-        description="Optional --harness-dir to pass to checkpoint run --docker.",
+        description="Harness dir for docker mode, or --harness command/path for subprocess mode.",
     )
+    model: str | None = Field(default=None, description="Evaluator model passed as --model.")
+    timeout: int | None = Field(default=None, ge=1, description="Harness timeout seconds.")
+    clone: str | None = Field(default=None, description="Clone override passed as --clone.")
+    runs: int | None = Field(default=None, ge=1, le=100, description="Number of runs.")
+    rate_limit: int | None = Field(default=None, ge=1, description="Twin request cap.")
+    read_only: bool = Field(default=False, description="Fail if twin state changes.")
+    no_failure_analysis: bool = Field(default=False, description="Skip LLM failure analysis.")
+    seed_file: str | None = Field(default=None, description="Seed file override.")
+    setup_file: str | None = Field(default=None, description="Setup prose file override.")
+    keep_state: bool = Field(default=False, description="Do not re-apply scenario seeds.")
+    fresh_seed: bool = Field(default=False, description="Force seed re-application.")
+    docker_logs: bool = Field(default=False, description="Stream docker harness logs to stderr.")
 
     # No extra_args / passthrough flags here on purpose. The dashboard is
     # local-dev tooling and we keep the public API surface minimal so a
@@ -427,6 +440,13 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="run not found")
         return record
+
+    @app.get("/api/runs/{run_id}/telemetry", tags=["runs"])
+    def api_run_telemetry(run_id: str):
+        record = _load_record(runs_dir, run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return build_telemetry_report(record)
 
     @app.get("/api/summary", tags=["runs"])
     def api_summary():
@@ -590,6 +610,122 @@ def create_app(
         return [{"id": k, "module": v} for k, v in sorted(TWIN_APPS.items())]
 
     # -----------------------------------------------------------------------
+    # CLI-parity endpoints: doctor, config, validate, anonymized export.
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/doctor", tags=["system"])
+    def api_doctor():
+        """Run the same checks as `checkpoint doctor` and return structured JSON."""
+        from ..diagnostics import all_passed, run_checks
+        checks = run_checks(cwd=Path.cwd())
+        return {
+            "all_passed": all_passed(checks),
+            "checks": [
+                {
+                    "name": c.name,
+                    "ok": c.ok,
+                    "detail": c.detail,
+                    "fix": c.fix,
+                }
+                for c in checks
+            ],
+        }
+
+    @app.get("/api/config", tags=["system"])
+    def api_config(reveal_env: bool = False):
+        """Read the user's ~/.checkpoint/config.json + known-keys catalog."""
+        from ..user_config import KNOWN_KEYS, UserConfig
+        cfg = UserConfig.load()
+        return {
+            "path": str(cfg.path),
+            "exists": cfg.path.exists(),
+            "values": (
+                {k: cfg.get(k, resolve_env=True) for k in cfg.flatten()}
+                if reveal_env else cfg.flatten()
+            ),
+            "known_keys": KNOWN_KEYS,
+        }
+
+    @app.put("/api/config/{key:path}", tags=["system"])
+    def api_config_set(key: str, body: dict):
+        from ..user_config import UserConfig
+        cfg = UserConfig.load()
+        cfg.set(key, body.get("value"))
+        cfg.save()
+        return {"key": key, "value": cfg.get(key, resolve_env=False)}
+
+    @app.delete("/api/config/{key:path}", tags=["system"])
+    def api_config_unset(key: str):
+        from ..user_config import UserConfig
+        cfg = UserConfig.load()
+        removed = cfg.unset(key)
+        if removed:
+            cfg.save()
+        return {"key": key, "removed": removed}
+
+    @app.post("/api/scenarios/validate", tags=["scenarios"])
+    def api_scenario_validate(body: dict):
+        """Parse + lint a scenario. Accepts either {"path": "..."} (existing
+        file) or {"raw": "..."} (markdown text). Returns the parsed sections
+        + any warnings/errors."""
+        from ..scenario import parse, parse_file
+        raw = body.get("raw")
+        path = body.get("path")
+        warnings: list[str] = []
+        errors: list[str] = []
+        try:
+            if raw is not None:
+                scn = parse(raw)
+            elif path:
+                target = (scenarios_dir / path).resolve()
+                try:
+                    target.relative_to(scenarios_dir.resolve())
+                except ValueError:
+                    raise HTTPException(400, "scenario path escapes scenarios_dir")
+                if not target.is_file():
+                    raise HTTPException(404, f"scenario {path!r} not found")
+                scn = parse_file(target)
+            else:
+                raise HTTPException(400, "provide either {raw} or {path}")
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"parse error: {e}")
+            return {"ok": False, "errors": errors, "warnings": warnings,
+                    "scenario": None}
+        # Lint
+        if not scn.prompt:
+            errors.append("missing `## Prompt` (or `## Task`) section")
+        if not scn.criteria:
+            warnings.append("no `## Success Criteria` — the run will score 0/0")
+        if scn.config.get("clones") and not scn.clones:
+            warnings.append("`clones:` config value is empty after parsing")
+        return {
+            "ok": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+            "scenario": {
+                "title": scn.title,
+                "prompt": scn.prompt,
+                "setup": scn.setup,
+                "expected": scn.expected,
+                "criteria": [{"text": c.text, "kind": c.kind} for c in scn.criteria],
+                "clones": scn.clones,
+                "config": scn.config,
+            },
+        }
+
+    @app.get("/api/runs/{run_id}/anonymized", tags=["runs"])
+    def api_run_anonymized(run_id: str):
+        """Same record as /api/runs/:id, but with emails / GitHub PATs / OpenAI
+        keys regex-redacted. Use for sharing in bug reports."""
+        record = _load_record(runs_dir, run_id)
+        if record is None:
+            raise HTTPException(404, "run not found")
+        from ..cli import _anonymize_record
+        return _anonymize_record(record)
+
+    # -----------------------------------------------------------------------
     # Jobs (start/list/get/cancel + log SSE)
     # -----------------------------------------------------------------------
 
@@ -625,6 +761,18 @@ def create_app(
             str(resolved),
             docker=body.docker,
             harness_dir=body.harness,
+            model=body.model,
+            timeout=body.timeout,
+            clone=body.clone,
+            runs=body.runs,
+            rate_limit=body.rate_limit,
+            read_only=body.read_only,
+            no_failure_analysis=body.no_failure_analysis,
+            seed_file=body.seed_file,
+            setup_file=body.setup_file,
+            keep_state=body.keep_state,
+            fresh_seed=body.fresh_seed,
+            docker_logs=body.docker_logs,
         )
         return job.public()
 

@@ -48,6 +48,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   useSequence(["g", "a"], () => navigate("/agents"));
   useSequence(["g", "c"], () => navigate("/clones"));
   useSequence(["g", "p"], () => navigate("/report"));
+  useSequence(["g", "v"], () => navigate("/validate"));
+  useSequence(["g", "d"], () => navigate("/doctor"));
+  useSequence(["g", "x"], () => navigate("/config"));
   useHotkey("?", () => setPaletteOpen(true));
   useHotkey("d", toggleTheme);
 
@@ -87,6 +90,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             <NavItem to="/agents">Agents</NavItem>
             <NavItem to="/clones">Clones</NavItem>
             <NavItem to="/report">Report</NavItem>
+            <NavItem to="/validate">Validate</NavItem>
+            <NavItem to="/doctor">Doctor</NavItem>
+            <NavItem to="/config">Config</NavItem>
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -91,6 +91,18 @@ class JobManager:
         *,
         docker: bool = False,
         harness_dir: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
+        clone: str | None = None,
+        runs: int | None = None,
+        rate_limit: int | None = None,
+        read_only: bool = False,
+        no_failure_analysis: bool = False,
+        seed_file: str | None = None,
+        setup_file: str | None = None,
+        keep_state: bool = False,
+        fresh_seed: bool = False,
+        docker_logs: bool = False,
     ) -> Job:
         job_id = uuid.uuid4().hex
         cmd = [
@@ -102,8 +114,34 @@ class JobManager:
         ]
         if docker:
             cmd.append("--docker")
+        else:
+            cmd.append("--no-docker")
         if harness_dir:
-            cmd.extend(["--harness-dir", harness_dir])
+            cmd.extend(["--harness-dir" if docker else "--harness", harness_dir])
+        if model:
+            cmd.extend(["--model", model])
+        if timeout is not None:
+            cmd.extend(["--timeout", str(timeout)])
+        if clone:
+            cmd.extend(["--clone", clone])
+        if runs is not None:
+            cmd.extend(["--runs", str(runs)])
+        if rate_limit is not None:
+            cmd.extend(["--rate-limit", str(rate_limit)])
+        if read_only:
+            cmd.append("--read-only")
+        if no_failure_analysis:
+            cmd.append("--no-failure-analysis")
+        if seed_file:
+            cmd.extend(["--seed-file", seed_file])
+        if setup_file:
+            cmd.extend(["--setup-file", setup_file])
+        if keep_state:
+            cmd.append("--keep-state")
+        if fresh_seed:
+            cmd.append("--fresh-seed")
+        if docker_logs:
+            cmd.append("--docker-logs")
 
         job = Job(
             job_id=job_id,

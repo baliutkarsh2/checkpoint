@@ -32,6 +32,7 @@ from .config import (
 from .failure_analyzer import analyze as analyze_failures
 from .run_record import build_record, write_record, load_last_run, RUNS_DIR
 from .compare_diff import build_compare_diff as _build_compare_diff
+from .telemetry import build_telemetry_report
 from . import diagnostics as _diag
 
 console = Console()
@@ -446,6 +447,8 @@ def _resolve_scenario_files(scenario_path: str | None, task: str | None) -> tupl
 def _dump(r: RunResult) -> dict:
     out = {
         "final_answer": r.final_answer,
+        "stdout": getattr(r, "stdout", ""),
+        "stderr": r.stderr,
         "exit_code": r.exit_code,
         "error": r.error,
         "score": r.score,
@@ -533,6 +536,8 @@ def _persist_run_record(
         evaluator_model=evaluator_model,
         evaluator_model_source=evaluator_model_source,
         final_answer=r.final_answer,
+        stdout=getattr(r, "stdout", ""),
+        stderr=r.stderr,
         trace=r.trace,
         state=r.state,
         error=r.error,
@@ -823,6 +828,25 @@ def traces_export(run_id, output):
     console.print(f"[green]Wrote run record to {output}[/green]")
 
 
+@traces.command("telemetry")
+@click.argument("run_id", required=False)
+@click.option("--json", "as_json", is_flag=True, default=False, help="Emit the full normalized telemetry JSON.")
+def traces_telemetry(run_id, as_json):
+    """Print a full-process telemetry report for a run record."""
+    record = _load_run_record(run_id)
+    if record is None:
+        if run_id:
+            console.print(f"[red]No run record for id={run_id}[/red]")
+        else:
+            console.print("[red]No last-run pointer.[/red]")
+        sys.exit(1)
+    report = build_telemetry_report(record)
+    if as_json:
+        click.echo(json.dumps(report, indent=2, default=str))
+        return
+    _print_telemetry_report(report)
+
+
 def _load_run_record(run_id: str | None) -> dict | None:
     """Resolve a run record by id or fall back to last-run."""
     if not run_id:
@@ -884,6 +908,68 @@ def _print_run_record(record: dict) -> None:
                 console.print(f"  [dim]{clone}:[/dim] {sorted(s.keys())[:10]}")
         else:
             console.print(f"  keys: {sorted(state.keys())[:20]}")
+
+
+def _print_telemetry_report(report: dict) -> None:
+    summary = report.get("summary") or {}
+    sat = summary.get("satisfaction") or 0
+    color = "green" if sat == 100 else ("yellow" if sat >= 50 else "red")
+    console.print(Panel.fit(
+        f"[bold]Telemetry {report.get('run_id', '?')}[/bold]\n"
+        f"[dim]scenario:[/dim] {summary.get('scenario') or '?'}\n"
+        f"[dim]score:[/dim] [{color}]{sat}/100[/{color}]\n"
+        f"[dim]api calls:[/dim] {summary.get('api_call_count', 0)}  "
+        f"[dim]agent messages:[/dim] {summary.get('agent_message_count', 0)}  "
+        f"[dim]tool calls:[/dim] {summary.get('tool_call_count', 0)}",
+        border_style=color,
+        title="checkpoint telemetry",
+    ))
+
+    cli = report.get("cli") or {}
+    if cli:
+        t = Table(box=box.SIMPLE_HEAD, show_header=False)
+        t.add_column("Action", style="dim", width=14)
+        t.add_column("Command", overflow="fold")
+        for key in ("detail", "telemetry", "replay", "replay_json", "export", "rerun"):
+            if cli.get(key):
+                t.add_row(key, cli[key])
+        console.print(t)
+
+    chat = ((report.get("chat") or {}).get("messages") or [])[:12]
+    if chat:
+        console.print("\n[bold]Agent chat[/bold]")
+        for msg in chat:
+            role = msg.get("role") or "message"
+            body = (msg.get("content") or "").replace("\n", " ")
+            console.print(f"  [dim]{msg.get('index')}[/dim] [cyan]{role}[/cyan]: {body[:240]}")
+
+    calls = (report.get("api_calls") or [])[:20]
+    if calls:
+        console.print("\n[bold]API calls[/bold]")
+        t = Table(box=box.SIMPLE_HEAD)
+        t.add_column("#", style="dim", width=4)
+        t.add_column("Clone", width=14)
+        t.add_column("Method", width=8)
+        t.add_column("Path", overflow="fold")
+        t.add_column("Status", width=8)
+        for call in calls:
+            t.add_row(
+                str(call.get("index")),
+                str(call.get("clone") or "—"),
+                str(call.get("method") or "—"),
+                str(call.get("path") or "—")[:100],
+                str(call.get("status") or "—"),
+            )
+        console.print(t)
+
+    judge = (report.get("judge") or {}).get("criteria") or []
+    if judge:
+        console.print("\n[bold]Judge[/bold]")
+        for c in judge:
+            mark = "[green]PASS[/green]" if c.get("passed") else "[red]FAIL[/red]"
+            console.print(f"  {mark} [{c.get('kind')}] {c.get('text')}")
+            if c.get("reasoning"):
+                console.print(f"    [dim]{str(c.get('reasoning'))[:260]}[/dim]")
 
 
 # =============================================================================

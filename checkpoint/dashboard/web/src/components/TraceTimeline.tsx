@@ -25,7 +25,10 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
   const clones = useMemo(
-    () => Array.from(new Set(events.map((e) => e._clone).filter(Boolean) as string[])),
+    () =>
+      Array.from(
+        new Set(events.map((e) => e._clone || (e as { clone?: string }).clone).filter(Boolean) as string[]),
+      ),
     [events],
   );
   const methods = useMemo(
@@ -38,14 +41,15 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
       .map((e, i) => ({ e, i }))
       .filter(({ e }) => {
         if (filter.method && e.method !== filter.method) return false;
-        if (filter.clone && (e._clone || "") !== filter.clone) return false;
+        const clone = e._clone || (e as { clone?: string }).clone || "";
+        if (filter.clone && clone !== filter.clone) return false;
         if (filter.status) {
           const klass = String(e.status)[0];
           if (klass !== filter.status) return false;
         }
         if (filter.text) {
           const q = filter.text.toLowerCase();
-          if (!e.path.toLowerCase().includes(q)) return false;
+          if (!(e.path || "").toLowerCase().includes(q)) return false;
         }
         return true;
       });
@@ -126,11 +130,11 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
                 onClick={() => setOpenIdx(open ? null : i)}
                 className="w-full grid grid-cols-[60px_1fr_60px_90px] gap-3 p-3 font-mono text-xs items-center text-left hover:bg-paper-2 dark:hover:bg-ink"
               >
-                <span className="font-semibold">{e.method}</span>
-                <span className="truncate">{e.path}</span>
+                <span className="font-semibold">{e.method || "—"}</span>
+                <span className="truncate">{e.path || "—"}</span>
                 <span style={{ color: STATUS_COLOR(e.status) }}>{e.status}</span>
                 <span className="text-ink-3 dark:text-paper-3 truncate">
-                  {e._clone || "—"}
+                  {e._clone || (e as { clone?: string }).clone || "—"}
                 </span>
               </button>
               {open && <TraceDetail event={e} />}

@@ -17,13 +17,18 @@ export interface RunRecord {
   satisfaction: number;
   criteria: Criterion[];
   evaluator_model: string | null;
+  evaluator_model_source?: string | null;
   env: Record<string, unknown> | null;
   trace: TraceEvent[];
   state: Record<string, unknown>;
   exit_code: number | null;
   final_answer: string | null;
+  stdout?: string | null;
+  error?: string | null;
   failure_analysis?: Record<string, string> | null;
   stderr?: string | null;
+  metrics?: Record<string, unknown> | null;
+  agent_trace?: unknown;
   harness?: { name?: string; dir?: string; mode?: string; cmd?: string } | null;
   duration_ms?: number | null;
 }
@@ -37,6 +42,91 @@ export interface TraceEvent {
   response_body?: unknown;
   timestamp?: string;
   duration_ms?: number;
+}
+
+export interface TelemetryReport {
+  run_id: string;
+  summary: {
+    scenario: string | null;
+    scenario_path: string | null;
+    satisfaction: number;
+    criteria_passed: number;
+    criteria_total: number;
+    api_call_count: number;
+    agent_message_count: number;
+    agent_step_count: number;
+    tool_call_count: number;
+    duration_ms: number | null;
+    timestamp: string | null;
+    exit_code: number | null;
+    harness: Record<string, unknown>;
+  };
+  cli: Record<string, string>;
+  chat: {
+    messages: {
+      index: number;
+      role: string;
+      content: string;
+      timestamp?: string | null;
+      name?: string | null;
+      raw?: unknown;
+    }[];
+    raw: unknown;
+    capture_note: string;
+  };
+  transcript: {
+    stdout: string;
+    stderr: string;
+    final_answer: string;
+    error: string | null;
+    exit_code: number | null;
+  };
+  steps: {
+    index: number;
+    type?: string | null;
+    name?: string | null;
+    status?: string | null;
+    timestamp?: string | null;
+    summary?: string | null;
+    raw?: unknown;
+  }[];
+  tool_calls: {
+    index: number;
+    name: string;
+    type?: string | null;
+    status?: string | null;
+    timestamp?: string | null;
+    input?: unknown;
+    output?: unknown;
+    summary?: string | null;
+    raw?: unknown;
+  }[];
+  api_calls: (TraceEvent & { index: number; clone?: string | null; raw?: unknown })[];
+  judge: {
+    model: string | null;
+    model_source: string | null;
+    criteria: {
+      index: number;
+      kind: "D" | "P";
+      text: string;
+      passed: boolean;
+      evaluator: string | null;
+      reasoning: string | null;
+      raw?: unknown;
+    }[];
+    failure_analysis: Record<string, string>;
+  };
+  metrics: Record<string, unknown>;
+  timeline: {
+    kind: "run" | "chat" | "agent" | "tool" | "api" | "judge";
+    label: string;
+    timestamp?: string | null;
+    status: string;
+    detail?: string | null;
+    ref?: { section: string; index?: number };
+  }[];
+  state: Record<string, unknown>;
+  raw: Record<string, unknown>;
 }
 
 export interface RunSummary {
@@ -275,7 +365,22 @@ export const api = {
       `/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
     ),
   jobs: {
-    start: (scenario: string, opts: { docker?: boolean; harness?: string } = {}) =>
+    start: (scenario: string, opts: {
+      docker?: boolean;
+      harness?: string;
+      model?: string;
+      timeout?: number;
+      clone?: string;
+      runs?: number;
+      rate_limit?: number;
+      read_only?: boolean;
+      no_failure_analysis?: boolean;
+      seed_file?: string;
+      setup_file?: string;
+      keep_state?: boolean;
+      fresh_seed?: boolean;
+      docker_logs?: boolean;
+    } = {}) =>
       request<RunJob>("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -286,6 +391,60 @@ export const api = {
     cancel: (jobId: string) =>
       request<RunJob>(`/api/jobs/${jobId}`, { method: "DELETE" }),
   },
+  telemetry: (runId: string) => request<TelemetryReport>(`/api/runs/${runId}/telemetry`),
+  anonymizedRun: (runId: string) => request<RunRecord>(`/api/runs/${runId}/anonymized`),
+  doctor: () => request<DoctorReport>("/api/doctor"),
+  config: {
+    get: (revealEnv = false) =>
+      request<ConfigReport>(`/api/config${revealEnv ? "?reveal_env=true" : ""}`),
+    set: (key: string, value: unknown) =>
+      request<{ key: string; value: unknown }>(
+        `/api/config/${encodeURIComponent(key)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value }),
+        },
+      ),
+    unset: (key: string) =>
+      request<{ key: string; removed: boolean }>(
+        `/api/config/${encodeURIComponent(key)}`,
+        { method: "DELETE" },
+      ),
+  },
+  validateScenario: (body: { raw?: string; path?: string }) =>
+    request<ValidateScenarioReport>("/api/scenarios/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 };
+
+export interface DoctorReport {
+  all_passed: boolean;
+  checks: { name: string; ok: boolean; detail: string; fix: string | null }[];
+}
+
+export interface ConfigReport {
+  path: string;
+  exists: boolean;
+  values: Record<string, unknown>;
+  known_keys: Record<string, string>;
+}
+
+export interface ValidateScenarioReport {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  scenario: {
+    title: string;
+    prompt: string;
+    setup: string;
+    expected: string;
+    criteria: { text: string; kind: "D" | "P" }[];
+    clones: string[];
+    config: Record<string, unknown>;
+  } | null;
+}
 
 export { ApiError };
