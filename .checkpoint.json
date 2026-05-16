@@ -1,13 +1,14 @@
 {
-  "clones": ["github", "slack", "stripe"],
+  "clones": ["github", "supabase", "slack"],
   "harness": {
-    "path": "./example/multi_clone_harness.py",
-    "promptFiles": ["./example/scenarios/*.md"]
+    "path": "examples/agents/openai-tools/harness.py",
+    "dir": "examples/agents/openai-tools",
+    "promptFiles": ["scenarios/*.md"]
   },
-  "evaluator": {"model": "gpt-4o-mini"},
+  "evaluator": { "model": "gpt-4o-mini" },
   "seeds": {
     "github": "small-project",
     "slack": "engineering-team",
-    "stripe": "small-business"
+    "supabase": "ecommerce"
   }
 }

@@ -12,6 +12,7 @@ import {
   ScoreBar,
   StatTile,
 } from "@/components/bits";
+import OnboardingGuide from "@/components/OnboardingGuide";
 import { comparePicks, useComparePicks } from "@/lib/store";
 
 export default function Runs() {
@@ -38,6 +39,42 @@ export default function Runs() {
 
   const picks = useComparePicks();
   const [openLauncher, setOpenLauncher] = useState(false);
+
+  // First-time experience: zero historical runs AND no filters → show the
+  // onboarding guide instead of an empty table. Skips the noise of stat
+  // tiles + filter chrome for users who haven't done anything yet.
+  const noFilters = !scenario && !agent && !mode;
+  const showOnboarding =
+    summaryQ.data?.total_runs === 0 &&
+    runsQ.data?.total === 0 &&
+    noFilters;
+
+  if (showOnboarding) {
+    return (
+      <>
+        <PageHead
+          title="Welcome to Checkpoint"
+          sub="No runs yet — let's get you started."
+          right={
+            <button
+              type="button"
+              className="btn-accent"
+              onClick={() => setOpenLauncher(true)}
+            >
+              <Play size={14} /> New run
+            </button>
+          }
+        />
+        <OnboardingGuide />
+        {openLauncher && (
+          <RunLauncher
+            scenarios={scenariosQ.data?.scenarios || []}
+            onClose={() => setOpenLauncher(false)}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <>

@@ -10,9 +10,7 @@ import Report from "./pages/Report";
 import Compare from "./pages/Compare";
 import LiveRun from "./pages/LiveRun";
 import Clones from "./pages/Clones";
-import Doctor from "./pages/Doctor";
-import Config from "./pages/Config";
-import Validate from "./pages/Validate";
+import Setup from "./pages/Setup";
 import NotFound from "./pages/NotFound";
 
 export default function App() {
@@ -30,9 +28,11 @@ export default function App() {
         <Route path="/report" element={<Report />} />
         <Route path="/compare" element={<Compare />} />
         <Route path="/live/:jobId" element={<LiveRun />} />
-        <Route path="/doctor" element={<Doctor />} />
-        <Route path="/config" element={<Config />} />
-        <Route path="/validate" element={<Validate />} />
+        <Route path="/setup" element={<Setup />} />
+        {/* Backwards-compat redirects so old links still land on something useful. */}
+        <Route path="/doctor" element={<Navigate to="/setup?tab=doctor" replace />} />
+        <Route path="/config" element={<Navigate to="/setup?tab=config" replace />} />
+        <Route path="/validate" element={<Navigate to="/setup?tab=validate" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>

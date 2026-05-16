@@ -8,8 +8,9 @@ import {
   PageHead,
 } from "@/components/bits";
 
-/** Dashboard equivalent of `checkpoint config show/set/unset`. */
-export default function Config() {
+/** Dashboard equivalent of `checkpoint config show/set/unset`.
+ *  Pass `headless` when embedding inside the Setup hub. */
+export default function Config({ headless = false }: { headless?: boolean }) {
   const qc = useQueryClient();
   const [revealEnv, setRevealEnv] = useState(false);
   const q = useQuery({
@@ -38,27 +39,39 @@ export default function Config() {
     new Set([...Object.keys(cfg.known_keys), ...Object.keys(cfg.values)]),
   ).sort();
 
+  const reveal = (
+    <label className="flex items-center gap-2 text-xs">
+      <input
+        type="checkbox"
+        checked={revealEnv}
+        onChange={(e) => setRevealEnv(e.target.checked)}
+      />
+      Reveal env: indirections
+    </label>
+  );
+
   return (
     <>
-      <PageHead
-        title="Config"
-        sub={
-          <>
+      {!headless ? (
+        <PageHead
+          title="Config"
+          sub={
+            <>
+              User config at <code className="font-mono">{cfg.path}</code>
+              {!cfg.exists && " · file doesn't exist yet (set any value to create it)"}
+            </>
+          }
+          right={reveal}
+        />
+      ) : (
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm text-ink-3 dark:text-paper-3">
             User config at <code className="font-mono">{cfg.path}</code>
             {!cfg.exists && " · file doesn't exist yet (set any value to create it)"}
-          </>
-        }
-        right={
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={revealEnv}
-              onChange={(e) => setRevealEnv(e.target.checked)}
-            />
-            Reveal env: indirections
-          </label>
-        }
-      />
+          </div>
+          {reveal}
+        </div>
+      )}
 
       <div className="card-tight">
         <table className="ck-table">

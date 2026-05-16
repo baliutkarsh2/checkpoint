@@ -20,8 +20,9 @@ runs: 1
 timeout: 60
 `;
 
-/** Dashboard equivalent of `checkpoint validate <scenario.md>`. */
-export default function Validate() {
+/** Dashboard equivalent of `checkpoint validate <scenario.md>`.
+ *  Pass `headless` when embedding inside the Setup hub. */
+export default function Validate({ headless = false }: { headless?: boolean }) {
   const [raw, setRaw] = useState(STARTER);
   const [picked, setPicked] = useState<string>("");
 
@@ -36,10 +37,12 @@ export default function Validate() {
 
   return (
     <>
-      <PageHead
-        title="Validate scenario"
-        sub="Lint + parse a scenario without running it. Same as `checkpoint validate`."
-      />
+      {!headless && (
+        <PageHead
+          title="Validate scenario"
+          sub="Lint + parse a scenario without running it. Same as `checkpoint validate`."
+        />
+      )}
 
       <div className="grid lg:grid-cols-2 gap-5">
         <div className="card flex flex-col gap-3">
