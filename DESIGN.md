@@ -718,7 +718,7 @@ There's no automated PyPI publish today.  When ready to ship:
 
 ## 15. Security model
 
-Checkpoint is **local-first by default, deploy-anywhere by design.**  There is no Checkpoint-operated remote backend, no accounts in our database, no telemetry.  But the same image that runs locally can be deployed to the customer's own infrastructure (Fly, Render, k8s, EC2, bare metal — see [DEPLOYMENT.md](DEPLOYMENT.md)) and hardened with bearer-token auth + read-only mode.
+Checkpoint is **local-first by default, deploy-anywhere by design.**  There is no Checkpoint-operated remote backend, no accounts in our database, no telemetry.  But the same image that runs locally can be deployed to the customer's own infrastructure (Fly, Render, k8s, EC2, bare metal — see [internal/DEPLOYMENT.md](internal/DEPLOYMENT.md)) and hardened with bearer-token auth + read-only mode.
 
 This is a deliberate product choice: the surface area for "Checkpoint *as a vendor* got hacked" is zero because we don't store customer data.  Customers who want a shared dashboard self-host one in 5 minutes; the entire stack ships as a single Docker image with `Dockerfile` / `docker-compose.yml` / `fly.toml` / `render.yaml` at the repo root.
 
@@ -732,7 +732,7 @@ The trade-offs we accept:
 | Threat | Mitigation |
 |---|---|
 | **Token leaking in run records shared via screenshot** | `checkpoint debug export <id> --anonymize` regex-redacts emails, GitHub PATs, OpenAI keys before writing |
-| **Dashboard `--host 0.0.0.0` exposes job-launcher to LAN** | `POST /api/jobs` schema is `extra="forbid"` — only typed fields accepted; no flag injection.  Rate limit (30 writes/10s/IP) on `/api/*`.  When `CHECKPOINT_DASHBOARD_API_KEY` is set, all writes need a bearer token.  When `CHECKPOINT_DASHBOARD_READ_ONLY=1` is set, the jobs endpoint returns 403 entirely.  README + DEPLOYMENT.md document the LAN-exposure risk explicitly. |
+| **Dashboard `--host 0.0.0.0` exposes job-launcher to LAN** | `POST /api/jobs` schema is `extra="forbid"` — only typed fields accepted; no flag injection.  Rate limit (30 writes/10s/IP) on `/api/*`.  When `CHECKPOINT_DASHBOARD_API_KEY` is set, all writes need a bearer token.  When `CHECKPOINT_DASHBOARD_READ_ONLY=1` is set, the jobs endpoint returns 403 entirely.  internal/DEPLOYMENT.md documents the LAN-exposure risk explicitly. |
 | **Cloud deploy where the dashboard is publicly reachable** | Set both env vars above; terminate TLS at your reverse proxy; restrict ingress to a VPN/corp IP range.  Dashboard image runs as non-root UID 10001 with `tini` as PID 1 and a `/healthz` for load balancers. |
 | **Twin bootstrap tokens in source code** | They are intentionally in source — they grant access only to *the twin*, which has nothing real behind it.  Not credentials. |
 | **Stale clone subprocesses orphaned by a crashed CLI** | `clone start` uses `start_new_session=True`; `clone list` auto-purges entries whose PIDs are gone. |
