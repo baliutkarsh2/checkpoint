@@ -1,163 +1,172 @@
-# checkpoint
+# Checkpoint
 
-**Test your AI agent against stateful synthetic GitHub / Slack / Stripe / Linear / Supabase / Discord / Google Workspace. Score 0-100 with deterministic + LLM checks. No real-API credits burned.**
+Test your AI agent against stateful synthetic GitHub, Slack, Stripe, Linear, Supabase, Discord, and Google Workspace. Your agent calls the production URLs unmodified; Checkpoint intercepts at the TLS layer and routes to a local twin. Score the result 0-100 with deterministic + LLM-judged criteria.
 
-Your agent calls **`https://api.github.com`** unmodified.  Checkpoint TLS-intercepts the call and routes it to a local twin that responds wire-compatibly.  Same code path you ship to production, evaluated against deterministic + LLM-judged success criteria.
+**Why this exists.** You can't reliably test agent reasoning against real SaaS — rate limits, real mutations, leaked data, real money. Mock-based unit tests miss the bug class that actually breaks agents in production: stateful, multi-step sequences whose correctness depends on what the SaaS returned three calls ago. Checkpoint runs those sequences against twins that hold real state and respond wire-compatibly, so the code path you ship is the code path you test.
 
-## Supported twins
+**Status:** v0.1.0 · active development · 7 twins · 16 scenarios · 4 example agents
 
-GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace.  Each twin is a full FastAPI app with REST + MCP tool surface, named seeds, runtime knobs (rate-limit / read-only / permissions-denied), and introspection at `/_health`, `/_state`, `/_trace`, `/_reset`, `/_seed/<name>`, `/_config`.
+## Highlights
 
-## Install
+- **Zero-code integration.** Your agent doesn't import Checkpoint or change a single line. Point us at the command that runs your agent: `checkpoint init --command "python my_agent.py"`. Checkpoint handles task injection (env / arg / stdin) and stdout capture.
+- **7 SaaS twins** wire-compatible with production: GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace. Each runs locally as a FastAPI app with REST + MCP tool surfaces, named seeds, and runtime knobs (rate-limit, read-only, permissions-denied).
+- **Failure-first dashboard.** Browse runs, compare scores, watch scenarios stream live, manage twin state. A failed run leads with a red "What went wrong" card listing each failed criterion plus the judge's reasoning.
+- **Deterministic + LLM grading.** Mix `[D]` regex/state checks (free, fast) with `[P]` LLM-judged criteria (default model: `gpt-4o-mini`). Schema-validated JSON parser keeps the judge honest.
+- **16 bundled scenarios** covering happy paths, adversarial inputs, and multi-clone cross-system flows.
+
+## Quickstart
 
 ```bash
 pip install checkpoint
-export OPENAI_API_KEY=sk-...
-```
+export OPENAI_API_KEY=sk-...   # used by the LLM judge for [P] criteria
 
-You also need **Docker running** — that's the default run mode (real SDKs against production URLs).
-
-## Quickstart — score one of the bundled agents
-
-```bash
-# 4 example agents under examples/agents/. Pick the one matching your stack.
+# Run a bundled scenario against a bundled agent — ~30 seconds, no setup.
 checkpoint run scenarios/github-happy-path.md \
     --harness-dir examples/agents/openai-tools \
     --docker-logs
 ```
 
-You'll see the agent's stderr stream live, then a scored criterion table.  The 4 example agents:
+You'll see the agent's stderr stream live, then a scored criterion table. Open the dashboard for the same view with history and comparison:
 
-| Agent | Stack |
+```bash
+checkpoint serve   # http://127.0.0.1:4001
+```
+
+<!-- TODO: drop a 10-second GIF of dashboard LiveRun → score panel, or a screenshot of RunDetail's failure-first card -->
+
+**Requirements:** Python ≥ 3.11, Docker running. Docker is the default mode — your agent's real SDKs hit twins via TLS intercept. Pass `--no-docker` for fast subprocess mode without real-SDK fidelity.
+
+## Test your own agent
+
+The zero-code path. Your agent code is never modified.
+
+```bash
+cd /your/agent/repo
+checkpoint init --command "python my_agent.py"
+```
+
+This writes:
+
+- `harness.json` — declarative spec describing how to invoke your agent
+- `.checkpoint.json` — project defaults (twins, judge model)
+- `scenarios/quickstart.md` — starter scenario
+
+**No Python file is added to your repo.** Your agent doesn't import `checkpoint`.
+
+By default, Checkpoint sets `CHECKPOINT_TASK=<scenario prompt>` and runs your command. Four delivery modes cover any agent shape:
+
+| Your agent reads the prompt from… | Flag |
 |---|---|
-| `examples/agents/openai-tools/` | OpenAI function-calling + PyGithub + supabase-py + slack_sdk |
-| `examples/agents/anthropic-tools/` | Anthropic SDK tool-use + same SDKs |
-| `examples/agents/langchain-react/` | LangChain `create_react_agent` |
-| `examples/agents/mcp-client/` | Pure MCP client hitting the twin's `/mcp/` |
+| Env var `CHECKPOINT_TASK` (default) | _(no flag)_ |
+| A custom env var | `--task-env MY_VAR` |
+| A CLI arg | `--task-via arg --task-arg --prompt` |
+| Stdin | `--task-via stdin` |
 
-See [`examples/agents/README.md`](examples/agents/README.md) for the full guide.
+**Output contract:** your agent prints its final answer to stdout — JSON (`{"text": "..."}`) or plain text both work. Exit 0 on success.
 
-## Quickstart — your own agent
+## Core concepts
 
-```bash
-checkpoint init                                   # scaffolds harness/, .checkpoint.json, scenario
-checkpoint run scenarios/                         # run all (Docker mode is default)
-checkpoint run scenarios/ -n 3 --pass-threshold 80 -o json -q   # CI-friendly
-checkpoint run scenarios/foo.md --no-docker       # subprocess mode (fast, no real SDKs)
-```
+| Term | What it is |
+|---|---|
+| **Twin** | A stateful synthetic SaaS API running locally. Same wire protocol as production, with `/_state`, `/_reset`, `/_seed/<name>`, `/_trace`, `/_config` introspection. |
+| **Scenario** | A markdown file with `## Setup`, `## Prompt`, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged). |
+| **Harness** | Your agent — referenced by command (`harness.json`, zero-code) or by Docker image (`Dockerfile` + entrypoint, for full-fidelity real-SDK runs). |
+| **Judge** | The grader that converts a run trace into a 0-100 score using your `[D]` / `[P]` criteria. Default model: `gpt-4o-mini`. |
 
-## Dashboard
+**Caveats up front.** Twins are functional approximations of production SaaS, not byte-identical replicas — they cover the wire shape used by every bundled example agent, but a corner of the documented surface may not be implemented. `[P]` criteria require an LLM API key, so each run has a real per-criterion cost. Docker is required for full real-SDK fidelity; without it, your agent must read `CHECKPOINT_<CLONE>_URL` env vars directly.
 
-```bash
-checkpoint serve         # http://127.0.0.1:4001
-```
-
-Local web UI for browsing run history, comparing runs, watching live clones, and launching new runs from the browser.  Single-page React app served by the same FastAPI process that exposes the JSON API.
-
-What you get:
-
-- **Runs browser** — score sparklines, criterion-level pass/fail, deep trace inspector with per-event request/response bodies and "copy as curl"
-- **Run launcher** — pick a scenario, hit start, watch stdout/stderr stream in real time over Server-Sent Events
-- **Live clone panel** — auto-updates as `checkpoint clone start` adds/removes twins
-- **Compare flow** — tick two runs in the table, click Compare for a side-by-side diff
-- **Trend report** — per-scenario sparkline + per-criterion pass-rate table + flaky detection
-- **OpenAPI Swagger UI** at `/api/docs` — every endpoint typed and try-able
-- **Prometheus metrics** at `/metrics` — request counts, durations, jobs, SSE subscribers
-- **Command palette** (`⌘K`), keyboard nav (`g r`, `g s`, `g p`), dark mode (`d`)
-
-## Deploying the dashboard
-
-For a team-shared dashboard or CI integration:
-
-```bash
-docker compose up -d                       # self-host on any Linux box
-flyctl launch && flyctl deploy             # Fly.io one-command deploy
-```
-
-Full guide: [DEPLOYMENT.md](DEPLOYMENT.md) — Docker, docker-compose, Fly.io, Render, Kubernetes, bare wheel + systemd.  All cloud paths use the same multi-stage `Dockerfile` at the repo root, with bearer-token auth, optional read-only mode, persistent volume for runs, and a `/healthz` for load balancers.
-
-## Mental model
-
-A **twin** is a stateful synthetic SaaS API running locally.  A **scenario** is a markdown file with `## Setup`, `## Prompt`, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged).  A **harness** is your agent in a Docker image with a `Dockerfile` + `harness.py` + `entrypoint.sh`.  Checkpoint spins up the twins, the TLS sidecar, runs your harness, grades criteria, returns a score.
+## How it works
 
 ```
 checkpoint run scenarios/foo.md --harness-dir my-agent/
-    |-- spins up sidecar (mitmproxy on :443) + N twin containers in shared netns
-    |-- starts your harness container with extra_hosts mapping production
-    |   domains (api.github.com, *.supabase.co, ...) to the sidecar
-    |-- harness uses real SDKs against production URLs; sidecar routes them
-    |-- collects trace + state from each twin
-    `-- 3-stage eval: regex patterns -> LLM-JSON schema -> GPT judge
+    ├── starts the TLS sidecar (mitmproxy on :443) + N twin containers in shared netns
+    ├── launches your harness container with extra_hosts mapping production
+    │   domains (api.github.com, slack.com, …) to the sidecar
+    ├── your harness uses real SDKs against production URLs; sidecar routes them
+    │   to the twins; twins record every call
+    ├── collects per-twin trace + state at the end of the run
+    └── 3-stage evaluator: regex patterns → schema-validated LLM-JSON → judge model
 ```
 
-Pass `--no-docker` for fast in-process subprocess mode (your harness reads `CHECKPOINT_<CLONE>_URL` env vars and calls those directly — useful for unit-test-style scenarios where you don't need real SDK fidelity).
+Every twin also mounts an MCP server at `http://localhost:<port>/<clone>/mcp`, with tool names mirroring each vendor's official MCP server. Useful for hand-driving a twin from Claude Desktop, Cursor, or any MCP host.
 
-## CLI reference
+## Writing scenarios
+
+A scenario is one markdown file:
+
+```markdown
+# Quickstart
+
+## Setup
+Use the small-project seed.
+
+## Prompt
+File a GitHub issue in `acme/webapp` titled "Login broken" with the symptom.
+
+## Success Criteria
+- [D] An issue titled "Login broken" exists
+- [D] The issue is in the open state
+- [P] The agent's final answer references the new issue number
+
+## Config
+clones: github
+```
+
+`[D]` criteria are checked deterministically against twin state — no LLM call, no cost. `[P]` criteria are graded by the judge model from the agent's final answer plus the run trace. Mix freely.
+
+Lint a scenario before running:
+
+```bash
+checkpoint validate scenarios/my-test.md
+```
+
+The 16 bundled scenarios under `scenarios/` are the reference for both shape and coverage.
+
+## The dashboard
+
+The primary working surface after install. `checkpoint serve` boots a local web UI at `http://127.0.0.1:4001`:
+
+- **Failure-first run inspection** — failed runs lead with a red "What went wrong" card: each failed criterion, the judge's reasoning, optional LLM root-cause, and the agent's final answer.
+- **Live run streaming** — pick scenario + agent, hit Run, watch stdout/stderr over Server-Sent Events.
+- **Two-up comparison** — tick two runs in the table, click Compare for a side-by-side diff.
+- **Live twin management** — start, stop, seed, factory-reset twins from the browser; list each twin's MCP tools.
+- **Anonymized download** — share a run record with emails, GitHub PATs, and OpenAI keys regex-redacted.
+
+## CI integration
+
+```yaml
+- name: Run Checkpoint scenarios
+  run: |
+    checkpoint run scenarios/ \
+      -n 3 \
+      --pass-threshold 80 \
+      -o json -q \
+      --no-failure-analysis
+  env:
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+Exit code 1 if any scenario's average score drops below `--pass-threshold`. Run records land in `.checkpoint/cache/runs/*.json`.
+
+## Reference
+
+The most-used commands. Run `checkpoint <command> --help` for full options.
 
 | Command | Purpose |
 |---|---|
-| `checkpoint init` | Scaffold integration in the current repo |
+| `checkpoint init --command "..."` | Scaffold integration in the current repo (zero-code) |
+| `checkpoint run <scenario.md>` | Run a scenario, print the score |
+| `checkpoint run <dir/> -n 3 --pass-threshold 80` | CI mode — N runs per scenario, fail under threshold |
 | `checkpoint serve` | Start the web dashboard at http://127.0.0.1:4001 |
-| `checkpoint whoami` | Print local identity (version, paths, judge model, OPENAI key) |
-| `checkpoint config show \| set \| get \| unset \| init \| path` | Manage `~/.checkpoint/config.json` |
-| `checkpoint run <scenario.md>` | Run a scenario, print score (Docker mode is default) |
-| `checkpoint run <dir/> --tag smoke -n 3 --pass-threshold 80` | CI mode: 3 runs, fail if any avg < 80 |
-| `checkpoint run <scn> -o json -q --no-failure-analysis` | Machine-readable summary, no LLM-driven failure analysis |
-| `checkpoint run <scn> --no-docker` | Subprocess mode (fast iteration; no real SDKs) |
-| `checkpoint run <scn> --read-only` | Snapshot twin state pre/post; fail if agent wrote anything |
-| `checkpoint run <scn> --rate-limit 50` | Cap requests per twin (currently enforced by github twin) |
-| `checkpoint run <scn> --keep-state` | Don't reseed — start from previous run's state |
-| `checkpoint run <scn> --seed-file ./seed.json --setup-file ./setup.txt` | Override scenario seed/setup at the CLI |
-| `checkpoint validate <scenario.md>` | Parse and lint a scenario file |
-| `checkpoint replay [run_id]` | Replay API trace from a past run |
-| `checkpoint doctor` | Verify environment (Docker, ports, API key) |
-| `checkpoint scenario list` | Enumerate scenarios in cwd |
-| `checkpoint clone start <id> [--ttl-seconds N --seed NAME]` | Spin up a long-lived twin session |
-| `checkpoint clone list` / `clone status <id>` | List all running twins / show one |
-| `checkpoint clone seed <id> <name>` | Apply a named seed to a running twin |
-| `checkpoint clone reset <id>` | Reset a running twin to factory state |
-| `checkpoint clone tools <id>` | List MCP tools the twin exposes |
-| `checkpoint clone renew <id> --ttl-seconds N` | Extend a twin's TTL metadata |
-| `checkpoint clone stop <id>` | Stop a running twin session |
-| `checkpoint runs list` | List recent run records |
+| `checkpoint validate <scenario.md>` | Lint a scenario before running |
+| `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
-| `checkpoint traces detail [run_id]` | Inspect a persisted run record |
-| `checkpoint traces export [run_id] -o out.json` | Export run record to JSON |
-| `checkpoint debug usage` | Aggregate stats: total runs, avg score, LLM/tool calls |
-| `checkpoint debug export <run_id> -o out.json --anonymize` | Sanitize emails/tokens before sharing |
-| `checkpoint debug inspect [run_id]` | Pretty-print a run record (alias for `traces detail`) |
+| `checkpoint doctor` | Verify environment (Docker, ports, API key) |
 
-## Developing the dashboard
+## Contact
 
-The shipped dashboard is a pre-built bundle — end users do **not** need npm.  For UI changes:
+[usecheckpoint.dev](https://usecheckpoint.dev) · hello@usecheckpoint.dev
 
-```bash
-cd checkpoint/dashboard/web
-npm install
-npm run dev          # Vite dev server on :5173, proxies /api -> :4001
+---
 
-# In a second terminal:
-checkpoint serve --port 4001
-```
-
-After UI changes, build and commit the bundle so the wheel ships fresh assets:
-
-```bash
-npm run build        # writes to ../static/, which is tracked in git
-```
-
-CI runs `npm run build` then `git diff --exit-code -- checkpoint/dashboard/static/` — if the committed bundle drifts from a fresh build, the PR fails.
-
-## More
-
-- **16 bundled scenarios** under [`scenarios/`](scenarios/) — happy paths, adversarial variants for all 7 twins, multi-clone cross-system scenarios.
-- **4 example agents** under [`examples/agents/`](examples/agents/) — OpenAI / Anthropic / LangChain / MCP-client.
-- **JS test suite?** See [`checkpoint-vitest/`](checkpoint-vitest/) for `@checkpoint/vitest` — all 7 twins supported.
-- **MCP?** Every twin mounts a FastMCP server at `/mcp/` with tool names mirroring the official vendor MCP servers.
-- **Architecture deep-dive?** See [`DESIGN.md`](DESIGN.md) — 950 lines covering every aspect of the system.
-- **Self-hosting?** See [`DEPLOYMENT.md`](DEPLOYMENT.md).
-- **CI?** See [`.github/workflows/checkpoint-ci.yml`](.github/workflows/checkpoint-ci.yml).
-
-## License
-
-MIT
+© 2026 Checkpoint. Proprietary — all rights reserved.

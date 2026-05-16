@@ -1,12 +1,19 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-new/
 *.egg-info/
 build/
 dist/
 .trace.json
 .checkpoint/
 .gstack/
+
+# macOS Finder metadata
+.DS_Store
+
+# Syncthing / Nextcloud conflict files
+*.sync-conflict-*
 
 # Dashboard SPA dev — node_modules and any local Vite/tsc build artifacts.
 # The committed bundle lives at checkpoint/dashboard/static/ (shipped in the wheel).
