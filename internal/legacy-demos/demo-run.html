@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>checkpoint · smoke run</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #1F1D18;
+      --bg-2: #0A0A0A;
+      --surface: #25231D;
+      --line: #3A372E;
+      --fg: #EBE7DC;
+      --fg-dim: #9A9484;
+      --accent: #5fff7a;
+      --accent-soft: rgba(95,255,122,0.12);
+      --warn: #F2C14E;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(rgba(245,242,234,.025) 1px, transparent 1px);
+      background-size: 3px 3px;
+      color: var(--fg);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.55;
+      min-height: 100vh;
+      padding: 32px 24px 64px;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .brand .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      background: var(--accent);
+      border-radius: 1px;
+      margin-right: 8px;
+      vertical-align: 1px;
+      box-shadow: 0 0 8px var(--accent-soft);
+    }
+    .meta {
+      color: var(--fg-dim);
+      font-size: 12px;
+    }
+    .meta span + span::before { content: " · "; opacity: .5; padding: 0 2px; }
+
+    h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--fg-dim);
+      margin: 28px 0 10px;
+    }
+
+    .cmd {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .cmd .prompt {
+      color: var(--accent);
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .cmd .text {
+      color: var(--fg);
+    }
+    .cmd .text .flag { color: var(--warn); }
+    .cmd .text .path { color: var(--fg-dim); }
+
+    .output {
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 18px 18px 14px;
+      margin-top: 0;
+      overflow-x: auto;
+    }
+    .output pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--fg);
+      white-space: pre;
+    }
+    .output .box     { color: var(--fg-dim); }
+    .output .label   { color: var(--fg-dim); }
+    .output .val     { color: var(--fg); }
+    .output .ok      { color: var(--accent); font-weight: 600; }
+    .output .kind    { color: var(--warn); }
+    .output .rule    { color: #4a463a; }
+    .output .path-l  { color: var(--fg-dim); font-style: italic; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 24px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 12px 14px;
+    }
+    .kpi .k {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--fg-dim);
+      margin-bottom: 4px;
+    }
+    .kpi .v {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--fg);
+    }
+    .kpi.pass .v { color: var(--accent); }
+
+    footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--fg-dim);
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand"><span class="dot"></span>checkpoint · smoke run</div>
+      <div class="meta">
+        <span>2026-05-15 21:45</span>
+        <span>main + i4-aesthetic</span>
+        <span>scenario: smoke-scenario.md</span>
+      </div>
+    </header>
+
+    <h2>Command</h2>
+    <div class="cmd">
+      <span class="prompt">$</span>
+      <span class="text">checkpoint run <span class="path">example/smoke-scenario.md</span> <span class="flag">--harness</span> <span class="path">example/harness_fake.py</span> <span class="flag">--no-docker</span></span>
+    </div>
+
+    <h2>Output</h2>
+    <div class="output">
+<pre><span class="box">╭─ checkpoint run — smoke-scenario.md ─╮
+│ <span class="val">Smoke: Create an Issue ([D] only)</span>    │
+│ <span class="label">clone:</span> <span class="val">github</span>                        │
+│ <span class="label">runs:</span>  <span class="val">1</span>                             │
+│ <span class="label">judge:</span> <span class="val">gpt-4o-mini</span> <span class="label">(config)</span>          │
+╰──────────────────────────────────────╯</span>
+<span class="label">Task:</span> Create a GitHub issue in repository "acme/webapp" titled "hello world".
+
+<span class="label">Run 1/1</span>
+
+       <span class="label">Kind   Criterion                Reasoning                Eval</span>
+ <span class="rule">──────────────────────────────────────────────────────────────────────────────</span>
+  <span class="ok">P…</span>   <span class="kind">[D]</span>    An issue titled "hello   issue titled/named       <span class="ok">deterministic</span>
+              world" exists            'hello world' found.
+
+<span class="ok">Score: 100/100</span>  <span class="label">(1 API call(s))</span>
+<span class="label">Run record:</span>
+<span class="path-l">/Users/aadityagaur/projects/agent-startup/checkpoint/.checkpoint/cache/runs/46b5c0f0ed8c.json</span></pre>
+    </div>
+
+    <div class="summary">
+      <div class="kpi pass">
+        <div class="k">Score</div>
+        <div class="v">100/100</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Criteria</div>
+        <div class="v">1 / 1</div>
+      </div>
+      <div class="kpi">
+        <div class="k">API calls</div>
+        <div class="v">1</div>
+      </div>
+      <div class="kpi pass">
+        <div class="k">Verdict</div>
+        <div class="v">PASS</div>
+      </div>
+    </div>
+
+    <footer>
+      <span>checkpoint v0.2 · I4 aesthetic · #1F1D18</span>
+      <span>run 46b5c0f0ed8c</span>
+    </footer>
+  </div>
+</body>
+</html>
