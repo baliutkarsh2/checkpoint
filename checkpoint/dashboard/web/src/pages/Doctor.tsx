@@ -3,8 +3,9 @@ import { Check, X, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { ErrorBox, Loading, PageHead, StatTile } from "@/components/bits";
 
-/** Dashboard equivalent of `checkpoint doctor` — environment readiness. */
-export default function Doctor() {
+/** Dashboard equivalent of `checkpoint doctor` — environment readiness.
+ *  Pass `headless` when embedding inside the Setup hub. */
+export default function Doctor({ headless = false }: { headless?: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["doctor"], queryFn: api.doctor });
 
@@ -15,21 +16,27 @@ export default function Doctor() {
   const d = q.data;
   const failed = d.checks.filter((c) => !c.ok);
 
+  const refreshBtn = (
+    <button
+      type="button"
+      className="btn-outline"
+      onClick={() => qc.invalidateQueries({ queryKey: ["doctor"] })}
+    >
+      <RefreshCw size={14} /> Re-run
+    </button>
+  );
+
   return (
     <>
-      <PageHead
-        title="Doctor"
-        sub="Environment readiness — same as `checkpoint doctor` on the CLI."
-        right={
-          <button
-            type="button"
-            className="btn-outline"
-            onClick={() => qc.invalidateQueries({ queryKey: ["doctor"] })}
-          >
-            <RefreshCw size={14} /> Re-run
-          </button>
-        }
-      />
+      {!headless ? (
+        <PageHead
+          title="Doctor"
+          sub="Environment readiness — same as `checkpoint doctor` on the CLI."
+          right={refreshBtn}
+        />
+      ) : (
+        <div className="flex justify-end mb-4">{refreshBtn}</div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-7">
         <StatTile label="Total checks" value={d.checks.length} />
