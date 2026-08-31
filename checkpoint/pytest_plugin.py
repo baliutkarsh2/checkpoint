@@ -1,6 +1,6 @@
 """pytest plugin for Checkpoint — auto-registered via the ``pytest11`` entry point.
 
-After ``pip install checkpoint[dev]``, this plugin is discovered automatically.
+After ``pip install checkpoint-agents[dev]``, this plugin is discovered automatically.
 It provides two fixtures and one marker:
 
 Marker

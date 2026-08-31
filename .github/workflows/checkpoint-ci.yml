@@ -181,3 +181,41 @@ jobs:
           name: checkpoint-dist-${{ github.run_id }}
           path: dist/*
           retention-days: 14
+
+  # The GitHub Action is the README's headline CI integration, so it must be
+  # exercised for real — not just linted. This runs it against the bundled demo
+  # scenario, which needs no Docker and no API key, and asserts the verdict
+  # output. It catches flag drift between action.yml and `checkpoint gate`.
+  action:
+    name: Validate the GitHub Action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Install THIS checkout so the action validates the code in the PR; the
+      # action's install step then defers to the checkpoint already on PATH.
+      - name: Install checkpoint from source
+        run: pip install -e .
+
+      - name: Run the action against the bundled demo scenario
+        id: gate
+        uses: ./
+        with:
+          target: checkpoint/demo/smoke-scenario.md
+          harness: python -m checkpoint.demo.harness_fake
+          runs: "3"
+          pass-threshold: "80"
+
+      - name: Assert the action reported a verdict
+        run: |
+          echo "verdict=${{ steps.gate.outputs.verdict }}"
+          case "${{ steps.gate.outputs.verdict }}" in
+            SHIP|CONDITIONAL|BLOCK) echo "OK: action produced a valid verdict" ;;
+            *) echo "FAIL: action did not report a verdict"; exit 1 ;;
+          esac

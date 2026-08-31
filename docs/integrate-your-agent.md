@@ -19,7 +19,7 @@ know Checkpoint exists.
 ## 1. Install
 
 ```bash
-pip install checkpoint
+pip install checkpoint-agents
 export OPENAI_API_KEY=sk-...   # used by the LLM judge
 ```
 
