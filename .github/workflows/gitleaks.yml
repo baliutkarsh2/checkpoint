@@ -5,14 +5,18 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history on push)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # Scan the whole history on push so a secret buried in an older commit
           # is still caught; PRs scan just the diff range gitleaks selects.
           fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
@@ -21,6 +25,6 @@ jobs:
         # BLOCKING. This repo's history was published with the old `.env` blob
         # already purged (git filter-repo), so the full-history scan is clean and
         # a secret in any commit — new or old — must fail the build.
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
