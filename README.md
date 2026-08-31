@@ -1,5 +1,9 @@
 # Checkpoint
 
+[![CI](https://img.shields.io/github/actions/workflow/status/baliutkarsh2/checkpoint/checkpoint-ci.yml?branch=main&label=CI)](https://github.com/baliutkarsh2/checkpoint/actions/workflows/checkpoint-ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/baliutkarsh2/checkpoint/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/baliutkarsh2/checkpoint/blob/main/pyproject.toml)
+
 **The release gate for AI agents.** Run your real agent — unmodified — N times against real tools, score every run, and let a statistical verdict decide: **SHIP** or **BLOCK**. Checkpoint is the CI gate that fails the build *before* a flaky agent reaches production.
 
 Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. In Docker mode your agent calls its real APIs unmodified — Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**. (`checkpoint gate` runs scenarios in subprocess mode today, where your agent reads twin URLs from env; TLS-intercept for the gate is on the roadmap.)
@@ -54,20 +58,12 @@ checkpoint serve   # http://127.0.0.1:4001
 
 Checkpoint is a loop with four moving parts:
 
-1. **Twins** — stateful synthetic SaaS APIs that run locally and hold real state across a multi-step run.
+1. **Twins** — stateful synthetic SaaS APIs (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) that run locally and hold real state across a multi-step run. They are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (Linear is REST/MCP, not the official GraphQL SDK). Fault-injection varies by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record*.
 2. **Harness** — your agent, referenced by a command (zero-code) or a Docker image. Checkpoint never modifies your code.
 3. **Scenario** — a markdown file: a `## Setup` seed, a `## Prompt` task, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged).
 4. **Gate** — run each scenario N times, score every run 0–100, and exit non-zero if the average falls below your `--pass-threshold`. That exit code is the whole point: it blocks a bad build in CI.
 
 Your agent talks to production URLs; in Docker mode a mitmproxy sidecar transparently routes those calls to the twins, so real SDKs work unmodified. In `--no-docker` mode the twins run as local processes and your agent reads their URLs from env vars.
-
-## Highlights
-
-- **Zero-code integration.** Your agent doesn't import Checkpoint or change a line. Point us at the command that runs it: `checkpoint init --command "python my_agent.py"`. Checkpoint handles task injection (env / arg / stdin) and stdout capture.
-- **Stateful twins** (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) with REST + MCP tool surfaces and named seeds. Your agent's real SDK calls are TLS-intercepted and routed here unmodified. The twins are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (the Linear twin is REST/MCP, not the official GraphQL SDK). Fault-injection knobs vary by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record* — rate limits, permission errors, read-only windows.
-- **Failure-first dashboard.** Browse runs, compare scores, watch scenarios stream live, manage twin state. A failed run leads with a red "What went wrong" card: each failed criterion plus the judge's reasoning.
-- **Deterministic + LLM grading.** `[D]` criteria are checked against twin state by a deterministic catalog (free, no LLM) where a matching check exists; unrecognized phrasings fall back to a schema-validated LLM parse. `[P]` criteria are graded by the judge model (default `gpt-4o-mini`).
-- **16 bundled scenarios** covering happy paths, adversarial inputs, and multi-clone cross-system flows.
 
 ## Test your own agent
 
@@ -165,7 +161,7 @@ Or call the CLI directly: `checkpoint gate scenarios/ --harness "python my_agent
 
 ## Reference
 
-Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate-your-agent.md), [architecture](docs/architecture.md), [self-hosting](docs/self-hosting.md). Run `checkpoint <command> --help` for full options.
+Full guides live in **[docs/](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/)** — [integrate your agent](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/integrate-your-agent.md), [architecture](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/architecture.md), [self-hosting](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/self-hosting.md). Run `checkpoint <command> --help` for full options.
 
 | Command | Purpose |
 |---|---|
@@ -188,7 +184,7 @@ Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **TLS-intercept (Docker) mode for `checkpoint gate`** so the gate tests the exact shipped code path, **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **TLS-intercept (Docker) mode for `checkpoint gate`** so the gate tests the exact shipped code path, **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see [CONTRIBUTING](https://github.com/baliutkarsh2/checkpoint/blob/main/CONTRIBUTING.md).
 
 ## Contact
 
@@ -196,4 +192,4 @@ Statistical gating (N-run confidence intervals, flake vs. regression), vendor-ne
 
 ---
 
-Apache-2.0 — see `LICENSE`. Hosted and cloud components are separate and not covered by this license.
+Apache-2.0 — see [LICENSE](https://github.com/baliutkarsh2/checkpoint/blob/main/LICENSE). [Contributing](https://github.com/baliutkarsh2/checkpoint/blob/main/CONTRIBUTING.md) · [Code of Conduct](https://github.com/baliutkarsh2/checkpoint/blob/main/CODE_OF_CONDUCT.md) · [Security](https://github.com/baliutkarsh2/checkpoint/blob/main/SECURITY.md) · [Changelog](https://github.com/baliutkarsh2/checkpoint/blob/main/CHANGELOG.md). Hosted and cloud components are separate and not covered by this license.

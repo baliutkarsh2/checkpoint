@@ -54,7 +54,8 @@ def test_readme_one_line_pitch_present() -> None:
     """First non-header non-empty line should be a single-line pitch."""
     body = [
         line for line in README.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
+        # Skip headings and the badge row: the pitch is the first line of prose.
+        if line.strip() and not line.startswith("#") and not line.lstrip().startswith("[![")
     ]
     # The pitch is the first non-header body line; assert it leads with the
     # core value prop — the release gate for agents (SHIP/BLOCK in CI).
