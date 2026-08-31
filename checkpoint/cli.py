@@ -1535,6 +1535,18 @@ def docker_build_sidecar(force):
         sys.exit(1)
 
 
+@main.command("mcp")
+def mcp_cmd():
+    """Run Checkpoint as an MCP server (stdio) so a coding agent (Claude Code,
+    Cursor, ...) can list scenarios, run one, or gate a build — inline, while it
+    writes the very agent under test.
+
+    Register it with your MCP client, e.g.:  command `checkpoint`, args `["mcp"]`.
+    """
+    from .mcp_gate.server import run_stdio
+    run_stdio()
+
+
 @main.command("gate")
 @click.argument("target", type=click.Path(exists=True))
 @click.option("--harness", required=True,
