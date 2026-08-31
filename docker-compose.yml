@@ -15,7 +15,7 @@
 #   - Spawning Docker-mode jobs from the dashboard. POST /api/jobs in this
 #     container would need the host docker socket. To enable, uncomment the
 #     `volumes` line below — but be aware that mounting the socket gives the
-#     dashboard root-equivalent access to the host. Read internal/DEPLOYMENT.md first.
+#     dashboard root-equivalent access to the host. Read docs/self-hosting.md first.
 
 services:
   dashboard:

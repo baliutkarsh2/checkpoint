@@ -241,7 +241,7 @@ function RefCard() {
         <li className="flex items-start gap-2">
           <ExternalLink size={14} className="mt-0.5 shrink-0" />
           <span>
-            See <code className="font-mono">SETUP.md</code> in the repo for a
+            See <code className="font-mono">docs/integrate-your-agent.md</code> in the repo for a
             walk-through of integrating Checkpoint into an existing repo
           </span>
         </li>

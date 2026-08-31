@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 
-PKG_DIR = Path(__file__).resolve().parent.parent / "checkpoint-vitest"
+PKG_DIR = Path(__file__).resolve().parent.parent / "packages" / "checkpoint-vitest"
 
 
 def test_package_dir_exists() -> None:

@@ -127,7 +127,7 @@ spend at near-zero.
 ## Option 4 — Kubernetes
 
 Apply the (intentionally minimal) manifests in `deploy/k8s/` (TBD — see
-extension points in `DESIGN.md` if you want to author a Helm chart for your
+extension points in `architecture.md` if you want to author a Helm chart for your
 team).  The container needs:
 - 1 vCPU / 512 MB RAM
 - A `PersistentVolumeClaim` mounted at `/data`

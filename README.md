@@ -158,7 +158,7 @@ Exit code 1 blocks the pipeline on BLOCK. (The simpler `checkpoint run scenarios
 
 ## Reference
 
-Run `checkpoint <command> --help` for full options.
+Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate-your-agent.md), [architecture](docs/architecture.md), [self-hosting](docs/self-hosting.md). Run `checkpoint <command> --help` for full options.
 
 | Command | Purpose |
 |---|---|
