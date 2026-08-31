@@ -41,6 +41,11 @@ class ScenarioStat:
     def pass_rate(self) -> float:
         return self.ci.point
 
+    def reliability(self, k: int) -> float:
+        """pass^k — unbiased estimate that k independent runs all pass."""
+        from checkpoint.stats.reliability import pass_hat_k
+        return pass_hat_k(self.passes, self.n, k)
+
 
 @dataclass
 class GateResult:

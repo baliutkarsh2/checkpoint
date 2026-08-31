@@ -1,0 +1,81 @@
+name: "Checkpoint Agent Gate"
+description: "Statistically gate an AI agent in CI — run each scenario N times and return SHIP / CONDITIONAL / BLOCK (non-zero exit blocks the build)."
+author: "Checkpoint"
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  target:
+    description: "Scenario file or directory to gate."
+    required: false
+    default: "scenarios/"
+  harness:
+    description: "Command that runs your agent, e.g. 'python my_agent.py'."
+    required: true
+  runs:
+    description: "Runs per scenario."
+    required: false
+    default: "20"
+  pass-threshold:
+    description: "Score (0-100) a single run needs to count as a pass."
+    required: false
+    default: "80"
+  strict:
+    description: "Fail the build on CONDITIONAL as well as BLOCK."
+    required: false
+    default: "false"
+  certificate:
+    description: "Path to write a signed Trust Certificate (optional)."
+    required: false
+    default: ""
+  judge-model:
+    description: "Model for [P] LLM-judged criteria (needs the matching API key in env)."
+    required: false
+    default: ""
+  version:
+    description: "checkpoint-agents version spec to install, e.g. '==0.1.0'. Empty installs the latest."
+    required: false
+    default: ""
+  python-version:
+    description: "Python version to set up."
+    required: false
+    default: "3.11"
+
+outputs:
+  verdict:
+    description: "SHIP, CONDITIONAL, or BLOCK."
+    value: ${{ steps.gate.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install checkpoint
+      shell: bash
+      run: python -m pip install --upgrade "checkpoint-agents${{ inputs.version }}"
+
+    - name: Run the gate
+      id: gate
+      shell: bash
+      run: |
+        set -o pipefail
+        args=(--harness "${{ inputs.harness }}" -n "${{ inputs.runs }}"
+              --pass-threshold "${{ inputs.pass-threshold }}" -o json)
+        [ "${{ inputs.strict }}" = "true" ] && args+=(--strict)
+        [ -n "${{ inputs.certificate }}" ] && args+=(--certificate "${{ inputs.certificate }}")
+        [ -n "${{ inputs.judge-model }}" ] && args+=(--judge-model "${{ inputs.judge-model }}")
+        # The gate's exit code (1 = BLOCK, or CONDITIONAL under --strict) is what
+        # fails the build; capture the JSON to surface the verdict as an output.
+        set +e
+        checkpoint gate "${{ inputs.target }}" "${args[@]}" | tee checkpoint-gate.json
+        code=${PIPESTATUS[0]}
+        set -e
+        verdict=$(python -c "import json;print(json.load(open('checkpoint-gate.json')).get('verdict','UNKNOWN'))" 2>/dev/null || echo UNKNOWN)
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        echo "Checkpoint verdict: $verdict"
+        exit $code

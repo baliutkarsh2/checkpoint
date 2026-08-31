@@ -1741,6 +1741,9 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
                 "scenario": s.scenario, "n": s.n, "passes": s.passes,
                 "pass_rate": round(s.pass_rate, 4),
                 "ci_low": round(s.ci.low, 4), "ci_high": round(s.ci.high, 4),
+                # pass^k: unbiased estimate that k independent runs all pass.
+                "pass_hat_k": {str(k): round(s.reliability(k), 4)
+                               for k in (1, 2, 5, 10) if k <= s.n},
                 "classification": s.classification,
                 "mean_score": round(s.mean_score, 2),
             } for s in result.scenarios],
@@ -1749,21 +1752,26 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         }))
         sys.exit(result.exit_code)
 
+    # Headline reliability: probability that k independent runs all pass.
+    k_headline = min(policy.runs, 8)
     table = Table(box=box.SIMPLE, show_edge=False)
     table.add_column("Scenario")
     table.add_column("Pass", justify="right")
     table.add_column("Rate", justify="right")
     table.add_column(f"{int(policy.confidence * 100)}% CI", justify="center")
+    table.add_column(f"pass^{k_headline}", justify="right")
     table.add_column("Verdict")
     _cls_color = {"stable_pass": "green", "stable_fail": "red",
                   "regression": "red", "flaky": "yellow"}
     for s in result.scenarios:
         color = _cls_color.get(s.classification, "white")
+        k = min(k_headline, s.n)
         table.add_row(
             s.scenario,
             f"{s.passes}/{s.n}",
             f"{s.pass_rate * 100:.0f}%",
             f"[{s.ci.low * 100:.0f}%, {s.ci.high * 100:.0f}%]",
+            f"{s.reliability(k) * 100:.0f}%",
             f"[{color}]{s.classification}[/{color}]",
         )
     console.print(table)
