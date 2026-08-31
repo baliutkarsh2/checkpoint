@@ -135,9 +135,9 @@ Config example:
 SYSTEM = _build_system(None)
 
 
-def _default_factory():
-    from openai import OpenAI
-    return OpenAI()
+def _default_factory(model: str = "gpt-4o-mini"):
+    from .llm import get_client
+    return get_client(model)
 
 
 def generate(
@@ -152,7 +152,7 @@ def generate(
     if clone:
         user_msg += f"\n\nUse clone(s): {clone}"
 
-    client = (_client_factory or _default_factory)()
+    client = _client_factory() if _client_factory else _default_factory(model)
     resp = client.chat.completions.create(
         model=model,
         messages=[

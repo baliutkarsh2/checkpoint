@@ -118,12 +118,12 @@ def generate_seed(
         return cached
 
     if client is None:
-        if not os.environ.get("OPENAI_API_KEY"):
+        from .llm import get_client, provider_for
+        if provider_for(model) == "openai" and not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError(
                 "OPENAI_API_KEY not set; cannot generate seed from `## Setup` text."
             )
-        from openai import OpenAI
-        client = OpenAI()
+        client = get_client(model)
 
     schema_sample = _state_schema_sample(twin_state)
     user_payload = {

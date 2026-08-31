@@ -37,6 +37,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 sdk = []
+# Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
+# OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
+anthropic = ["anthropic>=0.40"]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"

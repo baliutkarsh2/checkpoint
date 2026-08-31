@@ -15,6 +15,8 @@ export OPENAI_API_KEY=sk-...        # used by the LLM judge for [P] criteria
 
 Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). Until the package is published to PyPI you can install from source: `pip install git+https://github.com/Aaditya2605/checkpoint`.
 
+**Vendor-neutral.** The judge works with any model — pass `--model` (or set `defaults.judge_model`) to a `gpt-*`, `claude-*`, or `gemini-*` name, or point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint (local, vLLM, OpenRouter). Claude needs `pip install checkpoint-agents[anthropic]`; Gemini and compatible endpoints need nothing extra.
+
 ## Quickstart
 
 ```bash
