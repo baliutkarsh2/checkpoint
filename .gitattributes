@@ -9,11 +9,18 @@
 *.yaml  text eol=lf
 *.md    text eol=lf
 *.json  text eol=lf
+*.html  text eol=lf
+*.svg   text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
 Dockerfile      text eol=lf
 entrypoint.sh   text eol=lf
 
-# Built artifacts / binaries — leave bytes untouched.
-checkpoint/dashboard/static/**  -text
+# The committed SPA bundle is all text (html/svg/css/js) and MUST match a fresh
+# `npm run build` on Linux CI, so force LF just like the sources.
+checkpoint/dashboard/static/**  text eol=lf
 *.png   binary
 *.ico   binary
 *.woff  binary
