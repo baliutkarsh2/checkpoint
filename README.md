@@ -114,6 +114,8 @@ checkpoint gate scenarios/ --harness "python my_agent.py" -n 20
 
 Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regression`, and the run gets one verdict: **SHIP** (every scenario confidently passes), **BLOCK** (any confident failure/regression — exit 1), or **CONDITIONAL** (something's flaky; exit 0, or 1 with `--strict`). Tune with `--ship-min` / `--block-max` / `--pass-threshold`.
 
+Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered. Attach it to a release or hand it to a reviewer.
+
 ## CI integration
 
 ```yaml
@@ -134,6 +136,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint init --command "..."` | Scaffold integration in the current repo (zero-code) |
 | `checkpoint run <scenario.md>` | Run a scenario, print the score |
 | `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
+| `checkpoint gate ... --certificate cert.json` / `checkpoint cert verify cert.json` | Issue / verify a signed Trust Certificate |
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
@@ -143,7 +146,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression) ships today via `checkpoint gate`. Next: trajectory-level scoring, adversarial red-team packs (OWASP Agentic Top 10), calibrated multi-turn user simulation, and a signed Trust Certificate per build. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, and signed Trust Certificates ship today. Next: trajectory-level scoring, adversarial red-team packs (OWASP Agentic Top 10), calibrated multi-turn user simulation, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 
