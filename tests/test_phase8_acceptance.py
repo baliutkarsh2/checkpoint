@@ -26,7 +26,7 @@ from checkpoint.scenario import parse_file
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS_DIR = REPO_ROOT / "scenarios"
-EXAMPLE_DIR = REPO_ROOT / "example"
+EXAMPLE_DIR = REPO_ROOT / "examples" / "multi-clone"
 
 
 # --- Minimal OpenAI fake (same shape as test_phase5_acceptance.py) ----------
@@ -148,8 +148,10 @@ import os
 import sys
 import requests
 
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+
 GH = os.environ["CHECKPOINT_GITHUB_URL"]
-TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt")
+TOKEN = os.environ.get("GITHUB_TOKEN", FAKE_GITHUB_TOKEN)
 HEADERS = {
     "Authorization": f"token {TOKEN}",
     "Accept": "application/vnd.github+json",
@@ -170,9 +172,20 @@ r = requests.post(
 )
 r.raise_for_status()
 pr = r.json()
-print(f"[archal-harness] created PR #{pr['number']}", file=sys.stderr)
+num = pr["number"]
+print(f"[archal-harness] created PR #{num}", file=sys.stderr)
 
-# 2. Confirm via final-answer JSON.
+# 2. Apply the `bug` label and request reviewer1 via the real endpoints.
+requests.post(
+    f"{GH}/repos/acme/webapp/issues/{num}/labels",
+    json={"labels": ["bug"]}, headers=HEADERS, timeout=15,
+).raise_for_status()
+requests.post(
+    f"{GH}/repos/acme/webapp/pulls/{num}/requested_reviewers",
+    json={"reviewers": ["reviewer1"]}, headers=HEADERS, timeout=15,
+).raise_for_status()
+
+# 3. Confirm via final-answer JSON.
 print(json.dumps({
     "text": f"Opened pull request #{pr['number']} titled 'Fix login bug' "
             f"with the 'bug' label and review requested from reviewer1.",

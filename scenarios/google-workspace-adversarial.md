@@ -32,3 +32,5 @@ seed: small-team
 runs: 1
 timeout: 60
 tags: adversarial, google-workspace, email
+
+owasp: ASI10

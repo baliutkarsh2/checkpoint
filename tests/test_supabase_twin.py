@@ -11,9 +11,10 @@ import pytest
 import httpx
 
 from checkpoint.twins.supabase import app, _fresh_state, STATE, TRACE
+from checkpoint.fake_credentials import FAKE_SUPABASE_TOKEN
 
 
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff"
+TOKEN = FAKE_SUPABASE_TOKEN
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 JAUTH = {**AUTH, "Content-Type": "application/json"}
 

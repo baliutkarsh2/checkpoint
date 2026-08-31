@@ -9,6 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from checkpoint.cli import main as cli_main
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ def test_plugin_exports_twin_handle():
         clone_id="github",
         url="http://127.0.0.1:9001",
         mcp_url="http://127.0.0.1:9001/mcp/",
-        token="ghp_test",
+        token=FAKE_GITHUB_TOKEN,
     )
     assert h.clone_id == "github"
     assert h.mcp_url.endswith("/mcp/")
@@ -53,7 +54,7 @@ def _make_entry(clone_id: str, port: int = 19001) -> dict:
         "started_at": "2026-05-13T00:00:00Z",
         "url": f"http://127.0.0.1:{port}",
         "mcp_url": f"http://127.0.0.1:{port}/mcp/",
-        "token": "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt",
+        "token": FAKE_GITHUB_TOKEN,
     }
 
 
@@ -146,13 +147,22 @@ def test_init_invalid_template_exits_1(runner, tmp_path):
     assert result.exit_code != 0
 
 
-def test_init_default_template_is_raw(runner, tmp_path):
+def test_init_default_is_zero_code(runner, tmp_path):
+    """v0.3+: the default `init` is zero-code — a declarative harness.json,
+    NOT a copied harness.py. The legacy Python template is opt-in via
+    `--template raw`."""
     result = runner.invoke(cli_main, ["init", str(tmp_path)])
+    assert result.exit_code == 0
+    assert (tmp_path / "harness.json").exists()
+    assert not (tmp_path / "harness.py").exists()
+
+
+def test_init_raw_template_writes_harness_py(runner, tmp_path):
+    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "raw"])
     assert result.exit_code == 0
     harness = tmp_path / "harness.py"
     assert harness.exists()
-    src = harness.read_text(encoding="utf-8")
-    assert "requests" in src
+    assert "requests" in harness.read_text(encoding="utf-8")
 
 
 def test_init_idempotent(runner, tmp_path):
@@ -165,8 +175,8 @@ def test_init_idempotent(runner, tmp_path):
 
 def test_init_scaffold_creates_standard_files(runner, tmp_path):
     runner.invoke(cli_main, ["init", str(tmp_path)])
-    assert (tmp_path / "harness.py").exists()
-    assert (tmp_path / "scenario.md").exists()
+    assert (tmp_path / "harness.json").exists()
+    assert (tmp_path / "scenarios" / "quickstart.md").exists()
     assert (tmp_path / ".checkpoint.json").exists()
 
 

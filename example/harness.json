@@ -1,5 +1,0 @@
-{
-  "path": "multi_clone_harness.py",
-  "promptFiles": ["./scenarios/*.md"],
-  "env": {}
-}

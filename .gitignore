@@ -9,6 +9,11 @@ dist/
 .checkpoint/
 .gstack/
 
+# Secrets — never commit real credentials. .env.example is the only tracked env file.
+.env
+.env.*
+!.env.example
+
 # macOS Finder metadata
 .DS_Store
 

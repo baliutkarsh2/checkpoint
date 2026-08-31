@@ -249,7 +249,7 @@ Uses OpenAI's structured-output / JSON mode so the response is parseable.  ~1 ch
 
 ### Failure analysis (post-evaluation, optional)
 
-`checkpoint/failure_analysis.py` (and `failure_analyzer.py`) take the failed criteria + trace + state and ask an LLM "why did the agent fail to satisfy these?"  The output is stored in `record.failure_analysis` and surfaced in the dashboard's Run Detail page.  Skip with `--no-failure-analysis`.
+`checkpoint/failure_analyzer.py` takes the failed criteria + trace + state and asks an LLM "why did the agent fail to satisfy these?"  The output is stored in `record.failure_analysis` and surfaced in the dashboard's Run Detail page.  It runs once, from the CLI persist step, and honors `--no-failure-analysis`.
 
 ### Why staged?
 
@@ -287,7 +287,7 @@ checkpoint/twins/github.py
 ### Auth model
 
 Each twin enforces a **bootstrap token**:
-- `github`: `ghp_AaBbCc...` (looks like a real GitHub PAT)
+- `github`: `ghp_CHECKPOINTFAKE...` (GitHub PAT shape, obviously fake)
 - `slack`: `xoxb-...`
 - `stripe`: `sk_live_...`
 - `linear`, `supabase`, `discord`, `google-workspace`: each their own format
@@ -656,7 +656,7 @@ Dev extras: `pytest>=8.0`, `pytest-asyncio>=0.23`.
 | Twin tests | `test_supabase_twin.py`, `test_routes.py`, etc. | REST surface fidelity, error envelopes, seeds |
 | MCP tests | `test_mcp_*.py` (7 files) | every twin's MCP tool surface — list_tools, call_tool, transport |
 | CLI tests | `test_cli_*.py`, `test_cli_new_commands.py` | command parsing, exit codes, output formats |
-| Evaluator | `test_checker_*.py`, `test_judge.py`, `test_failure_analysis.py` | regex catalog, LLM-JSON, judge logic |
+| Evaluator | `test_checker_*.py`, `test_judge.py`, `test_failure_analyzer.py` | regex catalog, LLM-JSON, judge logic |
 | Runner | `test_runs_analytics.py`, `test_run_runtime_flags.py` | analytics, --rate-limit/--read-only/--keep-state |
 | Dashboard | `test_dashboard.py` | every JSON route, SPA fallback, rate limit, request IDs, jobs lifecycle, SSE bus |
 | Sandbox/Docker | `tests/docker/` | harness image build, runner unit tests |
@@ -761,7 +761,7 @@ checkpoint/
 ├── judge.py                     # Stage 3 GPT judge
 ├── compare_diff.py              # pure function: diff two run records
 ├── analytics.py                 # compute_trend, detect_flaky, load_runs_for_scenario
-├── failure_analysis.py          # heuristic failure analysis
+├── failure_analyzer.py          # LLM failure analysis (CLI persist step)
 ├── failure_analyzer.py          # LLM-driven failure analysis
 ├── config.py                    # .checkpoint.json + harness.json discovery
 ├── user_config.py               # ~/.checkpoint/config.json (CRUD + env indirection)
@@ -799,7 +799,6 @@ checkpoint/
 │   ├── runner.py                # docker_run_once orchestration
 │   └── harness_image.py         # build harness image from user dir
 ├──
-├── sandbox/                     # pre-baked harness sandbox image
 │   └── Dockerfile
 ├──
 ├── dashboard/
@@ -928,7 +927,7 @@ For a scenario `scenarios/github-supabase-product-launch.md` with `clones: githu
 11. If --read-only: GET /_state from each twin, store as pre-snapshot
 12. Build env: CHECKPOINT_GITHUB_URL=http://127.0.0.1:54321,
               CHECKPOINT_SUPABASE_URL=http://127.0.0.1:54322,
-              GITHUB_TOKEN=ghp_AaBbCc...,
+              GITHUB_TOKEN=ghp_CHECKPOINTFAKE...,
               SUPABASE_BOOTSTRAP_TOKEN=eyJh...,
               CHECKPOINT_TASK="A new product is ready to ship: ..."
 13. subprocess.run(['python', 'harness/harness.py'], env=env, timeout=120)

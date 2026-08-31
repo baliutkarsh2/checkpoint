@@ -1,0 +1,25 @@
+# Checkpoint gitleaks configuration.
+#
+# We extend the upstream default ruleset (do NOT redefine it here) and add a
+# narrow allowlist for the SYNTHETIC bootstrap tokens the local twins need.
+# Those tokens are never real: they keep an SDK-required prefix so the official
+# client libraries accept them, but their body is the literal marker
+# "CHECKPOINTFAKE". See checkpoint/fake_credentials.py.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic twin bootstrap tokens and env templates — never real credentials."
+# Any secret whose value carries the CHECKPOINTFAKE marker is a known-fake twin token.
+regexTarget = "match"
+regexes = [
+  '''CHECKPOINTFAKE''',
+]
+paths = [
+  # The single source of truth for synthetic tokens.
+  '''checkpoint/fake_credentials\.py''',
+  # Env template ships placeholder values only (sk-..., etc.).
+  '''\.env\.example''',
+  # This config file references the marker string itself.
+  '''\.gitleaks\.toml''',
+]

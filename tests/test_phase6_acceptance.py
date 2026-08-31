@@ -20,11 +20,12 @@ import time
 
 import httpx
 import pytest
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY
 
 
-GITHUB_TOKEN = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
-SLACK_TOKEN = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
-STRIPE_TOKEN = "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"
+GITHUB_TOKEN = FAKE_GITHUB_TOKEN
+SLACK_TOKEN = FAKE_SLACK_TOKEN
+STRIPE_TOKEN = FAKE_STRIPE_KEY
 
 
 def _free_port() -> int:

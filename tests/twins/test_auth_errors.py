@@ -37,7 +37,7 @@ def test_missing_authorization_returns_401(client):
 def test_wrong_token_returns_401(client):
     r = client.get(
         "/repos/acme/webapp",
-        headers={"Authorization": "token ghp_wrongtoken"},
+        headers={"Authorization": "token ghp_CHECKPOINTFAKEwrongtoken"},
     )
     assert r.status_code == 401
     assert r.json()["message"] == "Bad credentials"
@@ -62,7 +62,7 @@ def test_token_form_accepted(client):
 
 
 def test_env_override(monkeypatch, client):
-    monkeypatch.setenv("GITHUB_BOOTSTRAP_TOKEN", "ghp_envoverride")
+    monkeypatch.setenv("GITHUB_BOOTSTRAP_TOKEN", "ghp_CHECKPOINTFAKEenvoverride")
     # Default token is now wrong.
     r = client.get(
         "/repos/acme/webapp",
@@ -72,7 +72,7 @@ def test_env_override(monkeypatch, client):
     # The overridden token works.
     r = client.get(
         "/repos/acme/webapp",
-        headers={"Authorization": "token ghp_envoverride"},
+        headers={"Authorization": "token ghp_CHECKPOINTFAKEenvoverride"},
     )
     assert r.status_code == 404
 

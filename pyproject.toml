@@ -1,10 +1,24 @@
 [project]
-name = "checkpoint"
+name = "checkpoint-agents"
 version = "0.1.0"
-description = "Agent testing against stateful SaaS twins"
+description = "The pre-production release gate for AI agents: simulate against stateful SaaS twins, score full trajectories, gate every build."
 readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+authors = [{ name = "Checkpoint Labs", email = "hello@usecheckpoint.dev" }]
+keywords = ["ai", "agents", "testing", "evaluation", "llm", "red-teaming", "ci", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
@@ -12,6 +26,7 @@ dependencies = [
     "click>=8.1",
     "rich>=13.7",
     "openai>=1.30",
+    "pydantic>=2.0",
     "python-dotenv>=1.0",
     "mitmproxy>=10.0",
     "docker>=7.0",
@@ -22,6 +37,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 sdk = []
+# Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
+# OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
+anthropic = ["anthropic>=0.40"]
+
+[project.urls]
+Homepage = "https://usecheckpoint.dev"
+Repository = "https://github.com/Aaditya2605/checkpoint"
+Documentation = "https://usecheckpoint.dev/docs"
+Issues = "https://github.com/Aaditya2605/checkpoint/issues"
 
 [project.scripts]
 checkpoint = "checkpoint.cli:main"
@@ -30,7 +54,7 @@ checkpoint = "checkpoint.cli:main"
 checkpoint = "checkpoint.pytest_plugin"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -41,3 +65,4 @@ include = ["checkpoint*"]
 "checkpoint" = ["init_templates/*"]
 "checkpoint.dashboard" = ["static/**/*", "static/index.html"]
 "checkpoint.init_templates" = ["**/*"]
+"checkpoint.proxy" = ["Dockerfile", "entrypoint.sh"]

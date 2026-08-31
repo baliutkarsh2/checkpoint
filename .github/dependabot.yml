@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Python package + dev/test dependencies.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+
+  # Dashboard SPA dependencies.
+  - package-ecosystem: npm
+    directory: "/checkpoint/dashboard/web"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "javascript"]
+
+  # GitHub Actions used by our workflows.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "ci"]

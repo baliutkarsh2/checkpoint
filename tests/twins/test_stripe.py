@@ -41,10 +41,10 @@ def test_wrong_token_returns_401(client):
 
 
 def test_env_override_bootstrap_token(monkeypatch, client):
-    monkeypatch.setenv("STRIPE_BOOTSTRAP_TOKEN", "sk_live_override")
+    monkeypatch.setenv("STRIPE_BOOTSTRAP_TOKEN", "sk_live_CHECKPOINTFAKEoverride")
     r = client.get("/v1/balance", headers=H)
     assert r.status_code == 401
-    r = client.get("/v1/balance", headers={"Authorization": "Bearer sk_live_override"})
+    r = client.get("/v1/balance", headers={"Authorization": "Bearer sk_live_CHECKPOINTFAKEoverride"})
     assert r.status_code == 200
 
 

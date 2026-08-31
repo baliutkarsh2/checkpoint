@@ -25,12 +25,39 @@ class HarnessImageError(RuntimeError):
     pass
 
 
+# Combined-CA entrypoint. The docker runner exports SSL_CERT_FILE (and friends)
+# pointing at the sidecar's CA so intercepted SaaS calls verify. But that CA
+# alone REPLACES the system trust store, so the agent's OWN calls to real hosts
+# (api.openai.com, api.anthropic.com, …) would fail cert verification. We fix
+# that here — the same trick the bundled example agents use in their entrypoint:
+# concatenate the system bundle with the sidecar CA and re-point every CA env
+# var at the union, then exec the real command.
+_CA_ENTRYPOINT = """\
+#!/bin/sh
+set -e
+SIDECAR_CA="${SSL_CERT_FILE:-/archal-out/ca.crt}"
+SYS_CA=/etc/ssl/certs/ca-certificates.crt
+if [ -f "$SIDECAR_CA" ] && [ -f "$SYS_CA" ]; then
+  cat "$SYS_CA" "$SIDECAR_CA" > /tmp/checkpoint-combined-ca.crt
+  export SSL_CERT_FILE=/tmp/checkpoint-combined-ca.crt
+  export REQUESTS_CA_BUNDLE=/tmp/checkpoint-combined-ca.crt
+  export CURL_CA_BUNDLE=/tmp/checkpoint-combined-ca.crt
+  export NODE_EXTRA_CA_CERTS=/tmp/checkpoint-combined-ca.crt
+fi
+exec "$@"
+"""
+
+_ENTRYPOINT_NAME = "checkpoint-entrypoint.sh"
+
 _PY_DOCKERFILE = """\
 FROM python:3.11-slim
 WORKDIR /harness
 COPY . /harness
 RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; \\
     elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi
+COPY {entrypoint} /usr/local/bin/{entrypoint}
+RUN chmod +x /usr/local/bin/{entrypoint}
+ENTRYPOINT ["/usr/local/bin/{entrypoint}"]
 CMD ["python", "{entry}"]
 """
 
@@ -39,6 +66,9 @@ FROM node:20-slim
 WORKDIR /harness
 COPY . /harness
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+COPY {entrypoint} /usr/local/bin/{entrypoint}
+RUN chmod +x /usr/local/bin/{entrypoint}
+ENTRYPOINT ["/usr/local/bin/{entrypoint}"]
 CMD ["node", "{entry}"]
 """
 
@@ -104,12 +134,21 @@ def build_harness_image(
             else:
                 shutil.copy2(item, dst)
 
+        # Drop the combined-CA entrypoint into the context (LF endings, as
+        # written). The generated Dockerfile installs it as ENTRYPOINT so the
+        # agent's own TLS calls to real hosts keep working under the sidecar CA.
+        (ctx / _ENTRYPOINT_NAME).write_text(_CA_ENTRYPOINT)
+
         if runtime == "python":
             entry = _entry_file(harness_entry, "harness.py")
-            (ctx / "Dockerfile").write_text(_PY_DOCKERFILE.format(entry=entry))
+            (ctx / "Dockerfile").write_text(
+                _PY_DOCKERFILE.format(entry=entry, entrypoint=_ENTRYPOINT_NAME)
+            )
         else:  # node
             entry = _entry_file(harness_entry, "index.js")
-            (ctx / "Dockerfile").write_text(_NODE_DOCKERFILE.format(entry=entry))
+            (ctx / "Dockerfile").write_text(
+                _NODE_DOCKERFILE.format(entry=entry, entrypoint=_ENTRYPOINT_NAME)
+            )
 
         try:
             image, _logs = client.images.build(

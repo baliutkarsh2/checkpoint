@@ -1,0 +1,28 @@
+# Normalize line endings so the repo behaves identically on Windows, macOS, and
+# Linux. Shell scripts and Dockerfiles MUST stay LF or they break inside Linux
+# containers; the committed SPA bundle is treated as binary so it is never munged.
+* text=auto
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.html  text eol=lf
+*.svg   text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+Dockerfile      text eol=lf
+entrypoint.sh   text eol=lf
+
+# The committed SPA bundle is all text (html/svg/css/js) and MUST match a fresh
+# `npm run build` on Linux CI, so force LF just like the sources.
+checkpoint/dashboard/static/**  text eol=lf
+*.png   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary

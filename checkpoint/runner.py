@@ -15,6 +15,7 @@ from .checker import check
 from .checker_llm import try_stage2
 from .judge import judge
 from .scenario import Criterion, Scenario
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY, FAKE_LINEAR_TOKEN, FAKE_SUPABASE_TOKEN, FAKE_DISCORD_TOKEN, FAKE_GOOGLE_WORKSPACE_TOKEN
 
 
 @dataclass
@@ -146,13 +147,13 @@ def _fetch_state(port: int) -> dict:
 
 
 _CLONE_BOOTSTRAP_TOKEN_ENV = {
-    "github": ("GITHUB_TOKEN", "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"),
-    "slack": ("SLACK_TOKEN", "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"),
-    "stripe": ("STRIPE_API_KEY", "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"),
-    "linear": ("LINEAR_BOOTSTRAP_TOKEN", "lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011"),
-    "supabase": ("SUPABASE_BOOTSTRAP_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff"),
-    "discord": ("DISCORD_BOOTSTRAP_TOKEN", "Bot checkpoint.discord.twin.token.aabbccddeeff0011"),
-    "google-workspace": ("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", "ya29.checkpoint_google_workspace_token_aabbccddeeff"),
+    "github": ("GITHUB_TOKEN", FAKE_GITHUB_TOKEN),
+    "slack": ("SLACK_TOKEN", FAKE_SLACK_TOKEN),
+    "stripe": ("STRIPE_API_KEY", FAKE_STRIPE_KEY),
+    "linear": ("LINEAR_BOOTSTRAP_TOKEN", FAKE_LINEAR_TOKEN),
+    "supabase": ("SUPABASE_BOOTSTRAP_TOKEN", FAKE_SUPABASE_TOKEN),
+    "discord": ("DISCORD_BOOTSTRAP_TOKEN", FAKE_DISCORD_TOKEN),
+    "google-workspace": ("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", FAKE_GOOGLE_WORKSPACE_TOKEN),
 }
 
 
@@ -508,11 +509,24 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             c = Criterion(text=c.text, kind=c.kind)
             setattr(c, "_stage2_fallthrough", stage2_reason)
             deferred.append(c)
+        elif c.kind == "T":
+            # Trajectory criteria: evaluate the agent's call path deterministically.
+            from .trajectory import Trajectory, compute_metrics
+            from .trajectory.checker import check as _check_traj
+
+            traj = Trajectory.from_trace(result.trace)
+            passed, reasoning = _check_traj(c.text, traj, compute_metrics(traj))
+            if passed is not None:
+                result.criteria.append(CriterionResult(
+                    text=c.text, kind="T", passed=passed,
+                    reasoning=reasoning, evaluator="trajectory",
+                ))
+                continue
+            deferred.append(c)  # unrecognized phrasing -> judge
         else:
             deferred.append(c)
 
     if not deferred:
-        _maybe_analyze_failures(scenario, result, judge_model)
         return
 
     try:
@@ -530,7 +544,6 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
                 text=c.text, kind=c.kind, passed=False,
                 reasoning=f"Judge failed: {e}", evaluator="llm",
             ))
-        _maybe_analyze_failures(scenario, result, judge_model)
         return
 
     for c, v in zip(deferred, verdicts):
@@ -538,23 +551,3 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             text=c.text, kind=c.kind, passed=v.passed,
             reasoning=v.reasoning, evaluator="llm",
         ))
-
-    _maybe_analyze_failures(scenario, result, judge_model)
-
-
-def _maybe_analyze_failures(scenario: Scenario, result: RunResult, judge_model: str) -> None:
-    """Populate result.failure_analysis when any criteria failed. Non-fatal."""
-    failed = [c.text for c in result.criteria if not c.passed]
-    if not failed:
-        return
-    try:
-        from .failure_analysis import analyze_failures
-        result.failure_analysis = analyze_failures(
-            task=scenario.prompt,
-            failed_criteria=failed,
-            trace=result.trace,
-            state=result.state,
-            model=judge_model,
-        )
-    except Exception:
-        pass  # non-fatal — don't block the run or change the score

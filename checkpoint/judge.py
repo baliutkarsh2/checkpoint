@@ -46,9 +46,9 @@ def judge(
 ) -> list[JudgeResult]:
     if not criteria:
         return []
-    from openai import OpenAI
+    from .llm import get_client
 
-    client = OpenAI()
+    client = get_client(model)
     payload = {
         "task": task,
         "final_answer": final_answer,

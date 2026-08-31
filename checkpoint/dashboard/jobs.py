@@ -117,7 +117,15 @@ class JobManager:
         else:
             cmd.append("--no-docker")
         if harness_dir:
-            cmd.extend(["--harness-dir" if docker else "--harness", harness_dir])
+            if docker:
+                cmd.extend(["--harness-dir", harness_dir])
+            else:
+                # Subprocess mode: run the directory's harness.py. `harness_dir`
+                # is a server-validated agent directory (never a client command),
+                # and agent discovery guarantees harness.py exists. shlex.join
+                # quotes safely so the CLI's shlex.split round-trips the path.
+                entry = os.path.join(harness_dir, "harness.py")
+                cmd.extend(["--harness", shlex.join([sys.executable, entry])])
         if model:
             cmd.extend(["--model", model])
         if timeout is not None:

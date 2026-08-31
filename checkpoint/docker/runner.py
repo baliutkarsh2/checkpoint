@@ -27,8 +27,9 @@ import json
 import logging
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -37,8 +38,6 @@ from typing import Optional
 
 import docker
 from docker.errors import APIError, NotFound
-
-import sys
 
 from ..runner import (
     RunResult,
@@ -52,6 +51,7 @@ from ..runner import (
 from ..scenario import Scenario
 from ..proxy.routes import register, lookup, all_domains
 from .harness_image import build_harness_image, HarnessImageError
+from .sidecar import SIDECAR_IMAGE, ensure_sidecar_image
 
 
 _DOCKER_TWIN_APPS = {
@@ -80,28 +80,7 @@ _CLONE_DOMAINS = {
 _BASE_TWIN_PORT = 18080
 
 
-def _start_twin_for_docker(clone: str, port: int) -> subprocess.Popen:
-    """Start the twin bound to 0.0.0.0 so docker containers can reach it via
-    host.docker.internal:<port>. The v0 _start_twin binds to 127.0.0.1, which
-    is correct for local-mode but unreachable from docker bridge."""
-    app = _DOCKER_TWIN_APPS.get(clone)
-    if app is None:
-        raise ValueError(f"docker runner: unsupported clone={clone!r}")
-    return subprocess.Popen(
-        [
-            sys.executable, "-m", "uvicorn",
-            app,
-            "--host", "0.0.0.0",
-            "--port", str(port),
-            "--log-level", "warning",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
 log = logging.getLogger("checkpoint.docker.runner")
-
-SIDECAR_IMAGE = os.environ.get("CHECKPOINT_SIDECAR_IMAGE", "checkpoint-sidecar:latest")
 
 
 @dataclass
@@ -324,6 +303,13 @@ def docker_run_once(
     try:
         _write_hosts_file(archal_out)
 
+        # Build the TLS sidecar image on first use so a clean machine works
+        # out of the box (no manual `docker build` step).
+        try:
+            ensure_sidecar_image(client, log_fn=lambda m: sys.stderr.write(m + "\n"))
+        except Exception as e:
+            return DockerRunResult("", "", -1, [], {}, error=f"Sidecar image build failed: {e}")
+
         try:
             build_harness_image(harness_dir, " ".join(harness_cmd), harness_tag)
         except HarnessImageError as e:
@@ -407,20 +393,30 @@ def docker_run_once(
             extra_hosts={domain: sidecar_ip for domain in all_domains()},
         )
 
+        # Stream logs (when --docker-logs) on a daemon thread so following the
+        # log never blocks the timeout: the main thread always waits at most
+        # scenario.timeout for the harness to exit, then kills a hung agent.
+        if verbose:
+            def _pump_logs() -> None:
+                try:
+                    for _line in harness.logs(stream=True, follow=True):
+                        sys.stderr.write(_line.decode("utf-8", errors="replace"))
+                except Exception:
+                    pass
+
+            threading.Thread(target=_pump_logs, daemon=True).start()
+
         try:
-            if verbose:
-                import sys as _sys
-                for _line in harness.logs(stream=True, follow=True):
-                    _sys.stderr.write(_line.decode("utf-8", errors="replace"))
-                exit_info = harness.wait(timeout=10)
-            else:
-                exit_info = harness.wait(timeout=scenario.timeout)
+            exit_info = harness.wait(timeout=scenario.timeout)
         except Exception as e:
             try:
                 harness.kill()
             except Exception:
                 pass
-            return DockerRunResult("", "", -1, [], {}, error=f"Harness wait failed: {e}")
+            return DockerRunResult(
+                "", "", -1, [], {},
+                error=f"Harness timed out after {scenario.timeout}s (or wait failed: {e})",
+            )
 
         stdout = harness.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
         stderr = harness.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")[-4000:]

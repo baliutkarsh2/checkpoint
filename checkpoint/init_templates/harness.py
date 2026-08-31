@@ -19,10 +19,11 @@ import os
 import sys
 
 import requests
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 TASK = os.environ.get("CHECKPOINT_TASK") or os.environ.get("ARCHAL_ENGINE_TASK") or ""
 GITHUB_URL = os.environ.get("CHECKPOINT_GITHUB_URL")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", FAKE_GITHUB_TOKEN)
 
 
 def example_github_call() -> dict:

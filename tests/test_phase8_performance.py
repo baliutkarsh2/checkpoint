@@ -25,8 +25,8 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SMOKE_SCENARIO = REPO_ROOT / "example" / "smoke-scenario.md"
-FAKE_HARNESS = REPO_ROOT / "example" / "harness_fake.py"
+SMOKE_SCENARIO = REPO_ROOT / "examples" / "smoke" / "smoke-scenario.md"
+FAKE_HARNESS = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"
 
 # Generous threshold per execution_rules note 5. The spec says <5s on a
 # normal dev box; we allow up to 8s to absorb CI/slow-disk variance.
