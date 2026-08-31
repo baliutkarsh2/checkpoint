@@ -102,20 +102,26 @@ Lint before running with `checkpoint validate scenarios/my-test.md`. The 16 bund
 
 **Running it safely:** the dashboard binds to `127.0.0.1` and needs no auth there. If you bind it anywhere else you must set `CHECKPOINT_DASHBOARD_API_KEY` (it refuses to start on a non-loopback bind without one). `POST /api/jobs` runs agent harnesses — only point it at code you trust, and use `CHECKPOINT_DASHBOARD_READ_ONLY=1` for viewer-only instances.
 
+## The gate
+
+Agents are non-deterministic, so a single green run is a coin flip, not a verdict. `checkpoint gate` runs each scenario N times and decides from the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky run:
+
+```bash
+checkpoint gate scenarios/ --harness "python my_agent.py" -n 20
+```
+
+Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regression`, and the run gets one verdict: **SHIP** (every scenario confidently passes), **BLOCK** (any confident failure/regression — exit 1), or **CONDITIONAL** (something's flaky; exit 0, or 1 with `--strict`). Tune with `--ship-min` / `--block-max` / `--pass-threshold`.
+
 ## CI integration
 
 ```yaml
-- name: Run Checkpoint scenarios
-  run: |
-    checkpoint run scenarios/ \
-      -n 3 \
-      --pass-threshold 80 \
-      -o json -q
+- name: Gate the agent
+  run: checkpoint gate scenarios/ --harness "python my_agent.py" -n 20 -o json
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Exit code 1 if any scenario's average score drops below `--pass-threshold`. Run records land in `.checkpoint/cache/runs/*.json`.
+Exit code 1 blocks the pipeline on BLOCK. (The simpler `checkpoint run scenarios/ -n 3 --pass-threshold 80` gates on the mean instead.) Run records land in `.checkpoint/cache/runs/*.json`.
 
 ## Reference
 
@@ -125,7 +131,8 @@ Run `checkpoint <command> --help` for full options.
 |---|---|
 | `checkpoint init --command "..."` | Scaffold integration in the current repo (zero-code) |
 | `checkpoint run <scenario.md>` | Run a scenario, print the score |
-| `checkpoint run <dir/> -n 3 --pass-threshold 80` | CI mode — N runs per scenario, fail under threshold |
+| `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
+| `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
 | `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
@@ -134,7 +141,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Checkpoint is becoming a statistical release gate: N-run pass-rate confidence intervals (flake vs. real regression), trajectory-level scoring, adversarial red-team packs (OWASP Agentic Top 10), calibrated multi-turn user simulation, and a signed Trust Certificate per build. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression) ships today via `checkpoint gate`. Next: trajectory-level scoring, adversarial red-team packs (OWASP Agentic Top 10), calibrated multi-turn user simulation, and a signed Trust Certificate per build. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 

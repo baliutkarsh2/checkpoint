@@ -101,6 +101,27 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
     ckpt_cfg = load_checkpoint_config()
     harness_cfg = load_harness_config(harness)
 
+    # --- User config fallbacks (~/.checkpoint/config.json) ---
+    # Precedence: explicit flag > scenario > user config > built-in default.
+    from .user_config import UserConfig
+    _ucfg = UserConfig.load()
+    _ucfg_runs = _ucfg.get("defaults.runs")
+    if pass_threshold is None:
+        _upt = _ucfg.get("defaults.pass_threshold")
+        if isinstance(_upt, int):
+            pass_threshold = _upt
+    # Machine-local provider keys, only if the env var isn't already set.
+    for _key, _envvar in (
+        ("engine.openai_api_key", "OPENAI_API_KEY"),
+        ("engine.anthropic_api_key", "ANTHROPIC_API_KEY"),
+        ("engine.gemini_api_key", "GEMINI_API_KEY"),
+    ):
+        if not os.environ.get(_envvar):
+            _v = _ucfg.get(_key)  # resolves `env:NAME` indirection
+            if isinstance(_v, str) and _v:
+                os.environ[_envvar] = _v
+    _agent_model = _ucfg.get("defaults.agent_model")
+
     if reuse_session:
         # SCOPE §7: hosted session reuse — local v1 has no hosted sessions.
         console.print("[dim]--reuse-session: hosted sessions unavailable in local v1; ignoring.[/dim]")
@@ -108,6 +129,8 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
     # --- Resolve harness command ---
     # Priority: --command (inline, zero-code) > --harness > harness.json > .checkpoint.json
     extra_env: dict[str, str] = {}
+    if isinstance(_agent_model, str) and _agent_model:
+        extra_env["CHECKPOINT_AGENT_MODEL"] = _agent_model
     if inline_command:
         # Zero-code path: pass the user's command verbatim. The runner already
         # shlex-splits it with the right posix flag for the platform. Task
@@ -273,6 +296,9 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
 
         if runs is not None:
             scenario.config["runs"] = str(runs)
+        elif isinstance(_ucfg_runs, int) and "runs" not in scenario.config:
+            # user-config default only when neither flag nor scenario set it
+            scenario.config["runs"] = str(_ucfg_runs)
         if timeout is not None:
             scenario.config["timeout"] = str(timeout)
 
@@ -1508,6 +1534,111 @@ def docker_build_sidecar(force):
         sys.exit(1)
 
 
+@main.command("gate")
+@click.argument("target", type=click.Path(exists=True))
+@click.option("--harness", required=True,
+              help="Command that runs your agent, e.g. 'python my_agent.py'.")
+@click.option("-n", "--runs", type=int, default=None,
+              help="Runs per scenario. [default: 20]")
+@click.option("--pass-threshold", type=float, default=None,
+              help="Score (0-100) a single run needs to count as a pass. [default: 80]")
+@click.option("--ship-min", type=float, default=None,
+              help="CI lower bound (0-1) required to SHIP. [default: 0.80]")
+@click.option("--block-max", type=float, default=None,
+              help="CI upper bound (0-1) at/under which to BLOCK. [default: 0.50]")
+@click.option("--confidence", type=float, default=0.95, show_default=True,
+              help="Confidence level for the interval.")
+@click.option("--strict", is_flag=True, default=False,
+              help="Exit non-zero on CONDITIONAL as well as BLOCK.")
+@click.option("--judge-model", default=None, help="Model for [P] LLM-judged criteria.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
+         strict, judge_model, output_format):
+    """Statistically gate an agent: run each scenario N times and decide
+    SHIP / CONDITIONAL / BLOCK from the pass-rate distribution (not one run).
+
+    Exit code is 0 for SHIP (and CONDITIONAL unless --strict), 1 for BLOCK.
+    """
+    import json as _json
+    import shlex as _shlex
+
+    from .gate import GatePolicy, run_gate
+
+    policy = GatePolicy(
+        runs=runs if runs is not None else 20,
+        pass_threshold=pass_threshold if pass_threshold is not None else 80.0,
+        confidence=confidence,
+        ship_min=ship_min if ship_min is not None else 0.80,
+        block_max=block_max if block_max is not None else 0.50,
+        strict=strict,
+    )
+    harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
+    jm = judge_model or "gpt-4o-mini"
+
+    quiet_progress = output_format == "json"
+
+    def _progress(name: str, i: int, total: int, score: float, complete: bool) -> None:
+        if quiet_progress:
+            return
+        mark = "[green]P[/green]" if (complete and score >= policy.pass_threshold) else "[red]F[/red]"
+        console.print(f"[dim]{name}[/dim]  run {i}/{total}  {mark} {score:.0f}/100", highlight=False)
+
+    result = run_gate(Path(target), harness_cmd, policy, judge_model=jm, progress=_progress)
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "verdict": result.verdict,
+            "exit_code": result.exit_code,
+            "policy": {
+                "runs": policy.runs, "pass_threshold": policy.pass_threshold,
+                "confidence": policy.confidence, "ship_min": policy.ship_min,
+                "block_max": policy.block_max, "strict": policy.strict,
+            },
+            "scenarios": [{
+                "scenario": s.scenario, "n": s.n, "passes": s.passes,
+                "pass_rate": round(s.pass_rate, 4),
+                "ci_low": round(s.ci.low, 4), "ci_high": round(s.ci.high, 4),
+                "classification": s.classification,
+                "mean_score": round(s.mean_score, 2),
+            } for s in result.scenarios],
+            "errors": result.errors,
+        }))
+        sys.exit(result.exit_code)
+
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Scenario")
+    table.add_column("Pass", justify="right")
+    table.add_column("Rate", justify="right")
+    table.add_column(f"{int(policy.confidence * 100)}% CI", justify="center")
+    table.add_column("Verdict")
+    _cls_color = {"stable_pass": "green", "stable_fail": "red",
+                  "regression": "red", "flaky": "yellow"}
+    for s in result.scenarios:
+        color = _cls_color.get(s.classification, "white")
+        table.add_row(
+            s.scenario,
+            f"{s.passes}/{s.n}",
+            f"{s.pass_rate * 100:.0f}%",
+            f"[{s.ci.low * 100:.0f}%, {s.ci.high * 100:.0f}%]",
+            f"[{color}]{s.classification}[/{color}]",
+        )
+    console.print(table)
+
+    if result.errors:
+        console.print(f"[yellow]{len(result.errors)} run error(s):[/yellow]")
+        for e in result.errors[:10]:
+            console.print(f"  [dim]{e}[/dim]")
+
+    verdict_style = {"SHIP": "bold green", "CONDITIONAL": "bold yellow", "BLOCK": "bold red"}[result.verdict]
+    console.print(Panel.fit(
+        f"[{verdict_style}]{result.verdict}[/{verdict_style}]",
+        title="gate verdict",
+        border_style=verdict_style.split()[-1],
+    ))
+    sys.exit(result.exit_code)
+
+
 @main.command("validate")
 @click.argument("scenario_path", type=click.Path(exists=True))
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit structured JSON instead of a table.")
@@ -1686,14 +1817,16 @@ def replay(run_id, clone, limit, as_json):
 
 
 @main.command("serve")
-@click.option("--port", default=4001, show_default=True, help="Port to listen on.")
-@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=None,
+              help="Port to listen on. [default: dashboard.port user config, else 4001]")
+@click.option("--host", default=None,
+              help="Host to bind. [default: dashboard.host user config, else 127.0.0.1]")
 @click.option(
     "--scenarios", "scenarios_dir",
     type=click.Path(file_okay=False),
-    default=".",
-    show_default=True,
-    help="Directory to scan for .md scenario files.",
+    default=None,
+    help="Directory to scan for .md scenario files. "
+         "[default: defaults.scenarios_dir user config, else .]",
 )
 @click.option("--open/--no-open", "auto_open", default=False,
               help="Open the dashboard in the default browser.")
@@ -1701,6 +1834,20 @@ def replay(run_id, clone, limit, as_json):
               help="Default judge model surfaced in the dashboard meta + new runs.")
 def serve(port, host, scenarios_dir, auto_open, judge_model):
     """Start the checkpoint web dashboard."""
+    # Resolve host/port/scenarios from user config when the flag is unset.
+    # Precedence: explicit flag > ~/.checkpoint/config.json > built-in default.
+    from .user_config import UserConfig
+    _ucfg = UserConfig.load()
+    if port is None:
+        _up = _ucfg.get("dashboard.port")
+        port = _up if isinstance(_up, int) else 4001
+    if host is None:
+        _uh = _ucfg.get("dashboard.host")
+        host = _uh if isinstance(_uh, str) and _uh else "127.0.0.1"
+    if scenarios_dir is None:
+        _us = _ucfg.get("defaults.scenarios_dir")
+        scenarios_dir = _us if isinstance(_us, str) and _us else "."
+
     # The dashboard can spawn `checkpoint run` subprocesses (POST /api/jobs).
     # On loopback that's fine (single-user local tool). But binding to any
     # other interface exposes that to the network, so require an API key there.
