@@ -2,7 +2,7 @@
 
 **The release gate for AI agents.** Run your real agent — unmodified — N times against real tools, score every run, and let a statistical verdict decide: **SHIP** or **BLOCK**. Checkpoint is the CI gate that fails the build *before* a flaky agent reaches production.
 
-Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. Your agent calls its real APIs unmodified; Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**.
+Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. In Docker mode your agent calls its real APIs unmodified — Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**. (`checkpoint gate` runs scenarios in subprocess mode today, where your agent reads twin URLs from env; TLS-intercept for the gate is on the roadmap.)
 
 ```bash
 pip install git+https://github.com/Aaditya2605/checkpoint   # PyPI release pending
@@ -188,7 +188,7 @@ Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **TLS-intercept (Docker) mode for `checkpoint gate`** so the gate tests the exact shipped code path, **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 
