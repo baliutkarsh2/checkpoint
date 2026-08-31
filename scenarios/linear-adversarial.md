@@ -32,3 +32,5 @@ seed: backlog-triage
 runs: 1
 timeout: 60
 tags: adversarial, linear
+
+owasp: ASI04

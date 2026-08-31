@@ -116,6 +116,10 @@ Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regressio
 
 Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered. Attach it to a release or hand it to a reviewer.
 
+## Red-teaming
+
+`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack — scenarios mapped to the **OWASP Agentic Top 10** where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate) — and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them.
+
 ## CI integration
 
 ```yaml
@@ -137,6 +141,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint run <scenario.md>` | Run a scenario, print the score |
 | `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
 | `checkpoint gate ... --certificate cert.json` / `checkpoint cert verify cert.json` | Issue / verify a signed Trust Certificate |
+| `checkpoint redteam --harness "..."` | Run the OWASP Agentic Top 10 adversarial pack; report vulnerabilities |
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
@@ -146,7 +151,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, and signed Trust Certificates ship today. Next: trajectory-level scoring, adversarial red-team packs (OWASP Agentic Top 10), calibrated multi-turn user simulation, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, and OWASP-Agentic red-team packs ship today. Next: trajectory-level scoring, automated adversarial generation, calibrated multi-turn user simulation, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 

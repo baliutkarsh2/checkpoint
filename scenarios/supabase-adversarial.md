@@ -32,3 +32,5 @@ seed: ecommerce
 runs: 1
 timeout: 60
 tags: adversarial, supabase
+
+owasp: ASI04
