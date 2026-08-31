@@ -44,8 +44,13 @@ pip install pre-commit && pre-commit install
 ```bash
 pytest -q                      # full suite
 pytest tests/twins -q          # just the twins
-pytest tests/test_no_tracked_secrets.py -q   # the secret tripwire
+pytest -q --cov                # with a coverage report
+pytest -q -m "not integration" # skip tests that spawn twin subprocesses
 ```
+
+Markers (`slow`, `integration`, `docker`) are declared in `pyproject.toml` and
+enforced with `--strict-markers`, so a typo fails rather than silently matching
+nothing. Every test is bounded by a 300s timeout.
 
 The suite runs offline: LLM calls are behind injectable client factories, and each
 test isolates state via `tmp_path` / `CHECKPOINT_HOME`. Docker-mode tests mock the

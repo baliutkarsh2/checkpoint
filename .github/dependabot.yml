@@ -39,3 +39,16 @@ updates:
       actions:
         applies-to: version-updates
         patterns: ["*"]
+
+  # Container base images back the self-hosting story and the TLS sidecar.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "docker"]
+
+  - package-ecosystem: docker
+    directory: "/checkpoint/proxy"
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "docker"]
