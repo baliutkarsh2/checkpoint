@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from checkpoint.docker.runner import _build_env, _read_output, _write_hosts_file
 from checkpoint.scenario import Scenario

@@ -1,4 +1,4 @@
-from checkpoint.proxy.routes import Route, lookup, register, all_domains
+from checkpoint.proxy.routes import Route, all_domains, lookup, register
 
 
 def test_lookup_github_returns_route_with_github_token():

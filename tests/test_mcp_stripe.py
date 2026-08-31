@@ -15,7 +15,6 @@ import time
 import httpx
 import pytest
 
-
 STRIPE_TOOL_NAMES = {
     # Customers
     "create_customer", "list_customers",

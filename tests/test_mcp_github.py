@@ -15,8 +15,8 @@ import time
 
 import httpx
 import pytest
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 GITHUB_TOOL_NAMES = {
     # Repositories (6)

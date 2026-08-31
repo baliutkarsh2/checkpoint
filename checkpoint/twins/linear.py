@@ -22,12 +22,13 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+
 from checkpoint.fake_credentials import FAKE_LINEAR_TOKEN
 
 app = FastAPI(title="checkpoint linear twin")
@@ -39,7 +40,7 @@ SEEDS_DIR = Path(__file__).parent / "linear_seeds"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _uid() -> str:

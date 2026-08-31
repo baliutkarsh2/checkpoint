@@ -12,14 +12,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 app = FastAPI(title="checkpoint github twin")
@@ -36,7 +36,7 @@ SEEDS_DIR = Path(__file__).parent / "github_seeds"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _fresh_state() -> dict:
@@ -920,7 +920,6 @@ async def merge_pull_request(owner: str, name: str, number: int, request: Reques
         return gh_error(409, "Pull Request is not mergeable")
     body = await request.json() if await request.body() else {}
     message = body.get("commit_message") or f"Merge pull request #{number}"
-    repo_key = f"{owner}/{number}"  # not used for sha generation
     merge_sha = _synthetic_sha(f"{owner}/{name}")
     pr["state"] = "closed"
     pr["merged"] = True

@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from checkpoint.twins import slack as sl
 
-
 SEEDS_DIR = Path(sl.__file__).parent / "slack_seeds"
 
 EXPECTED_SEEDS = {"empty", "engineering-team", "busy-workspace", "incident-active"}

@@ -43,7 +43,7 @@ class Trajectory:
         return len(self.steps)
 
     @classmethod
-    def from_trace(cls, trace) -> "Trajectory":
+    def from_trace(cls, trace) -> Trajectory:
         events: list[tuple[str | None, dict]] = []
         if isinstance(trace, dict):
             for clone, evs in trace.items():

@@ -15,10 +15,9 @@ import shlex
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 import docker
-from docker.errors import BuildError, APIError
+from docker.errors import APIError, BuildError
 
 
 class HarnessImageError(RuntimeError):
@@ -73,7 +72,7 @@ CMD ["node", "{entry}"]
 """
 
 
-def _entry_file(harness_entry: Optional[str], default: str) -> str:
+def _entry_file(harness_entry: str | None, default: str) -> str:
     if not harness_entry:
         return default
     parts = shlex.split(harness_entry)
@@ -96,7 +95,7 @@ def _detect_runtime(harness_dir: Path) -> str:
 
 def build_harness_image(
     harness_dir: Path,
-    harness_entry: Optional[str],
+    harness_entry: str | None,
     tag: str,
 ) -> str:
     harness_dir = Path(harness_dir).resolve()

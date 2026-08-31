@@ -17,7 +17,7 @@ import secrets
 import time
 import uuid
 from collections import defaultdict, deque
-from typing import Callable
+from collections.abc import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request

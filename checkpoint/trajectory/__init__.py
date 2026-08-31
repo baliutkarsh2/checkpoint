@@ -6,8 +6,8 @@ call it later undid, ten tries where one would do. The trajectory is the
 sequence of API calls the agent actually made (from each twin's /_trace), and
 `[T]` criteria assert properties of that path, deterministically and for free.
 """
-from .model import Trajectory, TrajectoryStep
 from .metrics import TrajectoryMetrics, compute_metrics
+from .model import Trajectory, TrajectoryStep
 from .otel import from_otel_spans
 
 __all__ = [

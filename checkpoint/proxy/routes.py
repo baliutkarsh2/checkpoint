@@ -9,8 +9,16 @@ Archal-authored harness using the real bootstrap-token sees no diff.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY, FAKE_LINEAR_TOKEN, FAKE_SUPABASE_TOKEN, FAKE_DISCORD_TOKEN, FAKE_GOOGLE_WORKSPACE_TOKEN
+
+from checkpoint.fake_credentials import (
+    FAKE_DISCORD_TOKEN,
+    FAKE_GITHUB_TOKEN,
+    FAKE_GOOGLE_WORKSPACE_TOKEN,
+    FAKE_LINEAR_TOKEN,
+    FAKE_SLACK_TOKEN,
+    FAKE_STRIPE_KEY,
+    FAKE_SUPABASE_TOKEN,
+)
 
 # Per SCOPE §3 / REQUIREMENTS.md GH-02 / SL-02 / ST-03.
 GITHUB_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
@@ -30,7 +38,7 @@ class Route:
 
 
 # Seeded with placeholder twin URLs — runner overwrites via register().
-_ROUTES: Dict[str, Route] = {
+_ROUTES: dict[str, Route] = {
     "api.github.com": Route(
         domain="api.github.com",
         twin_url="",
@@ -74,7 +82,7 @@ _ROUTES: Dict[str, Route] = {
 }
 
 
-def register(domain: str, twin_url: str, bootstrap_token: Optional[str] = None) -> None:
+def register(domain: str, twin_url: str, bootstrap_token: str | None = None) -> None:
     existing = _ROUTES.get(domain)
     if existing is None:
         if not bootstrap_token:
@@ -88,7 +96,7 @@ def register(domain: str, twin_url: str, bootstrap_token: Optional[str] = None) 
     )
 
 
-def lookup(host: str) -> Optional[Route]:
+def lookup(host: str) -> Route | None:
     return _ROUTES.get(host)
 
 

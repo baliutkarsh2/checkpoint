@@ -16,7 +16,6 @@ import pytest
 
 from checkpoint import init as _init
 
-
 # Zero-code (default) layout: no harness.py, scenario at scenarios/quickstart.md.
 EXPECTED_ZERO_CODE = [
     ".claude/skills/checkpoint/SKILL.md",

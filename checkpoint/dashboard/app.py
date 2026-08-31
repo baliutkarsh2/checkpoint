@@ -19,10 +19,10 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
@@ -220,8 +220,8 @@ def _build_summary(runs_dir: Path) -> dict:
         }
     files = list(runs_dir.glob("*.json"))
     total = len(files)
-    cutoff_30d = datetime.now(tz=timezone.utc) - timedelta(days=30)
-    cutoff_7d = datetime.now(tz=timezone.utc) - timedelta(days=7)
+    cutoff_30d = datetime.now(tz=UTC) - timedelta(days=30)
+    cutoff_7d = datetime.now(tz=UTC) - timedelta(days=7)
     scores_30d: list[float] = []
     fail_7d = 0
     for f in files:
@@ -468,7 +468,7 @@ def create_app(
             try:
                 target.relative_to(scenarios_dir.resolve())
             except ValueError:
-                raise HTTPException(400, "scenario path escapes scenarios_dir")
+                raise HTTPException(400, "scenario path escapes scenarios_dir") from None
         else:
             target = scenarios_dir
         scenario_list, coverage = _build_scenario_summaries(target)
@@ -547,13 +547,13 @@ def create_app(
         try:
             target.relative_to(scenarios_dir.resolve())
         except ValueError:
-            raise HTTPException(400, "scenario path escapes scenarios_dir")
+            raise HTTPException(400, "scenario path escapes scenarios_dir") from None
         if not target.is_file():
             raise HTTPException(404, f"scenario {path!r} not found")
         try:
             scn = parse_file(target)
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(500, f"could not parse scenario: {e}")
+            raise HTTPException(500, f"could not parse scenario: {e}") from None
         runs = _runs_for_scenario(runs_dir, scn.title or target.stem)
         return {
             "path": path,
@@ -582,7 +582,7 @@ def create_app(
         try:
             entry = clone_manager.start(clone_id)
         except (ValueError, RuntimeError) as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from None
         return {"id": clone_id, **entry}
 
     @app.delete("/api/clones/{clone_id}", tags=["clones"])
@@ -597,7 +597,7 @@ def create_app(
         try:
             return clone_manager.seed(clone_id, seed_name)
         except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e))
+            raise HTTPException(404, str(e)) from None
 
     @app.post("/api/clones/{clone_id}/reset", tags=["clones"])
     def api_clone_reset(clone_id: str):
@@ -605,7 +605,7 @@ def create_app(
         try:
             return clone_manager.reset(clone_id)
         except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e))
+            raise HTTPException(404, str(e)) from None
 
     @app.get("/api/clones/{clone_id}/tools", tags=["clones"])
     def api_clone_tools(clone_id: str):
@@ -613,7 +613,7 @@ def create_app(
         try:
             return clone_manager.tools(clone_id)
         except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e))
+            raise HTTPException(404, str(e)) from None
 
     @app.get("/api/clones/supported", tags=["clones"])
     def api_clones_supported():
@@ -693,7 +693,7 @@ def create_app(
                 try:
                     target.relative_to(scenarios_dir.resolve())
                 except ValueError:
-                    raise HTTPException(400, "scenario path escapes scenarios_dir")
+                    raise HTTPException(400, "scenario path escapes scenarios_dir") from None
                 if not target.is_file():
                     raise HTTPException(404, f"scenario {path!r} not found")
                 scn = parse_file(target)
@@ -845,7 +845,7 @@ def create_app(
                         return
                     try:
                         msg = await asyncio.wait_for(q.get(), timeout=15)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # SSE comment as a heartbeat — keeps proxies happy.
                         yield {"event": "ping", "data": "1"}
                         continue
@@ -876,7 +876,7 @@ def create_app(
                         return
                     try:
                         evt = await asyncio.wait_for(q.get(), timeout=15)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield {"event": "ping", "data": "1"}
                         continue
                     yield {"event": evt.name, "data": json.dumps(evt.data)}

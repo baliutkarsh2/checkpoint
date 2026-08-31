@@ -7,7 +7,6 @@ client at all.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -122,7 +121,9 @@ def test_missing_api_key_raises(monkeypatch, tmp_path: Path):
 def test_runner_soft_fail_when_setup_without_key(monkeypatch, tmp_path: Path):
     """A scenario with `## Setup` text but no OPENAI_API_KEY and no explicit
     seed should still complete the run — the twin keeps its default state."""
-    import sys, textwrap
+    import sys
+    import textwrap
+
     from checkpoint.runner import run_once
     from checkpoint.scenario import Scenario
 
@@ -148,7 +149,9 @@ def test_runner_soft_fail_when_setup_without_key(monkeypatch, tmp_path: Path):
 def test_runner_uses_cached_seed(monkeypatch, tmp_path: Path):
     """If the seed cache already has an entry for (clone, setup_text), the
     runner uses it without needing OPENAI_API_KEY."""
-    import sys, textwrap
+    import sys
+    import textwrap
+
     from checkpoint.runner import run_once
     from checkpoint.scenario import Scenario
 

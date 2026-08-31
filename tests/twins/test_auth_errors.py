@@ -1,8 +1,6 @@
 """Phase 2 Plan 01: bootstrap-token auth + GitHub error/header shapes."""
 from __future__ import annotations
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 

@@ -9,14 +9,13 @@ Covers:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from checkpoint.cli import main
-from checkpoint.user_config import UserConfig
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+from checkpoint.user_config import UserConfig
 
 
 @pytest.fixture

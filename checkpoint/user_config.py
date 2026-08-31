@@ -74,7 +74,7 @@ class UserConfig:
     # ---- file IO ---------------------------------------------------------
 
     @classmethod
-    def load(cls) -> "UserConfig":
+    def load(cls) -> UserConfig:
         p = config_path()
         if not p.exists():
             return cls(data={}, path=p)

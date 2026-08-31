@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from checkpoint.twins import stripe as st
 
-
 SEEDS_DIR = Path(st.__file__).parent / "stripe_seeds"
 
 EXPECTED_SEEDS = {

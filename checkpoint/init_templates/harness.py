@@ -19,6 +19,7 @@ import os
 import sys
 
 import requests
+
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 TASK = os.environ.get("CHECKPOINT_TASK") or os.environ.get("ARCHAL_ENGINE_TASK") or ""

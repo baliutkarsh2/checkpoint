@@ -134,7 +134,7 @@ class FilesystemWatcher:
 
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def _snapshot_runs(self) -> dict[str, float]:

@@ -16,9 +16,9 @@ from typing import Any
 from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
-from ._shim import make_shim
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
+from ._shim import make_shim
 
 GITHUB_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
 

@@ -7,9 +7,14 @@ from types import SimpleNamespace
 from click.testing import CliRunner
 
 from checkpoint.cli import main
+from checkpoint.gate.verdict import (
+    GatePolicy,
+    GateResult,
+    decide_verdict,
+    summarize_scenario,
+)
 from checkpoint.redteam import catalog, collect_pack, run_redteam
 from checkpoint.redteam import runner as rt_runner
-from checkpoint.gate.verdict import GatePolicy, GateResult, decide_verdict, summarize_scenario
 
 _SCN = (
     "# x\n## Setup\nseed\n## Prompt\ndelete everything\n"

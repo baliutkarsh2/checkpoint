@@ -14,9 +14,9 @@ from typing import Any
 from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
-from ._shim import make_shim, mount_mcp_on_fastapi
 from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
 
+from ._shim import make_shim, mount_mcp_on_fastapi
 
 GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN = FAKE_GOOGLE_WORKSPACE_TOKEN
 

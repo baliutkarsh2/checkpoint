@@ -13,8 +13,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
-
 from checkpoint.runner import RunResult, _evaluate
 from checkpoint.scenario import Criterion, Scenario
 
@@ -128,11 +126,10 @@ def test_three_stage_pipeline_end_to_end(monkeypatch):
     ]})
 
     stage2_client = FakeOpenAI([stage2_json_valid, stage2_chatty])
-    judge_client = FakeOpenAI([judge_response])
+    FakeOpenAI([judge_response])
 
     # Patch the OpenAI imports inside each module to use our fakes.
     import checkpoint.checker_llm as checker_llm
-    import checkpoint.judge as judge_mod
 
     monkeypatch.setattr(checker_llm, "OpenAI", lambda: stage2_client, raising=False)
     # checker_llm imports OpenAI inside parse_assertion, so we monkey-patch

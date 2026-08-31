@@ -6,7 +6,6 @@ the env vars so we don't pay for an LLM judge.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import textwrap
 from pathlib import Path
@@ -15,7 +14,6 @@ import pytest
 from click.testing import CliRunner
 
 from checkpoint.cli import main
-
 
 ECHO_HARNESS = textwrap.dedent(
     """

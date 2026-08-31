@@ -6,8 +6,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from checkpoint.cli import main, _enumerate_scenarios
-
+from checkpoint.cli import _enumerate_scenarios, main
 
 SCN_A = """# Hello scenario
 

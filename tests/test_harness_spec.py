@@ -8,7 +8,6 @@ import pytest
 
 from checkpoint.harness_spec import (
     DEFAULT_TASK_ENV,
-    HarnessSpec,
     load_manifest,
     parse_inline,
     parse_manifest,

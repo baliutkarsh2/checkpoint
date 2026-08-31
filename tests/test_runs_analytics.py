@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from checkpoint.analytics import compute_trend, detect_flaky, load_runs_for_scenario
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -161,6 +158,7 @@ def test_flaky_requires_min_3_runs():
 
 def test_report_json_output(tmp_path, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import main
 
     crit = "Exactly 1 issue exists"
@@ -186,6 +184,7 @@ def test_report_json_output(tmp_path, monkeypatch):
 
 def test_report_no_runs_exits_0(tmp_path, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import main
 
     monkeypatch.setattr("checkpoint.cli.RUNS_DIR", tmp_path)

@@ -5,8 +5,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import pytest
-
 from checkpoint.run_record import (
     build_record,
     load_last_run,
