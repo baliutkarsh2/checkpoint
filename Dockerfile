@@ -13,7 +13,7 @@
 # Cloud:    flyctl deploy          (see fly.toml)
 
 # ---------- Stage 1: build the SPA ----------
-FROM node:20-alpine AS web-builder
+FROM node:26-alpine AS web-builder
 WORKDIR /web
 COPY checkpoint/dashboard/web/package.json checkpoint/dashboard/web/package-lock.json ./
 RUN npm ci
