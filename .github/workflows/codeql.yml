@@ -35,6 +35,11 @@ jobs:
         uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
+        # The SARIF upload needs GitHub code scanning enabled, which a PRIVATE
+        # repo requires GitHub Advanced Security for. It's free once this repo is
+        # public (open-core), at which point this uploads cleanly. Until then,
+        # don't let the upload block CI — the analysis still runs.
+        continue-on-error: true
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
