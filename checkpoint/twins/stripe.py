@@ -130,6 +130,54 @@ def _hash_body(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()[:32]
 
 
+def _bracket_segments(key: str) -> list[str]:
+    """Split a Stripe form key into path segments.
+
+    ``items[0][price]`` -> ``["items", "0", "price"]``; ``expand[]`` ->
+    ``["expand", ""]``; ``amount`` -> ``["amount"]``.
+    """
+    if "[" not in key:
+        return [key]
+    head, _, rest = key.partition("[")
+    segs = [head]
+    for chunk in rest.split("["):
+        segs.append(chunk[:-1] if chunk.endswith("]") else chunk)
+    return segs
+
+
+def _assign_bracket_path(root: dict, key: str, value: Any) -> None:
+    """Assign ``value`` into ``root`` following a Stripe bracket path.
+
+    Nested objects become nested dicts (numeric indices are kept as string keys,
+    matching how the twins read them); an empty trailing ``[]`` appends to a list
+    so repeated ``expand[]`` params collect into one list.
+    """
+    segs = _bracket_segments(key)
+    cur: Any = root
+    for i in range(len(segs) - 1):
+        seg, nxt = segs[i], segs[i + 1]
+        if nxt == "":
+            child = cur.get(seg) if isinstance(cur, dict) else None
+            if not isinstance(child, list):
+                child = []
+                cur[seg] = child
+            cur = child
+        else:
+            if not isinstance(cur, dict):
+                return
+            child = cur.get(seg)
+            if not isinstance(child, dict):
+                child = {}
+                cur[seg] = child
+            cur = child
+    leaf = segs[-1]
+    if leaf == "":
+        if isinstance(cur, list):
+            cur.append(value)
+    elif isinstance(cur, dict):
+        cur[leaf] = value
+
+
 async def _parse_body(request: Request) -> dict:
     """Parse JSON or x-www-form-urlencoded into a plain dict."""
     ct = (request.headers.get("content-type") or "").lower()
@@ -141,20 +189,14 @@ async def _parse_body(request: Request) -> dict:
             return json.loads(raw)
         except json.JSONDecodeError:
             return {}
-    # Form-encoded (Stripe's canonical).
+    # Form-encoded (Stripe's canonical). The Stripe SDKs encode nested objects
+    # and arrays with bracket paths — `metadata[foo]=v`, `items[0][price]=v`,
+    # `expand[]=customer` — so we parse the full bracket path, not just one level.
     try:
-        from urllib.parse import parse_qs
-        parsed = parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+        from urllib.parse import parse_qsl
         out: dict[str, Any] = {}
-        for k, vs in parsed.items():
-            # Strip simple bracket suffixes like `metadata[foo]` -> nested dict
-            if "[" in k and k.endswith("]"):
-                top, sub = k.split("[", 1)
-                sub = sub[:-1]
-                out.setdefault(top, {})
-                out[top][sub] = vs[0]
-            else:
-                out[k] = vs[0]
+        for k, v in parse_qsl(raw.decode("utf-8"), keep_blank_values=True):
+            _assign_bracket_path(out, k, v)
         return out
     except Exception:
         # Try JSON as fallback (some clients send JSON without Content-Type).

@@ -4,5 +4,6 @@
 # sdist tarball includes the same files.
 recursive-include checkpoint/dashboard/static *
 recursive-include checkpoint/init_templates *
+recursive-include checkpoint/demo *
 include README.md
 include LICENSE

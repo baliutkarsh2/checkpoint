@@ -57,9 +57,9 @@ def test_readme_one_line_pitch_present() -> None:
         line for line in README.read_text().splitlines()
         if line.strip() and not line.startswith("#")
     ]
-    # The pitch is the first non-header body line; assert it mentions
-    # core value props (testing + agents + a SaaS name).
+    # The pitch is the first non-header body line; assert it leads with the
+    # core value prop — the release gate for agents (SHIP/BLOCK in CI).
     pitch = body[0]
     lowered = pitch.lower()
     assert "agent" in lowered or "test" in lowered
-    assert any(s in lowered for s in ("github", "slack", "stripe", "saas"))
+    assert any(s in lowered for s in ("gate", "ship", "block", "ci"))

@@ -44,6 +44,41 @@ def main():
     """checkpoint: the release gate for AI agents — test against stateful SaaS twins."""
 
 
+@main.command("demo")
+@click.option("--dashboard", is_flag=True, default=False,
+              help="After scoring, open the result in the web dashboard.")
+@click.pass_context
+def demo(ctx, dashboard):
+    """Run a bundled scenario against a bundled agent — no Docker, no API key.
+
+    The fastest "does Checkpoint work?" path: a tiny standard-library agent
+    creates an issue on a local GitHub twin, and a deterministic [D]-only
+    scenario is scored by the catalog — the LLM judge never runs, so nothing
+    leaves your machine and no API key is needed. Wire up your own agent next
+    with `checkpoint init --command "python my_agent.py"`.
+    """
+    demo_dir = Path(__file__).parent / "demo"
+    scenario = str(demo_dir / "smoke-scenario.md")
+    harness_py = demo_dir / "harness_fake.py"
+    # Build a command the harness parser can re-split. It uses shlex with
+    # posix=False on Windows (quotes are NOT stripped there), so quote only on
+    # posix and pass raw tokens on Windows.
+    if sys.platform == "win32":
+        command = f"{sys.executable} {harness_py}"
+    else:
+        command = f"{shlex.quote(sys.executable)} {shlex.quote(str(harness_py))}"
+    click.echo("Running the Checkpoint demo — deterministic, offline, no API key.\n")
+    ctx.invoke(
+        run,
+        scenario_path=scenario,
+        inline_command=command,
+        docker=False,
+        no_failure_analysis=True,
+    )
+    if dashboard:
+        ctx.invoke(serve)
+
+
 @main.command()
 @click.argument("scenario_path", required=False, type=click.Path(exists=True))
 @click.option("--harness", default=None, help="Shell command, harness file, harness dir, or harness.json. Falls back to .checkpoint.json/harness.json.")
