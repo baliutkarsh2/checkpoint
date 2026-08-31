@@ -14,13 +14,15 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (full history on push)
+      - name: Checkout (full history)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          # Scan the whole history on push so a secret buried in an older commit
-          # is still caught; PRs scan just the diff range gitleaks selects.
-          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
+          # Full history in BOTH events. On push this catches a secret buried in
+          # an older commit; on pull_request gitleaks resolves a base^..head
+          # range, which a shallow clone cannot provide (it fails with
+          # "unknown revision" rather than reporting a clean scan).
+          fetch-depth: 0
 
       - name: Run gitleaks
         # BLOCKING. This repo's history was published with the old `.env` blob
