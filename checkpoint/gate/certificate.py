@@ -59,6 +59,8 @@ def build_certificate(
             "pass_rate": round(s.pass_rate, 4),
             "ci_low": round(s.ci.low, 4),
             "ci_high": round(s.ci.high, 4),
+            "pass_hat_k": {str(k): round(s.reliability(k), 4)
+                           for k in (1, 2, 5, 10) if k <= s.n},
             "classification": s.classification,
             "mean_score": round(s.mean_score, 2),
         }

@@ -147,14 +147,19 @@ A single prompt tests a single exchange; real users push back, clarify, and get 
 
 ## CI integration
 
+Drop the GitHub Action into your workflow:
+
 ```yaml
-- name: Gate the agent
-  run: checkpoint gate scenarios/ --harness "python my_agent.py" -n 20 -o json
+- uses: Aaditya2605/checkpoint@main
+  with:
+    target: scenarios/
+    harness: "python my_agent.py"
+    runs: "20"
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Exit code 1 blocks the pipeline on BLOCK. (The simpler `checkpoint run scenarios/ -n 3 --pass-threshold 80` gates on the mean instead.) Run records land in `.checkpoint/cache/runs/*.json`.
+Or call the CLI directly: `checkpoint gate scenarios/ --harness "python my_agent.py" -n 20`. Either way, exit code 1 blocks the pipeline on BLOCK (add `strict: true` / `--strict` to also block on CONDITIONAL). The gate reports **pass^k** — the unbiased estimate that k independent runs all pass — so a 90%-pass agent reads honestly as pass^10 ≈ 35%, not a reassuring "90%". Run records land in `.checkpoint/cache/runs/*.json`.
 
 ## Reference
 
