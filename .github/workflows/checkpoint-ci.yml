@@ -146,15 +146,32 @@ jobs:
           python -m build
           twine check dist/*
 
-      - name: Verify wheel ships the SPA bundle
+      # Every asset the package reads at RUNTIME must be inside the wheel, or a
+      # pip-only install breaks in ways no source-checkout test can catch (the
+      # twin seeds regressed exactly this way: `seed: small-project` 404s).
+      - name: Verify wheel ships all runtime assets
         run: |
           python - <<'PY'
           import glob, sys, zipfile
           whl = sorted(glob.glob("dist/*.whl"))[-1]
           names = zipfile.ZipFile(whl).namelist()
-          if not any("dashboard/static/index.html" in n for n in names):
-              sys.exit(f"FAIL: {whl} is missing the SPA bundle")
-          print("OK:", whl, "ships dashboard/static/index.html")
+
+          def need(pred, what):
+              if not any(pred(n) for n in names):
+                  sys.exit(f"FAIL: {whl} is missing {what}")
+              print("OK:", what)
+
+          need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
+          need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
+          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+          need(lambda n: "init_templates" in n, "the init templates")
+
+          seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
+          if len(seeds) < 20:
+              sys.exit(f"FAIL: {whl} ships only {len(seeds)} twin seed files")
+          print(f"OK: {len(seeds)} twin seed fixtures")
+          print("wheel verified:", whl)
           PY
 
       - name: Upload built distributions

@@ -67,3 +67,7 @@ include = ["checkpoint*"]
 "checkpoint.init_templates" = ["**/*"]
 "checkpoint.proxy" = ["Dockerfile", "entrypoint.sh"]
 "checkpoint.demo" = ["*.py", "*.md"]
+# Named twin seeds (`seed: small-project`) are read at runtime from
+# checkpoint/twins/<twin>_seeds/<name>.json — they must ship in the wheel or
+# every seeded scenario 404s on a pip-only install.
+"checkpoint.twins" = ["*_seeds/*.json"]
