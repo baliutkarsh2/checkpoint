@@ -2025,6 +2025,63 @@ def compliance_cmd(cert_path, redteam_path, out_path, output_format):
     sys.exit(1 if report["overall"] == "REJECTED" else 0)
 
 
+def _extract_otel_spans(data) -> list:
+    """Pull spans out of a list, a `{"spans": [...]}` dict, or full OTLP-JSON."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if isinstance(data.get("spans"), list):
+            return data["spans"]
+        spans: list = []
+        for rs in data.get("resourceSpans", []):
+            scopes = rs.get("scopeSpans") or rs.get("instrumentationLibrarySpans") or []
+            for ss in scopes:
+                spans.extend(ss.get("spans", []) or [])
+        return spans
+    return []
+
+
+@main.command("otel")
+@click.argument("spans_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def otel_cmd(spans_file, output_format):
+    """Summarize an agent's trajectory from an OpenTelemetry (GenAI) trace file.
+
+    Accepts a list of spans, a {"spans": [...]} object, or full OTLP-JSON.
+    Maps model/tool spans into the same path metrics `[T]` criteria use.
+    """
+    import json as _json
+
+    from .trajectory import compute_metrics, from_otel_spans
+
+    try:
+        data = _json.loads(Path(spans_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read spans file: {e}[/red]")
+        sys.exit(1)
+
+    traj = from_otel_spans(_extract_otel_spans(data))
+    metrics = compute_metrics(traj)
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "steps": len(traj),
+            "metrics": metrics.as_dict(),
+            "path": [f"{s.method} {s.path}" for s in traj.steps],
+        }))
+        return
+
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    for k, v in metrics.as_dict().items():
+        if k == "methods":
+            v = ", ".join(f"{mk}:{mv}" for mk, mv in v.items()) or "-"
+        table.add_row(k.replace("_", " "), str(v))
+    console.print(table)
+
+
 @main.command("gen-attacks")
 @click.argument("base_scenario", type=click.Path(exists=True))
 @click.option("--out", "out_dir", type=click.Path(file_okay=False), required=True,
