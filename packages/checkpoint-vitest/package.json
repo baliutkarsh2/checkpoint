@@ -19,7 +19,7 @@
     "synthetic-saas",
     "test-doubles"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=18"
   }

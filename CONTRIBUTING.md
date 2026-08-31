@@ -72,3 +72,13 @@ always a clean build from source — there is no committed artifact to keep in s
 ## Reporting security issues
 
 See `SECURITY.md`. Please do not open public issues for vulnerabilities.
+
+## Code of conduct
+
+Participation in this project is governed by the [Contributor Covenant](./CODE_OF_CONDUCT.md).
+Report unacceptable behavior to hello@usecheckpoint.dev.
+
+## Security
+
+Please do not open public issues for vulnerabilities — see [SECURITY.md](./SECURITY.md)
+for the private reporting channel.

@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a capability, twin, evaluator, or scenario pack.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The agent-testing problem, not the implementation you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Checkpoint to do?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "Gate / statistics"
+        - "Twins (new service or fidelity)"
+        - "Evaluator / criteria"
+        - "Red-teaming"
+        - "Simulated users"
+        - "Dashboard"
+        - "CI / GitHub Action"
+        - "Docs / DX"
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
