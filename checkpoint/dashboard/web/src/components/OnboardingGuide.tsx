@@ -5,7 +5,7 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  Github,
+  GitBranch,
   Play,
   Terminal,
 } from "lucide-react";
@@ -246,7 +246,7 @@ function RefCard() {
           </span>
         </li>
         <li className="flex items-start gap-2">
-          <Github size={14} className="mt-0.5 flex-shrink-0" />
+          <GitBranch size={14} className="mt-0.5 flex-shrink-0" />
           <span>
             Four reference agents under{" "}
             <code className="font-mono">examples/agents/</code> (OpenAI tools,
