@@ -24,7 +24,7 @@ jobs:
           cache: pip
 
       - name: Install checkpoint
-        run: pip install checkpoint-eval
+        run: pip install checkpoint-agents
 
       - name: Environment check
         run: checkpoint doctor

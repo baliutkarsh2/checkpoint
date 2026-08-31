@@ -2,7 +2,7 @@
 
 Checkpoint runs in three modes:
 
-1. **Local CLI** (`pip install checkpoint && checkpoint run ...`) — single-developer iteration.
+1. **Local CLI** (`pip install checkpoint-agents && checkpoint run ...`) — single-developer iteration.
 2. **Local dashboard** (`checkpoint serve`) — single-developer browser UI.
 3. **Self-hosted shared dashboard** — Docker / docker-compose / Fly.io / Render — for team-shared run history, CI integration, viewer-only browsers.
 
@@ -18,7 +18,7 @@ This doc covers #3.
 | Fly.io | `flyctl launch && flyctl deploy` | 5 min |
 | Render | Click "Deploy to Render" with `render.yaml` | 5 min |
 | Kubernetes | `helm install ...` (use the bundled values) | 15 min |
-| Bare wheel | `pip install checkpoint && systemd unit` | 10 min |
+| Bare wheel | `pip install checkpoint-agents && systemd unit` | 10 min |
 
 Every option uses the **same Docker image** built from the repo's `Dockerfile`
 at the root.
@@ -143,7 +143,7 @@ can drop it into a hardened pod-security-standards `restricted` namespace.
 ## Option 5 — Bare wheel + systemd
 
 ```bash
-pip install checkpoint
+pip install checkpoint-agents
 checkpoint serve --host 0.0.0.0 --port 4001 --scenarios /opt/checkpoint/scenarios
 ```
 

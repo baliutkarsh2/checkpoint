@@ -597,7 +597,7 @@ Vite + React 18 + TypeScript + Tailwind 3.  Design tokens (paper/ink/accent pale
 ### Build and ship
 
 `npm run build` writes to `../static/`.  That directory is **committed to git** (the JupyterLab pattern), so:
-- `pip install checkpoint` from PyPI just works — no Node required.
+- `pip install checkpoint-agents` from PyPI just works — no Node required.
 - CI runs `npm run build` on every PR and `git diff --exit-code -- checkpoint/dashboard/static/` — if a contributor changes the SPA but forgets to commit a fresh build, the PR fails.
 
 Bundle size: 246 KB total, 79 KB gzipped (4 chunks: react, query, app, css).

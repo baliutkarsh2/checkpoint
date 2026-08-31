@@ -5,7 +5,7 @@
 Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. Your agent calls its real APIs unmodified; Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**.
 
 ```bash
-pip install checkpoint-agents
+pip install git+https://github.com/Aaditya2605/checkpoint   # PyPI release pending
 checkpoint demo          # deterministic, offline, no API key — see it score in ~5s
 ```
 
@@ -14,11 +14,13 @@ checkpoint demo          # deterministic, offline, no API key — see it score i
 ## Install
 
 ```bash
-pip install checkpoint-agents      # installs the `checkpoint` CLI
-export OPENAI_API_KEY=sk-...        # used by the LLM judge for [P] criteria
+pip install git+https://github.com/Aaditya2605/checkpoint   # installs the `checkpoint` CLI
+export OPENAI_API_KEY=sk-...        # only needed for [P] LLM-judged criteria
 ```
 
-Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). Until the package is published to PyPI you can install from source: `pip install git+https://github.com/Aaditya2605/checkpoint`.
+**Not on PyPI yet.** The distribution will be `checkpoint-agents` once the first release is tagged; until then use the source install above. Note that the bare name `checkpoint` on PyPI is an unrelated project — always install `checkpoint-agents`, never the bare name.
+
+Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). The source install ships **without the dashboard bundle** (it's built in CI), so `checkpoint serve` needs a one-time `cd checkpoint/dashboard/web && npm ci && npm run build` (Node 22+) first. The CLI, including `checkpoint demo`, works without it.
 
 **Vendor-neutral.** The judge works with any model — pass `--model` (or set `defaults.judge_model`) to a `gpt-*`, `claude-*`, or `gemini-*` name, or point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint (local, vLLM, OpenRouter). Claude needs `pip install checkpoint-agents[anthropic]`; Gemini and compatible endpoints need nothing extra.
 
@@ -139,7 +141,7 @@ Add `--certificate cert.json` to issue a **signed Trust Certificate** — the ve
 
 ## Red-teaming
 
-`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack — scenarios mapped to the **OWASP Agentic Top 10** where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate) — and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them, or generate new ones: `checkpoint gen-attacks <base-scenario> --out scenarios/redteam` asks a model to invent adversarial variations across OWASP categories (review them before gating — generated attacks are candidates, not verdicts).
+`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate), and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. The catalog maps scenarios to the full **OWASP Agentic Top 10** (ASI01–ASI10), but the *bundled* pack currently ships a single ASI04 (tool-misuse) probe — bring your own tagged scenarios or generate them with `gen-attacks` for broader coverage. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them, or generate new ones: `checkpoint gen-attacks <base-scenario> --out scenarios/redteam` asks a model to invent adversarial variations across OWASP categories (review them before gating — generated attacks are candidates, not verdicts).
 
 ## Simulated users
 
@@ -171,7 +173,7 @@ Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate
 | `checkpoint run <scenario.md>` | Run a scenario, print the score |
 | `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
 | `checkpoint gate ... --certificate cert.json` / `checkpoint cert verify cert.json` | Issue / verify a signed Trust Certificate |
-| `checkpoint redteam --harness "..."` | Run the OWASP Agentic Top 10 adversarial pack; report vulnerabilities |
+| `checkpoint redteam --harness "..."` | Run the adversarial pack (OWASP-Agentic catalog; one ASI04 probe bundled); report vulnerabilities |
 | `checkpoint simulate <scenario> --harness "..."` | Multi-turn simulated-user conversation with a calibration confidence |
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
@@ -186,7 +188,7 @@ Full guides live in **[docs/](docs/)** — [integrate your agent](docs/integrate
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 
