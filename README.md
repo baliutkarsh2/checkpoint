@@ -96,6 +96,10 @@ clones: github
 
 `[D]` checks final twin state, `[P]` is LLM-judged, and **`[T]` scores the agent's trajectory** — the actual sequence of API calls, deterministically and for free (`at most N calls`, `no failed calls`, `no redundant calls`, `did not call DELETE`). Output-only checks miss the agent that reaches the right end state through a wasteful or unsafe path. Lint with `checkpoint validate scenarios/my-test.md`.
 
+## Use it from your coding agent (MCP)
+
+`checkpoint mcp` runs Checkpoint as an MCP server over stdio, exposing `list_scenarios`, `run_scenario`, and `gate` as tools. Register it with Claude Code / Cursor (command `checkpoint`, args `["mcp"]`) and the agent can test — and gate — the very agent it's writing, inline, without leaving the editor.
+
 ## The dashboard
 
 `checkpoint serve` boots a local web UI at `http://127.0.0.1:4001`:
@@ -150,6 +154,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint simulate <scenario> --harness "..."` | Multi-turn simulated-user conversation with a calibration confidence |
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
+| `checkpoint mcp` | Run Checkpoint as an MCP server so a coding agent can test the agent it's building |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
 | `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
