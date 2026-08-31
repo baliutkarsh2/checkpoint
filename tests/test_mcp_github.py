@@ -15,6 +15,7 @@ import time
 
 import httpx
 import pytest
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
 GITHUB_TOOL_NAMES = {
@@ -182,7 +183,7 @@ async def test_github_mcp_and_rest_see_same_state(github_twin):
     mcp_url = f"http://127.0.0.1:{github_twin}/mcp/"
     state_url = f"http://127.0.0.1:{github_twin}/_state"
     headers = {
-        "Authorization": "token ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt",
+        "Authorization": f"token {FAKE_GITHUB_TOKEN}",
     }
 
     async with streamablehttp_client(mcp_url) as (read, write, _):

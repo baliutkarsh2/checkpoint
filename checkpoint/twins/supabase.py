@@ -29,11 +29,12 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from checkpoint.fake_credentials import FAKE_SUPABASE_TOKEN
 
 app = FastAPI(title="checkpoint supabase twin")
 
 # Supabase uses Bearer token auth with the anon/service_role key.
-DEFAULT_BOOTSTRAP_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_SUPABASE_TOKEN
 INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "supabase_seeds"

@@ -1,0 +1,31 @@
+name: Secret scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history on push)
+        uses: actions/checkout@v4
+        with:
+          # Scan the whole history on push so a secret buried in an older commit
+          # is still caught; PRs scan just the diff range gitleaks selects.
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
+
+      - name: Run gitleaks
+        # Non-blocking: the full-history scan currently flags a key that was
+        # committed to .env in OLD history (before this work). That is a known
+        # issue with a maintainer runbook in SECURITY.md (rotate the key, then
+        # purge history) — CI can't fix it, so it must not block merges. Every
+        # NEW commit is still gated: `.env` is untracked, and the pytest tripwire
+        # (tests/test_no_tracked_secrets.py) fails the test suite on any real key.
+        # Once history is purged this passes cleanly and the guard can be removed.
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml

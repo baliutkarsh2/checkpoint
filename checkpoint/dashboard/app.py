@@ -316,11 +316,15 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 class StartJobBody(BaseModel):
-    scenario: str = Field(..., description="Path to a scenario .md file.")
+    scenario: str = Field(..., description="Path to a scenario .md file (confined to the project).")
     docker: bool = False
     harness: str | None = Field(
         default=None,
-        description="Harness dir for docker mode, or --harness command/path for subprocess mode.",
+        description=(
+            "A discovered agent's id or path (see GET /api/agents). Resolved "
+            "server-side against the discovery allowlist to that agent's "
+            "directory — never a raw command string."
+        ),
     )
     model: str | None = Field(default=None, description="Evaluator model passed as --model.")
     timeout: int | None = Field(default=None, ge=1, description="Harness timeout seconds.")
@@ -458,7 +462,15 @@ def create_app(
 
     @app.get("/api/scenarios", tags=["scenarios"])
     def api_scenarios(path: str | None = None):
-        target = Path(path).resolve() if path else scenarios_dir
+        # Confine `path` under scenarios_dir to defeat traversal (../../etc).
+        if path:
+            target = (scenarios_dir / path).resolve()
+            try:
+                target.relative_to(scenarios_dir.resolve())
+            except ValueError:
+                raise HTTPException(400, "scenario path escapes scenarios_dir")
+        else:
+            target = scenarios_dir
         scenario_list, coverage = _build_scenario_summaries(target)
         return {"scenarios": scenario_list, "coverage": coverage}
 
@@ -737,30 +749,56 @@ def create_app(
         # be found. Try in order: cwd-relative, scenarios_dir-relative,
         # absolute. Reject early with a clear 400 instead of letting the CLI
         # error out 30s later.
-        candidates = [
-            (project_dir or Path.cwd()) / body.scenario,
-            scenarios_dir / body.scenario,
-            Path(body.scenario),
-        ]
+        base = (project_dir or Path.cwd()).resolve()
+        scen_base = scenarios_dir.resolve()
+
+        def _within(p: Path, root: Path) -> bool:
+            try:
+                p.relative_to(root)
+                return True
+            except ValueError:
+                return False
+
+        # Only resolve scenarios that live inside the project or scenarios dir —
+        # never an arbitrary absolute path handed in by a caller.
+        candidates = [base / body.scenario, scenarios_dir / body.scenario]
         resolved: Path | None = None
         for c in candidates:
             if c.is_file():
-                resolved = c.resolve()
-                break
+                rc = c.resolve()
+                if _within(rc, base) or _within(rc, scen_base):
+                    resolved = rc
+                    break
         if resolved is None:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"scenario not found: {body.scenario!r}. "
-                    f"Tried {[str(c) for c in candidates]}"
-                ),
+                detail=f"scenario not found or outside the project: {body.scenario!r}",
             )
-        # Pass the absolute path through so the spawned subprocess finds it
-        # regardless of cwd.
+
+        # Resolve the harness against the discovery allowlist. A caller can NOT
+        # supply a raw command — only a reference (id / path / abs_path) to a
+        # directory checkpoint already discovered, which we map to its absolute
+        # path. This is what closes the arbitrary-command-execution hole.
+        agent_dir: str | None = None
+        if body.harness:
+            agents_list = agent_discovery.discover(project_dir or Path.cwd())
+            ref = body.harness
+            agent = next(
+                (a for a in agents_list
+                 if ref in (a["id"], a["path"], a["abs_path"])),
+                None,
+            )
+            if agent is None:
+                raise HTTPException(
+                    400,
+                    f"unknown harness {body.harness!r}; pick one from GET /api/agents",
+                )
+            agent_dir = agent["abs_path"]
+
         job = await jobs.start(
             str(resolved),
             docker=body.docker,
-            harness_dir=body.harness,
+            harness_dir=agent_dir,
             model=body.model,
             timeout=body.timeout,
             clone=body.clone,

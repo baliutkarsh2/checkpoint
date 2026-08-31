@@ -28,10 +28,11 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from checkpoint.fake_credentials import FAKE_LINEAR_TOKEN
 
 app = FastAPI(title="checkpoint linear twin")
 
-DEFAULT_BOOTSTRAP_TOKEN = "lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_LINEAR_TOKEN
 INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "linear_seeds"

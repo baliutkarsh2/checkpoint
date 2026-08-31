@@ -1,7 +1,7 @@
 from checkpoint.proxy.routes import Route, lookup, register, all_domains
 
 
-def test_lookup_github_returns_route_with_ghp_token():
+def test_lookup_github_returns_route_with_github_token():
     r = lookup("api.github.com")
     assert isinstance(r, Route)
     assert r.domain == "api.github.com"

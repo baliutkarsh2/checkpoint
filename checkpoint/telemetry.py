@@ -170,8 +170,8 @@ def _normalize_api_call(index: int, event: Any) -> dict:
         "status": ev.get("status") or ev.get("status_code"),
         "timestamp": ev.get("timestamp") or ev.get("ts"),
         "duration_ms": ev.get("duration_ms") or ev.get("elapsed_ms"),
-        "request_body": ev.get("request_body"),
-        "response_body": ev.get("response_body"),
+        "request_body": ev.get("request_body", ev.get("body")),
+        "response_body": ev.get("response_body", ev.get("response")),
         "raw": ev,
     }
 

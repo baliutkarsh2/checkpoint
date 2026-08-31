@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-CriterionKind = Literal["D", "P"]
+CriterionKind = Literal["D", "P", "T"]
 
 _D_KEYWORDS = re.compile(
     r"\b(exactly|at\s+least|at\s+most|exists?|created|closed|opened|merged|deleted|"
@@ -108,6 +108,9 @@ def _parse_criteria(text: str) -> list[Criterion]:
             body = body[3:].strip()
         elif body.startswith("[P]"):
             kind = "P"
+            body = body[3:].strip()
+        elif body.startswith("[T]"):
+            kind = "T"
             body = body[3:].strip()
         else:
             kind = "D" if _D_KEYWORDS.search(body) else "P"

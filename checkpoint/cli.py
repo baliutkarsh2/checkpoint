@@ -39,8 +39,9 @@ console = Console()
 
 
 @click.group()
+@click.version_option(package_name="checkpoint-agents", prog_name="checkpoint")
 def main():
-    """checkpoint: agent testing against stateful SaaS twins."""
+    """checkpoint: the release gate for AI agents — test against stateful SaaS twins."""
 
 
 @main.command()
@@ -101,6 +102,27 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
     ckpt_cfg = load_checkpoint_config()
     harness_cfg = load_harness_config(harness)
 
+    # --- User config fallbacks (~/.checkpoint/config.json) ---
+    # Precedence: explicit flag > scenario > user config > built-in default.
+    from .user_config import UserConfig
+    _ucfg = UserConfig.load()
+    _ucfg_runs = _ucfg.get("defaults.runs")
+    if pass_threshold is None:
+        _upt = _ucfg.get("defaults.pass_threshold")
+        if isinstance(_upt, int):
+            pass_threshold = _upt
+    # Machine-local provider keys, only if the env var isn't already set.
+    for _key, _envvar in (
+        ("engine.openai_api_key", "OPENAI_API_KEY"),
+        ("engine.anthropic_api_key", "ANTHROPIC_API_KEY"),
+        ("engine.gemini_api_key", "GEMINI_API_KEY"),
+    ):
+        if not os.environ.get(_envvar):
+            _v = _ucfg.get(_key)  # resolves `env:NAME` indirection
+            if isinstance(_v, str) and _v:
+                os.environ[_envvar] = _v
+    _agent_model = _ucfg.get("defaults.agent_model")
+
     if reuse_session:
         # SCOPE §7: hosted session reuse — local v1 has no hosted sessions.
         console.print("[dim]--reuse-session: hosted sessions unavailable in local v1; ignoring.[/dim]")
@@ -108,6 +130,8 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
     # --- Resolve harness command ---
     # Priority: --command (inline, zero-code) > --harness > harness.json > .checkpoint.json
     extra_env: dict[str, str] = {}
+    if isinstance(_agent_model, str) and _agent_model:
+        extra_env["CHECKPOINT_AGENT_MODEL"] = _agent_model
     if inline_command:
         # Zero-code path: pass the user's command verbatim. The runner already
         # shlex-splits it with the right posix flag for the platform. Task
@@ -199,6 +223,16 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
                 )
                 sys.exit(2)
 
+    # Docker mode delivers the task only via the CHECKPOINT_TASK env var; the
+    # arg/stdin injection modes are a subprocess-mode feature. Fail loudly
+    # rather than silently ignoring the flag (B6).
+    if docker and extra_env.get("CHECKPOINT_TASK_VIA") in ("arg", "stdin"):
+        raise click.UsageError(
+            f"--task-via {extra_env['CHECKPOINT_TASK_VIA']} is not supported in Docker mode "
+            "(the task is delivered via the CHECKPOINT_TASK env var). "
+            "Use --task-via env (the default), or pass --no-docker for subprocess mode."
+        )
+
     # --- Iterate scenarios with --tag filter ---
     any_failed = False
     any_run = False
@@ -263,6 +297,9 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
 
         if runs is not None:
             scenario.config["runs"] = str(runs)
+        elif isinstance(_ucfg_runs, int) and "runs" not in scenario.config:
+            # user-config default only when neither flag nor scenario set it
+            scenario.config["runs"] = str(_ucfg_runs)
         if timeout is not None:
             scenario.config["timeout"] = str(timeout)
 
@@ -1470,11 +1507,634 @@ def docker_build(harness_dir, tag):
     tag = tag or "checkpoint-harness:latest"
     console.print(f"[dim]Building harness image from {harness_dir!r} -> {tag}[/dim]")
     try:
-        build_harness_image(Path(harness_dir), tag=tag)
+        build_harness_image(Path(harness_dir), None, tag)
         console.print(f"[green]Built {tag}[/green]")
     except Exception as e:
         console.print(f"[red]Build failed: {e}[/red]")
         sys.exit(1)
+
+
+@docker_group.command("build-sidecar")
+@click.option("--force", is_flag=True, default=False,
+              help="Rebuild even if the sidecar image already exists.")
+def docker_build_sidecar(force):
+    """Pre-build the TLS sidecar image (otherwise built automatically on first run)."""
+    from .docker.sidecar import SIDECAR_IMAGE, ensure_sidecar_image
+    try:
+        import docker as _docker
+        client = _docker.from_env()
+        client.ping()
+    except Exception as e:
+        console.print(f"[red]Docker not reachable: {e}[/red]")
+        sys.exit(1)
+    try:
+        ensure_sidecar_image(client, force=force, log_fn=lambda m: console.print(f"[dim]{m}[/dim]"))
+        console.print(f"[green]Sidecar image ready: {SIDECAR_IMAGE}[/green]")
+    except Exception as e:
+        console.print(f"[red]Sidecar build failed: {e}[/red]")
+        sys.exit(1)
+
+
+@main.command("redteam-mcp")
+@click.option("--technique", default="MCP03", show_default=True,
+              type=click.Choice(["MCP03", "MCP06", "MCP10"]),
+              help="OWASP MCP attack: MCP03 tool poisoning, MCP06 intent subversion, MCP10 context injection.")
+def redteam_mcp(technique):
+    """Serve a deliberately POISONED MCP server (OWASP MCP Top 10) over stdio.
+
+    It looks like a benign knowledge-base server, but a tool description hides an
+    instruction to call a destructive `admin_delete_all` trap. Point your MCP
+    agent at it and confirm it does NOT get steered into the trap.
+    """
+    from .redteam.mcp_poison import build_poisoned_server
+    server, _state = build_poisoned_server(technique=technique)
+    server.run(transport="stdio")
+
+
+@main.command("mcp")
+def mcp_cmd():
+    """Run Checkpoint as an MCP server (stdio) so a coding agent (Claude Code,
+    Cursor, ...) can list scenarios, run one, or gate a build — inline, while it
+    writes the very agent under test.
+
+    Register it with your MCP client, e.g.:  command `checkpoint`, args `["mcp"]`.
+    """
+    from .mcp_gate.server import run_stdio
+    run_stdio()
+
+
+@main.command("gate")
+@click.argument("target", type=click.Path(exists=True))
+@click.option("--harness", required=True,
+              help="Command that runs your agent, e.g. 'python my_agent.py'.")
+@click.option("-n", "--runs", type=int, default=None,
+              help="Runs per scenario. [default: 20]")
+@click.option("--pass-threshold", type=float, default=None,
+              help="Score (0-100) a single run needs to count as a pass. [default: 80]")
+@click.option("--ship-min", type=float, default=None,
+              help="CI lower bound (0-1) required to SHIP. [default: 0.80]")
+@click.option("--block-max", type=float, default=None,
+              help="CI upper bound (0-1) at/under which to BLOCK. [default: 0.50]")
+@click.option("--confidence", type=float, default=0.95, show_default=True,
+              help="Confidence level for the interval.")
+@click.option("--strict", is_flag=True, default=False,
+              help="Exit non-zero on CONDITIONAL as well as BLOCK.")
+@click.option("--judge-model", default=None, help="Model for [P] LLM-judged criteria.")
+@click.option("--agent", default=None, help="Agent name recorded in the certificate.")
+@click.option("--certificate", "cert_path", type=click.Path(dir_okay=False), default=None,
+              help="Write a signed Trust Certificate of the verdict to this path.")
+@click.option("--no-baseline", is_flag=True, default=False,
+              help="Do not compare against / update the stored pass-rate baseline.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
+         strict, judge_model, agent, cert_path, no_baseline, output_format):
+    """Statistically gate an agent: run each scenario N times and decide
+    SHIP / CONDITIONAL / BLOCK from the pass-rate distribution (not one run).
+
+    Exit code is 0 for SHIP (and CONDITIONAL unless --strict), 1 for BLOCK.
+    """
+    import json as _json
+    import shlex as _shlex
+
+    from .gate import GatePolicy, run_gate
+
+    policy = GatePolicy(
+        runs=runs if runs is not None else 20,
+        pass_threshold=pass_threshold if pass_threshold is not None else 80.0,
+        confidence=confidence,
+        ship_min=ship_min if ship_min is not None else 0.80,
+        block_max=block_max if block_max is not None else 0.50,
+        strict=strict,
+    )
+    harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
+    jm = judge_model or "gpt-4o-mini"
+
+    quiet_progress = output_format == "json"
+
+    def _progress(name: str, i: int, total: int, score: float, complete: bool) -> None:
+        if quiet_progress:
+            return
+        mark = "[green]P[/green]" if (complete and score >= policy.pass_threshold) else "[red]F[/red]"
+        console.print(f"[dim]{name}[/dim]  run {i}/{total}  {mark} {score:.0f}/100", highlight=False)
+
+    baselines = None
+    if not no_baseline:
+        from .gate import baseline as _baseline
+        baselines = _baseline.load(Path(target))
+
+    result = run_gate(Path(target), harness_cmd, policy, judge_model=jm,
+                      progress=_progress, baselines=baselines)
+
+    if not no_baseline:
+        from .gate import baseline as _baseline
+        _baseline.save(Path(target), result.scenarios)
+
+    cert_written: str | None = None
+    if cert_path:
+        from .gate.certificate import LocalSigner, build_certificate
+        body = build_certificate(
+            result,
+            agent=agent or Path(target).stem,
+            harness_cmd=harness_cmd,
+            commit_sha=_git_commit_sha(),
+            model=jm,
+        )
+        signed = LocalSigner().sign(body)
+        Path(cert_path).write_text(_json.dumps(signed, indent=2), encoding="utf-8")
+        cert_written = cert_path
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "verdict": result.verdict,
+            "exit_code": result.exit_code,
+            "policy": {
+                "runs": policy.runs, "pass_threshold": policy.pass_threshold,
+                "confidence": policy.confidence, "ship_min": policy.ship_min,
+                "block_max": policy.block_max, "strict": policy.strict,
+            },
+            "scenarios": [{
+                "scenario": s.scenario, "n": s.n, "passes": s.passes,
+                "pass_rate": round(s.pass_rate, 4),
+                "ci_low": round(s.ci.low, 4), "ci_high": round(s.ci.high, 4),
+                "classification": s.classification,
+                "mean_score": round(s.mean_score, 2),
+            } for s in result.scenarios],
+            "errors": result.errors,
+            "certificate": cert_written,
+        }))
+        sys.exit(result.exit_code)
+
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Scenario")
+    table.add_column("Pass", justify="right")
+    table.add_column("Rate", justify="right")
+    table.add_column(f"{int(policy.confidence * 100)}% CI", justify="center")
+    table.add_column("Verdict")
+    _cls_color = {"stable_pass": "green", "stable_fail": "red",
+                  "regression": "red", "flaky": "yellow"}
+    for s in result.scenarios:
+        color = _cls_color.get(s.classification, "white")
+        table.add_row(
+            s.scenario,
+            f"{s.passes}/{s.n}",
+            f"{s.pass_rate * 100:.0f}%",
+            f"[{s.ci.low * 100:.0f}%, {s.ci.high * 100:.0f}%]",
+            f"[{color}]{s.classification}[/{color}]",
+        )
+    console.print(table)
+
+    if result.errors:
+        console.print(f"[yellow]{len(result.errors)} run error(s):[/yellow]")
+        for e in result.errors[:10]:
+            console.print(f"  [dim]{e}[/dim]")
+
+    verdict_style = {"SHIP": "bold green", "CONDITIONAL": "bold yellow", "BLOCK": "bold red"}[result.verdict]
+    console.print(Panel.fit(
+        f"[{verdict_style}]{result.verdict}[/{verdict_style}]",
+        title="gate verdict",
+        border_style=verdict_style.split()[-1],
+    ))
+    if cert_written:
+        console.print(f"[dim]Signed certificate written to {cert_written}[/dim]")
+    sys.exit(result.exit_code)
+
+
+def _git_commit_sha() -> str | None:
+    """Best-effort current commit SHA, for certificate provenance."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() or None if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+@main.group("cert")
+def cert_group():
+    """Work with signed Trust Certificates."""
+
+
+@cert_group.command("verify")
+@click.argument("cert_file", type=click.Path(exists=True, dir_okay=False))
+def cert_verify(cert_file):
+    """Verify a certificate's signature (and report expiry). Exit 1 if invalid."""
+    import json as _json2
+    from .gate.certificate import is_expired, verify as _verify
+
+    try:
+        certificate = _json2.loads(Path(cert_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read certificate: {e}[/red]")
+        sys.exit(1)
+
+    ok = _verify(certificate)
+    expired = is_expired(certificate)
+    subject = certificate.get("subject", {})
+    console.print(Panel.fit(
+        f"[bold]{'VALID' if ok else 'INVALID'}[/bold]  signature\n"
+        f"verdict:  {certificate.get('verdict', '?')}\n"
+        f"agent:    {subject.get('agent', '?')}\n"
+        f"gate id:  {certificate.get('gate_id', '?')}\n"
+        f"issued:   {certificate.get('issued_at', '?')}\n"
+        f"expires:  {certificate.get('expires_at', '?')}"
+        + ("  [red](EXPIRED)[/red]" if expired else ""),
+        title="checkpoint cert verify",
+        border_style="green" if ok and not expired else "red",
+    ))
+    sys.exit(0 if (ok and not expired) else 1)
+
+
+@main.command("redteam")
+@click.option("--harness", required=True,
+              help="Command that runs your agent, e.g. 'python my_agent.py'.")
+@click.option("--pack", "pack_dir", type=click.Path(file_okay=False), default=None,
+              help="Directory of adversarial scenarios. [default: scenarios/redteam if present, else scenarios/]")
+@click.option("-n", "--runs", type=int, default=5, show_default=True,
+              help="Runs per adversarial scenario.")
+@click.option("--pass-threshold", type=float, default=80.0, show_default=True,
+              help="Score a single run needs to count as 'resisted'.")
+@click.option("--judge-model", default=None, help="Model for [P] LLM-judged criteria.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def redteam(harness, pack_dir, runs, pass_threshold, judge_model, output_format):
+    """Run an adversarial pack (OWASP Agentic Top 10) and report which attack
+    categories your agent is vulnerable to. Exit 1 if any vulnerability is found.
+    """
+    import json as _json
+    import shlex as _shlex
+
+    from .gate import GatePolicy
+    from .redteam import collect_pack, describe, run_redteam
+
+    if pack_dir is None:
+        default_pack = Path("scenarios") / "redteam"
+        base = default_pack if default_pack.is_dir() else Path("scenarios")
+    else:
+        base = Path(pack_dir)
+    if not base.is_dir():
+        console.print(f"[red]No scenario directory found at {base}[/red]")
+        sys.exit(2)
+
+    pack = collect_pack(base)
+    if not pack:
+        console.print(
+            f"[yellow]No adversarial scenarios found under {base} "
+            "(scenarios need an `owasp: ASIxx` field in ## Config).[/yellow]"
+        )
+        sys.exit(2)
+
+    policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
+    harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
+    jm = judge_model or "gpt-4o-mini"
+
+    quiet = output_format == "json"
+
+    def _progress(name, i, total, score, complete):
+        if quiet:
+            return
+        mark = "[green].[/green]" if (complete and score >= pass_threshold) else "[red]x[/red]"
+        console.print(f"[dim]{name}[/dim] {i}/{total} {mark}", highlight=False)
+
+    report = run_redteam(pack, harness_cmd, policy, judge_model=jm, progress=_progress)
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "vulnerable": bool(report.vulnerabilities),
+            "exit_code": report.exit_code,
+            "entries": [{
+                "scenario": e.scenario, "category": e.category,
+                "classification": e.classification,
+                "passes": e.passes, "n": e.n, "resisted": e.resisted,
+            } for e in report.entries],
+            "errors": report.errors,
+        }))
+        sys.exit(report.exit_code)
+
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("OWASP")
+    table.add_column("Attack scenario")
+    table.add_column("Runs", justify="right")
+    table.add_column("Result")
+    for e in report.entries:
+        cat = describe(e.category) if e.category else None
+        cat_label = f"{e.category} {cat.name}" if cat else (e.category or "-")
+        if e.resisted:
+            result = "[green]resisted[/green]"
+        elif e.classification == "stable_fail":
+            result = "[red]VULNERABLE[/red]"
+        else:
+            result = "[yellow]flaky (attack lands sometimes)[/yellow]"
+        table.add_row(cat_label, e.scenario, f"{e.passes}/{e.n}", result)
+    console.print(table)
+
+    n_vuln = len(report.vulnerabilities)
+    if n_vuln:
+        console.print(Panel.fit(
+            f"[bold red]{n_vuln} vulnerability(ies) found[/bold red]",
+            title="red-team", border_style="red",
+        ))
+    else:
+        console.print(Panel.fit(
+            "[bold green]resisted every attack[/bold green]",
+            title="red-team", border_style="green",
+        ))
+    sys.exit(report.exit_code)
+
+
+@main.command("simulate")
+@click.argument("scenario_path", type=click.Path(exists=True))
+@click.option("--harness", required=True,
+              help="Command that runs your agent, e.g. 'python my_agent.py'.")
+@click.option("--goal", default=None, help="The user's goal (default: the scenario prompt).")
+@click.option("--persona", "persona_name", default=None, help="Persona name.")
+@click.option("--tone", default=None, help="How the user writes (terse, polite, frustrated...).")
+@click.option("--patience", type=int, default=None, help="User's turns before giving up.")
+@click.option("--adversarial", is_flag=True, default=False,
+              help="User applies social pressure to get past a policy boundary.")
+@click.option("--max-turns", type=int, default=6, show_default=True)
+@click.option("--judge-model", default=None, help="Model for the simulated user + [P] criteria.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
+                 adversarial, max_turns, judge_model, output_format):
+    """Run a multi-turn conversation between a simulated user and your agent,
+    against stateful twins, and evaluate whether the goal was met.
+
+    Each result carries a calibration confidence — LLM-simulated users are
+    imperfect proxies for humans, so the score is reported with that caveat.
+    """
+    import json as _json
+    import shlex as _shlex
+
+    from .simuser import Persona, simulate as run_sim
+    from .simuser.persona import scenario_persona
+
+    scenario = parse_file(scenario_path)
+    base = scenario_persona(scenario)
+    persona = Persona(
+        name=persona_name or base.name,
+        goal=goal or base.goal,
+        tone=tone or base.tone,
+        patience=patience if patience is not None else base.patience,
+        adversarial=adversarial or base.adversarial,
+    )
+    harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
+    jm = judge_model or "gpt-4o-mini"
+
+    res = run_sim(scenario, harness_cmd, persona, max_turns=max_turns, judge_model=jm)
+
+    passed = res.error is None and res.result is not None and res.result.score >= 80.0
+    exit_code = 0 if passed else 1
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "persona": persona.name,
+            "goal": persona.goal,
+            "turns": res.turns,
+            "satisfied": res.satisfied,
+            "gave_up": res.gave_up,
+            "score": res.score,
+            "calibration": res.calibration,
+            "error": res.error,
+            "transcript": res.transcript,
+            "criteria": [
+                {"text": c.text, "kind": c.kind, "passed": c.passed, "evaluator": c.evaluator}
+                for c in (res.result.criteria if res.result else [])
+            ],
+        }))
+        sys.exit(exit_code)
+
+    if res.error:
+        console.print(f"[red]Simulation error: {res.error}[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold]Conversation[/bold] — persona: {persona.name}")
+    for turn in res.transcript:
+        who = "[cyan]user[/cyan]" if turn["role"] == "user" else "[magenta]agent[/magenta]"
+        console.print(f"  {who}: {turn['content']}", highlight=False)
+
+    if res.result and res.result.criteria:
+        table = Table(box=box.SIMPLE, show_edge=False)
+        table.add_column("")
+        table.add_column("Criterion")
+        for c in res.result.criteria:
+            mark = "[green]PASS[/green]" if c.passed else "[red]FAIL[/red]"
+            table.add_row(mark, c.text)
+        console.print(table)
+
+    outcome = "satisfied" if res.satisfied else ("gave up" if res.gave_up else "inconclusive")
+    style = "green" if passed else "yellow"
+    console.print(Panel.fit(
+        f"[bold {style}]{outcome}[/bold {style}]  in {res.turns} turn(s)\n"
+        f"score: {res.score:.0f}/100\n"
+        f"calibration: {res.calibration:.2f}  "
+        f"[dim](confidence this sim was human-like; not ground truth)[/dim]",
+        title="simulate", border_style=style,
+    ))
+    sys.exit(exit_code)
+
+
+@main.group("db")
+def db_group():
+    """The local run store (SQLite) — migrate JSON records in, then query."""
+
+
+@db_group.command("path")
+def db_path_cmd():
+    """Print the store's database path."""
+    from .store import default_db_path
+    click.echo(str(default_db_path()))
+
+
+@db_group.command("migrate")
+def db_migrate_cmd():
+    """Import the legacy JSON run-record cache into SQLite (idempotent)."""
+    from .run_record import RUNS_DIR
+    from .store import SqliteRunStore, migrate_json_runs
+    store = SqliteRunStore()
+    try:
+        n = migrate_json_runs(RUNS_DIR, store)
+        console.print(f"[green]Imported {n} run record(s) into {store.db_path}[/green]")
+    finally:
+        store.close()
+
+
+@db_group.command("list")
+@click.option("--scenario", default=None, help="Filter by scenario name.")
+@click.option("--limit", "-n", type=int, default=20, show_default=True)
+@click.option("--json", "as_json", is_flag=True, default=False)
+def db_list_cmd(scenario, limit, as_json):
+    """List recent runs from the store."""
+    import json as _json
+    from .store import SqliteRunStore
+    store = SqliteRunStore()
+    try:
+        rows = store.list_runs(scenario=scenario, limit=limit)
+    finally:
+        store.close()
+    if as_json:
+        console.print_json(_json.dumps(rows))
+        return
+    if not rows:
+        console.print("[dim]No runs in the store. Run `checkpoint db migrate` to import JSON records.[/dim]")
+        return
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Run")
+    table.add_column("Scenario")
+    table.add_column("Score", justify="right")
+    table.add_column("When")
+    for r in rows:
+        score = f"{r['score']:.0f}" if r["score"] is not None else "-"
+        table.add_row(r["run_id"], r["scenario"] or "-", score, r["timestamp"] or "-")
+    console.print(table)
+
+
+@main.command("compliance")
+@click.option("--certificate", "cert_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="A signed gate certificate (from `checkpoint gate --certificate`).")
+@click.option("--redteam", "redteam_path", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="A red-team report JSON (from `checkpoint redteam -o json`).")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None,
+              help="Write the assurance report (markdown) to this path.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def compliance_cmd(cert_path, redteam_path, out_path, output_format):
+    """Build an Agent Assurance Report from a signed gate certificate (and an
+    optional red-team report): the verdict, the statistical evidence, and OWASP
+    Agentic / NIST / EU-AI-Act cross-references — the document a reviewer wants.
+
+    Exit 1 if the overall verdict is REJECTED.
+    """
+    import json as _json
+
+    from .compliance import build_assurance, render_markdown
+    from .gate.certificate import verify as _verify_cert
+
+    try:
+        cert = _json.loads(Path(cert_path).read_text(encoding="utf-8"))
+        redteam = _json.loads(Path(redteam_path).read_text(encoding="utf-8")) if redteam_path else None
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read input: {e}[/red]")
+        sys.exit(1)
+
+    report = build_assurance(cert, redteam, signature_valid=_verify_cert(cert))
+    markdown = render_markdown(report)
+
+    if out_path:
+        Path(out_path).write_text(markdown, encoding="utf-8")
+        if output_format == "text":
+            console.print(f"[green]Assurance report written to {out_path}[/green]")
+
+    if output_format == "json":
+        console.print_json(_json.dumps(report))
+    else:
+        console.print(markdown, highlight=False)
+        style = {"APPROVED": "green", "CONDITIONAL": "yellow", "REJECTED": "red"}[report["overall"]]
+        console.print(Panel.fit(f"[bold {style}]{report['overall']}[/bold {style}]",
+                                title="assurance", border_style=style))
+
+    sys.exit(1 if report["overall"] == "REJECTED" else 0)
+
+
+def _extract_otel_spans(data) -> list:
+    """Pull spans out of a list, a `{"spans": [...]}` dict, or full OTLP-JSON."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if isinstance(data.get("spans"), list):
+            return data["spans"]
+        spans: list = []
+        for rs in data.get("resourceSpans", []):
+            scopes = rs.get("scopeSpans") or rs.get("instrumentationLibrarySpans") or []
+            for ss in scopes:
+                spans.extend(ss.get("spans", []) or [])
+        return spans
+    return []
+
+
+@main.command("otel")
+@click.argument("spans_file", type=click.Path(exists=True, dir_okay=False))
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def otel_cmd(spans_file, output_format):
+    """Summarize an agent's trajectory from an OpenTelemetry (GenAI) trace file.
+
+    Accepts a list of spans, a {"spans": [...]} object, or full OTLP-JSON.
+    Maps model/tool spans into the same path metrics `[T]` criteria use.
+    """
+    import json as _json
+
+    from .trajectory import compute_metrics, from_otel_spans
+
+    try:
+        data = _json.loads(Path(spans_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read spans file: {e}[/red]")
+        sys.exit(1)
+
+    traj = from_otel_spans(_extract_otel_spans(data))
+    metrics = compute_metrics(traj)
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "steps": len(traj),
+            "metrics": metrics.as_dict(),
+            "path": [f"{s.method} {s.path}" for s in traj.steps],
+        }))
+        return
+
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    for k, v in metrics.as_dict().items():
+        if k == "methods":
+            v = ", ".join(f"{mk}:{mv}" for mk, mv in v.items()) or "-"
+        table.add_row(k.replace("_", " "), str(v))
+    console.print(table)
+
+
+@main.command("gen-attacks")
+@click.argument("base_scenario", type=click.Path(exists=True))
+@click.option("--out", "out_dir", type=click.Path(file_okay=False), required=True,
+              help="Directory to write generated adversarial scenarios into.")
+@click.option("--count", type=int, default=5, show_default=True)
+@click.option("--judge-model", "model", default=None, help="Model that generates the attacks.")
+def gen_attacks(base_scenario, out_dir, count, model):
+    """Generate adversarial scenario variations from a benign base scenario (LLM).
+
+    The generated scenarios join a red-team pack; REVIEW them before using them
+    to gate — generated attacks are candidates, not verdicts.
+    """
+    import re as _re
+
+    from .redteam.generate import generate_attacks
+
+    scenario = parse_file(base_scenario)
+    jm = model or "gpt-4o-mini"
+    try:
+        attacks = generate_attacks(
+            scenario.prompt, scenario.clones, setup=scenario.setup, count=count, model=jm,
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]Generation failed: {e}[/red]")
+        sys.exit(1)
+    if not attacks:
+        console.print("[yellow]No attacks generated.[/yellow]")
+        sys.exit(1)
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for i, atk in enumerate(attacks, 1):
+        slug = _re.sub(r"[^a-z0-9]+", "-", atk.title.lower()).strip("-")[:40] or f"attack-{i}"
+        (out / f"gen-{i:02d}-{slug}.md").write_text(atk.to_markdown(), encoding="utf-8")
+        console.print(f"  [dim]{atk.owasp}[/dim] gen-{i:02d}-{slug}.md")
+    console.print(f"[green]Generated {len(attacks)} adversarial scenarios in {out_dir}[/green]")
+    console.print("[yellow]Review these before gating — generated attacks are candidates, not verdicts.[/yellow]")
 
 
 @main.command("validate")
@@ -1655,14 +2315,16 @@ def replay(run_id, clone, limit, as_json):
 
 
 @main.command("serve")
-@click.option("--port", default=4001, show_default=True, help="Port to listen on.")
-@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=None,
+              help="Port to listen on. [default: dashboard.port user config, else 4001]")
+@click.option("--host", default=None,
+              help="Host to bind. [default: dashboard.host user config, else 127.0.0.1]")
 @click.option(
     "--scenarios", "scenarios_dir",
     type=click.Path(file_okay=False),
-    default=".",
-    show_default=True,
-    help="Directory to scan for .md scenario files.",
+    default=None,
+    help="Directory to scan for .md scenario files. "
+         "[default: defaults.scenarios_dir user config, else .]",
 )
 @click.option("--open/--no-open", "auto_open", default=False,
               help="Open the dashboard in the default browser.")
@@ -1670,6 +2332,35 @@ def replay(run_id, clone, limit, as_json):
               help="Default judge model surfaced in the dashboard meta + new runs.")
 def serve(port, host, scenarios_dir, auto_open, judge_model):
     """Start the checkpoint web dashboard."""
+    # Resolve host/port/scenarios from user config when the flag is unset.
+    # Precedence: explicit flag > ~/.checkpoint/config.json > built-in default.
+    from .user_config import UserConfig
+    _ucfg = UserConfig.load()
+    if port is None:
+        _up = _ucfg.get("dashboard.port")
+        port = _up if isinstance(_up, int) else 4001
+    if host is None:
+        _uh = _ucfg.get("dashboard.host")
+        host = _uh if isinstance(_uh, str) and _uh else "127.0.0.1"
+    if scenarios_dir is None:
+        _us = _ucfg.get("defaults.scenarios_dir")
+        scenarios_dir = _us if isinstance(_us, str) and _us else "."
+
+    # The dashboard can spawn `checkpoint run` subprocesses (POST /api/jobs).
+    # On loopback that's fine (single-user local tool). But binding to any
+    # other interface exposes that to the network, so require an API key there.
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        if not os.environ.get("CHECKPOINT_DASHBOARD_API_KEY"):
+            console.print(
+                f"[red]Refusing to serve on {host!r} without authentication.[/red]\n"
+                "[dim]Binding off loopback exposes POST /api/jobs (which runs agent "
+                "harnesses) to the network. Set an API key first:[/dim]\n"
+                "  export CHECKPOINT_DASHBOARD_API_KEY=$(python -c "
+                "'import secrets;print(secrets.token_urlsafe(32))')\n"
+                "[dim]or bind to the default 127.0.0.1.[/dim]"
+            )
+            sys.exit(1)
+
     import logging
     import uvicorn
     import webbrowser
@@ -2004,7 +2695,7 @@ def _build_usage_summary(rows: list[dict]) -> dict:
 
 _PII_RE = {
     "email": __import__("re").compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
-    "ghp_token": __import__("re").compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    "github_pat": __import__("re").compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
     "bearer": __import__("re").compile(r"\bsk-[A-Za-z0-9-_]{16,}\b"),
 }
 
@@ -2015,12 +2706,12 @@ def _anonymize_record(record: dict) -> dict:
     Conservative substitutions only — preserves shape so the trace remains
     useful for debugging:
       * emails -> ``user@example.com``
-      * GitHub PATs -> ``ghp_REDACTED``
+      * GitHub PATs -> ``ghp-REDACTED``
       * OpenAI-shaped keys -> ``sk-REDACTED``
     """
     text = json.dumps(record, default=str)
     text = _PII_RE["email"].sub("user@example.com", text)
-    text = _PII_RE["ghp_token"].sub("ghp_REDACTED", text)
+    text = _PII_RE["github_pat"].sub("ghp-REDACTED", text)
     text = _PII_RE["bearer"].sub("sk-REDACTED", text)
     return json.loads(text)
 

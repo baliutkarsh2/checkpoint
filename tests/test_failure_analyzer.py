@@ -146,3 +146,56 @@ def test_partial_analyses_only_one_criterion():
         _client_factory=factory(raw),
     )
     assert out == {"A": "explanation A"}
+
+
+# ---------------------------------------------------------------------------
+# B3 regression: the runner's evaluate path must NOT run failure analysis.
+# Analysis happens exactly once, in the CLI persist step (which honors
+# --no-failure-analysis). Previously runner._maybe_analyze_failures made a
+# second, always-on OpenAI call for every failed run.
+# ---------------------------------------------------------------------------
+
+def test_evaluate_makes_no_llm_call_on_failure(monkeypatch):
+    import importlib.util
+    import sys
+    import types
+
+    from checkpoint import runner
+    from checkpoint.runner import RunResult
+    from checkpoint.scenario import Criterion, Scenario
+
+    # Any attempt to construct an OpenAI client during _evaluate is a bug.
+    # (The old _maybe_analyze_failures swallowed exceptions, so we record the
+    # attempt in addition to raising.)
+    calls: list[str] = []
+
+    class _BoomOpenAI:
+        def __init__(self, *a, **kw):
+            calls.append("OpenAI()")
+            raise AssertionError("no LLM call may happen during _evaluate")
+
+    fake_openai = types.ModuleType("openai")
+    fake_openai.OpenAI = _BoomOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    scenario = Scenario(
+        title="failing scenario",
+        prompt="close two issues",
+        criteria=[Criterion(text="exactly 2 issues exist", kind="D")],
+    )
+    result = RunResult(
+        final_answer="", stderr="", exit_code=0, trace=[],
+        state={"issues": []},  # 0 issues -> criterion fails deterministically
+    )
+
+    runner._evaluate(scenario, result, "gpt-4o-mini")
+
+    assert len(result.criteria) == 1
+    assert result.criteria[0].passed is False
+    assert result.criteria[0].evaluator == "deterministic"
+    assert calls == []  # no OpenAI client was ever constructed
+    assert result.failure_analysis is None  # runner no longer populates it
+
+    # The duplicate-analysis machinery is gone for good.
+    assert not hasattr(runner, "_maybe_analyze_failures")
+    assert importlib.util.find_spec("checkpoint.failure_analysis") is None

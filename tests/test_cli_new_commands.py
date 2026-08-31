@@ -16,6 +16,7 @@ from click.testing import CliRunner
 
 from checkpoint.cli import main
 from checkpoint.user_config import UserConfig
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
 @pytest.fixture
@@ -152,7 +153,7 @@ def test_debug_export_anonymizes_pii(isolated_home, tmp_path, monkeypatch):
         "criteria": [],
         "trace": [{"path": "/users", "body": {"email": "alice@example.com"}}],
         "state": {
-            "auth_header": "ghp_AaBbCcDdEeFfGgHhIiJj1234567890",
+            "auth_header": FAKE_GITHUB_TOKEN,
             "openai_key": "sk-AbCdEf1234567890abcdef",
         },
         "env": {"timestamp": "2026-05-14T00:00:00Z"},
@@ -165,8 +166,8 @@ def test_debug_export_anonymizes_pii(isolated_home, tmp_path, monkeypatch):
     blob = out.read_text(encoding="utf-8")
     assert "alice@example.com" not in blob
     assert "user@example.com" in blob
-    assert "ghp_AaBbCc" not in blob
-    assert "ghp_REDACTED" in blob
+    assert FAKE_GITHUB_TOKEN not in blob
+    assert "ghp-REDACTED" in blob
     assert "sk-AbCdEf" not in blob
     assert "sk-REDACTED" in blob
 

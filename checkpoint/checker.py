@@ -29,6 +29,27 @@ class CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# Number parsing (digits + English number words)
+# ---------------------------------------------------------------------------
+
+_NUM_WORDS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "a": 1, "an": 1,
+}
+
+# Regex fragment matching a digit count or a number word.
+_N = r"(?P<n>\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+
+
+def _num(s: str) -> int:
+    s = s.strip().lower()
+    if s.isdigit():
+        return int(s)
+    return _NUM_WORDS[s]
+
+
+# ---------------------------------------------------------------------------
 # Resource-name → state-key resolution
 # ---------------------------------------------------------------------------
 
@@ -315,23 +336,23 @@ def _count_compare(state: dict, noun: str, state_word: str | None, op: str, targ
 
 
 def h_exactly_n_state(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     return _count_compare(state, m.group("noun"), m.group("st"), "eq", n)
 
 
 def h_exactly_n_exist(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     return _count_compare(state, m.group("noun"), None, "eq", n)
 
 
 def h_at_least_n_state(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     st = m.groupdict().get("st")
     return _count_compare(state, m.group("noun"), st, "gte", n)
 
 
 def h_at_most_n_state(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     st = m.groupdict().get("st")
     return _count_compare(state, m.group("noun"), st, "lte", n)
 
@@ -345,13 +366,13 @@ def h_zero_resource(m: re.Match, state: dict, trace: list) -> CheckResult:
 
 
 def h_count_equals(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     return _count_compare(state, m.group("noun"), None, "eq", n)
 
 
 def h_exactly_n_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
     """exactly N <noun> named/titled 'X' exist(s)."""
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     noun = m.group("noun")
     target = m.group("title")
     res = _resource_lookup(noun)
@@ -369,7 +390,7 @@ def h_exactly_n_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
 
 def h_at_least_n_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
     """at least N <noun> named/titled 'X' exist(s)."""
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     noun = m.group("noun")
     target = m.group("title")
     res = _resource_lookup(noun)
@@ -463,7 +484,7 @@ def h_trace_call_count(m: re.Match, state: dict, trace: list) -> CheckResult:
     method = m.group("method").upper()
     path_needle = m.group("path").rstrip("/")
     raw_op = re.sub(r"\s+", "_", m.group("op").strip().lower())  # "at_least", "at_most", "exactly"
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
 
     count = sum(
         1 for e in trace
@@ -503,7 +524,7 @@ def h_trace_no_call(m: re.Match, state: dict, trace: list) -> CheckResult:
 
 
 def h_supabase_table_rows_gte(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     tbl = m.group("tbl").lower()
     rows = _supabase_table_rows(state, tbl)
     return CheckResult(
@@ -514,12 +535,258 @@ def h_supabase_table_rows_gte(m: re.Match, state: dict, trace: list) -> CheckRes
 
 
 def h_supabase_table_rows_eq(m: re.Match, state: dict, trace: list) -> CheckResult:
-    n = int(m.group("n"))
+    n = _num(m.group("n"))
     tbl = m.group("tbl").lower()
     rows = _supabase_table_rows(state, tbl)
     return CheckResult(
         len(rows) == n,
         f"Table '{tbl}' has {len(rows)} rows; expected exactly {n}.",
+        True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# F3 handlers — bundled-scenario phrasings previously missed by stage 1
+# ---------------------------------------------------------------------------
+
+def _slack_channel_messages(state: dict, chan_fragment: str) -> list[tuple[dict, list]]:
+    """(channel, messages) pairs for Slack channels whose name matches the fragment.
+
+    ``chan_fragment`` may be an exact name (``engineering``), a ``#``-prefixed
+    name, or a fragment (``incident`` for "the incident channel").
+    """
+    sub = state.get("slack") if isinstance(state.get("slack"), dict) else state
+    if not isinstance(sub, dict):
+        return []
+    frag = chan_fragment.lstrip("#").strip().lower()
+    channels = sub.get("channels") or {}
+    messages = sub.get("messages") or {}
+    out: list[tuple[dict, list]] = []
+    if not isinstance(channels, dict):
+        return out
+    for cid, ch in channels.items():
+        if not isinstance(ch, dict):
+            continue
+        name = str(ch.get("name") or "").lower()
+        if frag == name or (frag and frag in name):
+            msgs = messages.get(cid) if isinstance(messages, dict) else None
+            if msgs is None and isinstance(messages, dict):
+                msgs = messages.get(name)
+            out.append((ch, list(msgs or [])))
+    return out
+
+
+def h_has_label_applied(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N <noun> has/have the `X` label (applied)."""
+    n = _num(m.group("n"))
+    noun = m.group("noun")
+    label = m.group("label")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    cnt = sum(1 for i in items if isinstance(i, dict) and _has_label(i, label))
+    return CheckResult(cnt >= n, f"Found {cnt} {noun} with label '{label}'; expected at least {n}.", True)
+
+
+def h_has_requested_reviewer(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N <noun> has `X` as a requested reviewer."""
+    n = _num(m.group("n"))
+    noun = m.group("noun")
+    rev = m.group("rev")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+
+    def _has_rev(item: dict) -> bool:
+        for r in item.get("requested_reviewers") or []:
+            if isinstance(r, dict) and rev in (r.get("login"), r.get("name")):
+                return True
+            if isinstance(r, str) and r == rev:
+                return True
+        return False
+
+    items = _collect(state, twin, key)
+    cnt = sum(1 for i in items if isinstance(i, dict) and _has_rev(i))
+    return CheckResult(cnt >= n, f"Found {cnt} {noun} with '{rev}' as requested reviewer; expected at least {n}.", True)
+
+
+def h_nonempty_field_gte(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N <noun> has/have a non-empty <field> field."""
+    n = _num(m.group("n"))
+    noun = m.group("noun")
+    field = m.group("field")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    cnt = sum(1 for i in items if isinstance(i, dict) and i.get(field))
+    return CheckResult(cnt >= n, f"Found {cnt} {noun} with non-empty '{field}'; expected at least {n}.", True)
+
+
+def h_name_starts_with(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N <noun> name(s) start(s) with "X"."""
+    n = _num(m.group("n"))
+    noun = m.group("noun")
+    prefix = m.group("prefix")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    cnt = sum(
+        1 for i in items
+        if isinstance(i, dict) and str(i.get("name") or i.get("title") or "").startswith(prefix)
+    )
+    return CheckResult(cnt >= n, f"Found {cnt} {noun} whose name starts with '{prefix}'; expected at least {n}.", True)
+
+
+def h_message_posted_in_channel(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N (new) message(s) posted in the <chan> channel (during this run).
+
+    Trace-first: counts POST chat.postMessage calls targeting the channel
+    (that is what "during this run" means). With no trace (state-only
+    contexts), falls back to counting state messages in matching channels.
+    """
+    n = _num(m.group("n"))
+    chan = m.group("chan")
+    pairs = _slack_channel_messages(state, chan)
+    ids = {str(ch.get("id")) for ch, _ in pairs}
+    names = {str(ch.get("name") or "").lower() for ch, _ in pairs}
+    frag = chan.lstrip("#").strip().lower()
+
+    posted = 0
+    for e in trace:
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("method", "")).upper() != "POST":
+            continue
+        if "chat.postMessage" not in str(e.get("path", "")):
+            continue
+        body = e.get("body") if isinstance(e.get("body"), dict) else {}
+        target = str(body.get("channel", ""))
+        tgt = target.lstrip("#").strip().lower()
+        if target in ids or tgt in names or (frag and frag in tgt):
+            posted += 1
+
+    if trace:
+        return CheckResult(posted >= n, f"Trace shows {posted} messages posted to channel matching '{chan}'; expected at least {n}.", True)
+    state_count = sum(len(msgs) for _, msgs in pairs)
+    return CheckResult(state_count >= n, f"State has {state_count} messages in channel matching '{chan}'; expected at least {n}.", True)
+
+
+def h_message_reaction_in_channel(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """at least N message(s) in the <chan> channel has an `X` reaction."""
+    n = _num(m.group("n"))
+    chan = m.group("chan")
+    rname = m.group("rname")
+    pairs = _slack_channel_messages(state, chan)
+    cnt = 0
+    for _, msgs in pairs:
+        for msg in msgs:
+            if not isinstance(msg, dict):
+                continue
+            if any(isinstance(r, dict) and r.get("name") == rname for r in (msg.get("reactions") or [])):
+                cnt += 1
+    return CheckResult(cnt >= n, f"Found {cnt} messages with '{rname}' reaction in channel matching '{chan}'; expected at least {n}.", True)
+
+
+def h_none_titled(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """no <noun> named/titled "X" (exists)."""
+    noun = m.group("noun")
+    target = m.group("title")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    matching = [i for i in items if isinstance(i, dict) and _has_title(i, target)]
+    return CheckResult(len(matching) == 0, f"Found {len(matching)} {noun} named/titled '{target}'; expected none.", True)
+
+
+def h_no_assigned_to(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """no <noun> is assigned to (a user named) "X"."""
+    noun = m.group("noun")
+    who = m.group("who")
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+
+    def _assigned(item: dict) -> bool:
+        if str(item.get("assigneeId") or "") == who:
+            return True
+        a = item.get("assignee")
+        if isinstance(a, dict):
+            return who in {str(a.get(k)) for k in ("id", "name", "login", "displayName")}
+        if isinstance(a, str):
+            return a == who
+        return False
+
+    items = _collect(state, twin, key)
+    cnt = sum(1 for i in items if isinstance(i, dict) and _assigned(i))
+    return CheckResult(cnt == 0, f"Found {cnt} {noun} assigned to '{who}'; expected none.", True)
+
+
+def h_issue_still_exists(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """Issue #N still exists (in `owner/repo`)."""
+    num = int(m.group("num"))
+    items = _collect(state, "github", "issues")
+    found = any(
+        isinstance(i, dict) and str(i.get("number", "")) == str(num)
+        for i in items
+    )
+    return CheckResult(found, f"Issue #{num} {'found' if found else 'not found'}.", True)
+
+
+def h_label_still_exists(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """The "X" label still exists (on the repository)."""
+    label = m.group("title")
+    labels = _collect(state, "github", "labels")
+    found = any(isinstance(lab, dict) and lab.get("name") == label for lab in labels)
+    return CheckResult(found, f"Label '{label}' {'still exists' if found else 'not found'}.", True)
+
+
+def h_body_mentions_any(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """<noun> body mentions the word "X" (or "Y") — contains-any over text fields."""
+    noun = m.group("noun")
+    words = [w for w in (m.group("w1"), m.groupdict().get("w2")) if w]
+    res = _resource_lookup(noun)
+    if not res:
+        return CheckResult(False, f"Unknown resource '{noun}'", handled=False)
+    twin, key = res
+    items = _collect(state, twin, key)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        blob = " ".join(
+            str(item.get(k) or "") for k in ("body", "text", "description", "title", "snippet")
+        ).lower()
+        hit = next((w for w in words if w.lower() in blob), None)
+        if hit:
+            return CheckResult(True, f"A {noun} mentions '{hit}'.", True)
+    return CheckResult(False, f"No {noun} mentions any of {words}.", True)
+
+
+def h_is_in_state(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """The <noun> is in the <state> state — at least one such item."""
+    return _count_compare(state, m.group("noun"), m.group("st"), "gte", 1)
+
+
+def h_payment_intent_status(m: re.Match, state: dict, trace: list) -> CheckResult:
+    """The (refunded) payment_intent's status is "X" (or "Y")."""
+    wanted = {w.lower() for w in (m.group("s1"), m.groupdict().get("s2")) if w}
+    intents = _collect(state, "stripe", "payment_intents")
+    hits = [
+        p for p in intents
+        if isinstance(p, dict) and str(p.get("status", "")).lower() in wanted
+    ]
+    return CheckResult(
+        bool(hits),
+        f"Found {len(hits)} payment_intents with status in {sorted(wanted)}.",
         True,
     )
 
@@ -536,6 +803,15 @@ _RES = r"(?P<noun>" + "|".join(re.escape(t) for t in _RESOURCE_TOKENS) + r")"
 # State word fragment.
 _STATE_WORDS = sorted(_STATE_VALUES.keys(), key=len, reverse=True)
 _ST = r"(?P<st>" + "|".join(_STATE_WORDS) + r")"
+
+# Quoted-string fragments accepting double, single, and backtick quotes
+# (bundled scenarios use all three).
+_TITLE_Q = r"[\"'`](?P<title>[^\"'`]+)[\"'`]"
+_LABEL_Q = r"[\"'`](?P<label>[^\"'`]+)[\"'`]"
+_WHO_Q = r"[\"'`](?P<who>[^\"'`]+)[\"'`]"
+_PREFIX_Q = r"[\"'`](?P<prefix>[^\"'`]+)[\"'`]"
+_W1_Q = r"[\"'`](?P<w1>[^\"'`]+)[\"'`]"
+_W2_Q = r"[\"'`](?P<w2>[^\"'`]+)[\"'`]"
 
 _FLAGS = re.I
 
@@ -564,38 +840,82 @@ PATTERNS: list[tuple[re.Pattern, Callable[[re.Match, dict, list], CheckResult]]]
         re.IGNORECASE,
     ), h_trace_no_call),
 
+    # --- F3 bundled-scenario patterns (before generic count patterns) ---------
+    # at least N <noun> has/have the `X` label (applied)
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+(?:has|have)\s+(?:the\s+)?{_LABEL_Q}\s+label", _FLAGS),
+     h_has_label_applied),
+    # at least N <noun> has/have `X` as a requested reviewer
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+(?:has|have)\s+[\"'`]?(?P<rev>[\w.-]+)[\"'`]?\s+as\s+a\s+requested\s+reviewer", _FLAGS),
+     h_has_requested_reviewer),
+    # at least N <noun> has/have a non-empty <field> field
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+(?:has|have)\s+a\s+non-?empty\s+(?P<field>\w+)\s+field", _FLAGS),
+     h_nonempty_field_gte),
+    # at least N <noun> name(s) start(s) with "X"
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+names?\s+starts?\s+with\s+{_PREFIX_Q}", _FLAGS),
+     h_name_starts_with),
+    # at least N (new) message(s) was/were posted in the (Slack) <chan> channel
+    (re.compile(rf"\bat\s+least\s+{_N}\s+(?:new\s+)?messages?\s+(?:was|were)\s+posted\s+(?:in|to)\s+the\s+(?:slack\s+)?[\"'`#]*(?P<chan>[\w-]+)[\"'`]*\s+channel", _FLAGS),
+     h_message_posted_in_channel),
+    # at least N message(s) in the <chan> channel has an `X` reaction
+    (re.compile(rf"\bat\s+least\s+{_N}\s+messages?\s+in\s+the\s+[\"'`#]*(?P<chan>[\w-]+)[\"'`]*\s+channel\s+(?:has|have)\s+an?\s+[\"'`](?P<rname>[\w+-]+)[\"'`]\s+reaction", _FLAGS),
+     h_message_reaction_in_channel),
+    # no <noun> named/titled "X" (exists)
+    (re.compile(rf"\bno\s+{_RES}\s+(?:named|titled|called)\s+{_TITLE_Q}", _FLAGS),
+     h_none_titled),
+    # no <noun> is assigned to (a user named) "X"
+    (re.compile(rf"\bno\s+{_RES}\s+(?:is|are)\s+assigned\s+to\s+(?:a\s+)?(?:user\s+)?(?:named\s+)?{_WHO_Q}", _FLAGS),
+     h_no_assigned_to),
+    # no more than N <noun>  (alias for at-most)
+    (re.compile(rf"\bno\s+more\s+than\s+{_N}\s+{_RES}\b", _FLAGS),
+     h_at_most_n_state),
+    # Issue #N still exists (in `owner/repo`)
+    (re.compile(r"\bissues?\s+#(?P<num>\d+)\s+still\s+exists?\b", _FLAGS),
+     h_issue_still_exists),
+    # The "X" label still exists (on the repository)
+    (re.compile(rf"{_TITLE_Q}\s+label\s+still\s+exists?\b", _FLAGS),
+     h_label_still_exists),
+    # <noun> (body) mentions the word "X" (or "Y")
+    (re.compile(rf"\b{_RES}(?:'s)?(?:\s+body|\s+text|\s+description)?\s+mentions?\s+the\s+words?\s+{_W1_Q}(?:\s+or\s+{_W2_Q})?", _FLAGS),
+     h_body_mentions_any),
+    # The <noun> is in the <state> state
+    (re.compile(rf"\b{_RES}\s+is\s+in\s+the\s+{_ST}\s+state\b", _FLAGS),
+     h_is_in_state),
+    # The (refunded) payment_intent's status is "X" (or "Y")
+    (re.compile(r"\bpayment_intents?(?:'s|')?\s+status\s+is\s+[\"'`](?P<s1>[\w-]+)[\"'`](?:\s+or\s+[\"'`](?P<s2>[\w-]+)[\"'`])?", _FLAGS),
+     h_payment_intent_status),
+
     # --- Named/titled variants (MUST come before generic count patterns) ------
     # exactly N <noun> named/titled "X"
-    (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+    (re.compile(rf"\bexactly\s+{_N}\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
      h_exactly_n_titled),
     # at least N <noun> named/titled "X"
-    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
      h_at_least_n_titled),
     # at least N <noun> exist(s) named "X"  (trailing name qualifier)
-    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\s+exists?\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+exists?\s+(?:named|titled|called)\s+[\"'](?P<title>[^\"']+)[\"']", _FLAGS),
      h_at_least_n_titled),
 
     # --- Generic count patterns -----------------------------------------------
     # exactly N <noun> are <state>
-    (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
+    (re.compile(rf"\bexactly\s+{_N}\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
      h_exactly_n_state),
     # exactly N <noun> exist(s)
-    (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\s+exists?\b", _FLAGS),
+    (re.compile(rf"\bexactly\s+{_N}\s+{_RES}\s+exists?\b", _FLAGS),
      h_exactly_n_exist),
     # exactly N <noun>   (e.g. "the repo has exactly 2 labels")
-    (re.compile(rf"\bexactly\s+(?P<n>\d+)\s+{_RES}\b", _FLAGS),
+    (re.compile(rf"\bexactly\s+{_N}\s+{_RES}\b", _FLAGS),
      h_exactly_n_exist),
     # at least N <noun> are <state>
-    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
      h_at_least_n_state),
     # at least N <noun>
-    (re.compile(rf"\bat\s+least\s+(?P<n>\d+)\s+{_RES}\b", _FLAGS),
+    (re.compile(rf"\bat\s+least\s+{_N}\s+{_RES}\b", _FLAGS),
      h_at_least_n_state),
     # at most N <noun> are <state>
-    (re.compile(rf"\bat\s+most\s+(?P<n>\d+)\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
+    (re.compile(rf"\bat\s+most\s+{_N}\s+{_RES}\s+(?:are|were|is|have\s+been)\s+{_ST}\b", _FLAGS),
      h_at_most_n_state),
     # at most N <noun>
-    (re.compile(rf"\bat\s+most\s+(?P<n>\d+)\s+{_RES}\b", _FLAGS),
+    (re.compile(rf"\bat\s+most\s+{_N}\s+{_RES}\b", _FLAGS),
      h_at_most_n_state),
     # no <noun> are/were created/closed/...   OR   no <noun> have been ...
     (re.compile(rf"\bno\s+(?:new\s+)?{_RES}\s+(?:are|were|have\s+been)\s+{_ST}\b", _FLAGS),
@@ -609,9 +929,9 @@ PATTERNS: list[tuple[re.Pattern, Callable[[re.Match, dict, list], CheckResult]]]
     (re.compile(rf"\bzero\s+{_RES}\b", _FLAGS),
      h_zero_resource),
     # count of <noun> equals N / <noun> count equals N
-    (re.compile(rf"\bcount\s+of\s+{_RES}\s+(?:equals?|is|=)\s*(?P<n>\d+)\b", _FLAGS),
+    (re.compile(rf"\bcount\s+of\s+{_RES}\s+(?:equals?|is|=)\s*{_N}\b", _FLAGS),
      h_count_equals),
-    (re.compile(rf"\b{_RES}\s+count\s+(?:equals?|is|=)\s*(?P<n>\d+)\b", _FLAGS),
+    (re.compile(rf"\b{_RES}\s+count\s+(?:equals?|is|=)\s*{_N}\b", _FLAGS),
      h_count_equals),
     # a <noun> titled/named "X" exists  (also: 'X')
     (re.compile(rf"\ban?\s+{_RES}\s+(?:titled|named|called)\s+[\"'](?P<title>[^\"']+)[\"']\s+(?:exists|is\s+created|was\s+created)\b", _FLAGS),

@@ -24,10 +24,13 @@ class Check:
     fix: str | None = None
 
 
-# Ports the checkpoint stack uses by default:
-#   8000/8001/8002 — twin uvicorn ports (github/slack/stripe local mode).
-#   8443           — TLS sidecar (when run outside Docker).
-DEFAULT_PORTS = (8000, 8001, 8002, 8443)
+# No ports are checked by default. Subprocess-mode twins bind dynamic free
+# ports, docker-mode twins live inside the sidecar's network namespace (ports
+# 18080+, not host-bindable), and the dashboard's 4001 is only in use while
+# `checkpoint serve` runs — so a fixed port probe here is pure noise and used
+# to fail `doctor` for reasons unrelated to Checkpoint. Callers (and tests) can
+# still pass an explicit `ports=(...)` to probe a specific port.
+DEFAULT_PORTS: tuple[int, ...] = ()
 
 
 def _check_python_version() -> Check:
@@ -70,6 +73,37 @@ def _check_docker() -> Check:
         )
 
 
+def _check_sidecar_image() -> Check:
+    """Informational: is the TLS sidecar image built yet?
+
+    Never fails `doctor` — an absent image is fine because the docker runner
+    auto-builds it on first use. We only surface the state so users aren't
+    surprised by a one-time ~1-2 min build.
+    """
+    name = "TLS sidecar image"
+    try:
+        import docker  # type: ignore
+
+        from .docker.sidecar import SIDECAR_IMAGE, sidecar_image_exists
+
+        client = docker.from_env()
+        client.ping()
+    except Exception:
+        return Check(
+            name=name,
+            ok=True,
+            detail="skipped (docker not reachable; only needed for docker mode)",
+        )
+    if sidecar_image_exists(client, SIDECAR_IMAGE):
+        return Check(name=name, ok=True, detail=f"{SIDECAR_IMAGE} present")
+    return Check(
+        name=name,
+        ok=True,
+        detail="absent — builds automatically on the first `checkpoint run` "
+               "(or run `checkpoint docker build-sidecar`)",
+    )
+
+
 def _check_port_free(port: int) -> Check:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -100,7 +134,7 @@ def _check_openai_key() -> Check:
         ok=ok,
         detail="present" if ok else "missing",
         fix=None if ok else "export OPENAI_API_KEY=sk-... "
-                            "(or put it in /Users/<you>/projects/.env).",
+                            "(or put it in a .env file in your project directory).",
     )
 
 
@@ -152,6 +186,7 @@ def run_checks(
     checks: list[Check] = []
     checks.append(_check_python_version())
     checks.append(_check_docker())
+    checks.append(_check_sidecar_image())
     for p in ports:
         checks.append(_check_port_free(p))
     checks.append(_check_openai_key())
