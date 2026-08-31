@@ -123,7 +123,7 @@ Add `--certificate cert.json` to issue a **signed Trust Certificate** — the ve
 
 ## Red-teaming
 
-`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack — scenarios mapped to the **OWASP Agentic Top 10** where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate) — and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them.
+`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack — scenarios mapped to the **OWASP Agentic Top 10** where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate) — and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them, or generate new ones: `checkpoint gen-attacks <base-scenario> --out scenarios/redteam` asks a model to invent adversarial variations across OWASP categories (review them before gating — generated attacks are candidates, not verdicts).
 
 ## Simulated users
 

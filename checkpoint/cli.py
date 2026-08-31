@@ -1922,6 +1922,45 @@ def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
     sys.exit(exit_code)
 
 
+@main.command("gen-attacks")
+@click.argument("base_scenario", type=click.Path(exists=True))
+@click.option("--out", "out_dir", type=click.Path(file_okay=False), required=True,
+              help="Directory to write generated adversarial scenarios into.")
+@click.option("--count", type=int, default=5, show_default=True)
+@click.option("--judge-model", "model", default=None, help="Model that generates the attacks.")
+def gen_attacks(base_scenario, out_dir, count, model):
+    """Generate adversarial scenario variations from a benign base scenario (LLM).
+
+    The generated scenarios join a red-team pack; REVIEW them before using them
+    to gate — generated attacks are candidates, not verdicts.
+    """
+    import re as _re
+
+    from .redteam.generate import generate_attacks
+
+    scenario = parse_file(base_scenario)
+    jm = model or "gpt-4o-mini"
+    try:
+        attacks = generate_attacks(
+            scenario.prompt, scenario.clones, setup=scenario.setup, count=count, model=jm,
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]Generation failed: {e}[/red]")
+        sys.exit(1)
+    if not attacks:
+        console.print("[yellow]No attacks generated.[/yellow]")
+        sys.exit(1)
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for i, atk in enumerate(attacks, 1):
+        slug = _re.sub(r"[^a-z0-9]+", "-", atk.title.lower()).strip("-")[:40] or f"attack-{i}"
+        (out / f"gen-{i:02d}-{slug}.md").write_text(atk.to_markdown(), encoding="utf-8")
+        console.print(f"  [dim]{atk.owasp}[/dim] gen-{i:02d}-{slug}.md")
+    console.print(f"[green]Generated {len(attacks)} adversarial scenarios in {out_dir}[/green]")
+    console.print("[yellow]Review these before gating — generated attacks are candidates, not verdicts.[/yellow]")
+
+
 @main.command("validate")
 @click.argument("scenario_path", type=click.Path(exists=True))
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit structured JSON instead of a table.")

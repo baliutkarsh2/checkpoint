@@ -8,8 +8,10 @@ reports which category an agent is vulnerable to, not just a pass/fail.
 """
 from .catalog import OWASP_AGENTIC, category_for, describe
 from .runner import RedTeamEntry, RedTeamReport, collect_pack, run_redteam
+from .generate import GeneratedAttack, generate_attacks
 
 __all__ = [
     "OWASP_AGENTIC", "category_for", "describe",
     "RedTeamEntry", "RedTeamReport", "collect_pack", "run_redteam",
+    "GeneratedAttack", "generate_attacks",
 ]
