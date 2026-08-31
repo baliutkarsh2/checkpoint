@@ -1,20 +1,33 @@
 version: 2
+# "Always latest" posture: Dependabot opens update PRs weekly across every
+# ecosystem we ship, grouped so routine bumps land as a few reviewable PRs
+# instead of a pile of single-package noise (noise is what makes projects fall
+# behind). CI (build + full pytest + wheel) gates every one, so a green group
+# PR is safe to merge. Major bumps stay ungrouped/individual for deliberate review.
 updates:
   # Python package + dev/test dependencies.
   - package-ecosystem: pip
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels: ["dependencies", "python"]
+    groups:
+      python-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
 
   # Dashboard SPA dependencies.
   - package-ecosystem: npm
     directory: "/checkpoint/dashboard/web"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels: ["dependencies", "javascript"]
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
 
   # GitHub Actions used by our workflows.
   - package-ecosystem: github-actions
@@ -22,3 +35,7 @@ updates:
     schedule:
       interval: weekly
     labels: ["dependencies", "ci"]
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
