@@ -50,7 +50,7 @@ def build_certificate(
     valid_days: int = 90,
 ) -> dict:
     """Assemble the unsigned certificate body from a GateResult."""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     scenarios = [
         {
             "scenario": s.scenario,
@@ -161,7 +161,7 @@ def is_expired(certificate: dict, *, now: datetime.datetime | None = None) -> bo
     exp = certificate.get("expires_at")
     if not exp:
         return False
-    now = now or datetime.datetime.now(datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.UTC)
     try:
         return now > datetime.datetime.fromisoformat(exp)
     except ValueError:

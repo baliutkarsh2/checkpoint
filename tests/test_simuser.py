@@ -9,7 +9,13 @@ from types import SimpleNamespace
 import pytest
 
 from checkpoint.scenario import parse
-from checkpoint.simuser import LLMSimulatedUser, Persona, ScriptedUser, UserTurn, simulate
+from checkpoint.simuser import (
+    LLMSimulatedUser,
+    Persona,
+    ScriptedUser,
+    UserTurn,
+    simulate,
+)
 from checkpoint.simuser.calibration import compute_calibration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

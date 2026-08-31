@@ -78,3 +78,29 @@ include = ["checkpoint*"]
 # checkpoint/twins/<twin>_seeds/<name>.json — they must ship in the wheel or
 # every seeded scenario 404s on a pip-only install.
 "checkpoint.twins" = ["*_seeds/*.json"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["checkpoint/dashboard/web", "packages"]
+
+[tool.ruff.lint]
+# Curated for signal over style: real bugs (F), import hygiene (I), likely
+# defects (B), and modern-Python upgrades (UP), plus the syntax/statement subset
+# of pycodestyle. E501 (line length) is deliberately NOT selected — this
+# codebase uses long explanatory lines and reflowing them would churn every file
+# for no correctness gain.
+select = ["F", "I", "B", "UP", "E4", "E7", "E9"]
+ignore = [
+    # Deliberate: several modules import after runtime setup (e.g. lazy/optional
+    # imports inside the CLI) rather than at the top.
+    "E402",
+    # Compact one-line guards are used intentionally in a few places.
+    "E702",
+    # Single-letter names are idiomatic in the small numeric/statistics helpers.
+    "E741",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately shadow and re-import fixtures.
+"tests/**" = ["B011"]

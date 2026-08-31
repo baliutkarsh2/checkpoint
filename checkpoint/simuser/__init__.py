@@ -10,9 +10,9 @@ Because LLM-simulated users are imperfect proxies for humans (see "Lost in
 Simulation", 2026), each run reports a calibration confidence rather than
 pretending the simulation is ground truth.
 """
+from .engine import SimResult, simulate
 from .persona import Persona, UserTurn
 from .user import LLMSimulatedUser, ScriptedUser
-from .engine import SimResult, simulate
 
 __all__ = [
     "Persona", "UserTurn", "LLMSimulatedUser", "ScriptedUser",

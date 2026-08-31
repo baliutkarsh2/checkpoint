@@ -3,11 +3,9 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from click.testing import CliRunner
-from checkpoint.cli import main
 
+from checkpoint.cli import main
 
 # ---------------------------------------------------------------------------
 # Helpers

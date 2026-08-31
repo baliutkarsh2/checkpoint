@@ -1,0 +1,19 @@
+# Optional but recommended: `pip install pre-commit && pre-commit install`
+# runs the same lint gate CI enforces, before the commit rather than after.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key

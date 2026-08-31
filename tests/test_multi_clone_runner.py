@@ -7,17 +7,14 @@ echoes the count, so we don't need an LLM judge.
 from __future__ import annotations
 
 import json
-import os
 import sys
-import tempfile
 import textwrap
 from pathlib import Path
 
 import pytest
 
-from checkpoint.runner import run_once, _parse_seed_spec
-from checkpoint.scenario import Scenario, parse
-
+from checkpoint.runner import _parse_seed_spec, run_once
+from checkpoint.scenario import Scenario
 
 HARNESS_ECHO = textwrap.dedent(
     """

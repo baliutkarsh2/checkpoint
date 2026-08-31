@@ -54,7 +54,7 @@ def build_assurance(certificate: dict, redteam: dict | None = None,
 
     return {
         "schema": "checkpoint.assurance/v1",
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "overall": overall,
         "subject": certificate.get("subject", {}),
         "gate": {
@@ -99,7 +99,7 @@ def render_markdown(report: dict) -> str:
         "",
         "## Gate",
         f"- Verdict: **{gate.get('verdict', '?')}**  (gate id `{gate.get('gate_id', '?')}`)",
-        f"- Certificate signature: "
+        "- Certificate signature: "
         + ("valid" if gate.get("signature_valid") else
            ("INVALID" if gate.get("signature_valid") is False else "not checked")),
         f"- Issued: {gate.get('issued_at', '?')} · Expires: {gate.get('expires_at', '?')}",

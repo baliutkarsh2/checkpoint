@@ -9,8 +9,6 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
 from checkpoint.judge import (
     JudgeResult,
     _normalize,
@@ -18,7 +16,6 @@ from checkpoint.judge import (
     _truncate_trace,
     judge,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -84,7 +81,7 @@ def _judge_patched(
     parsed = json.loads(raw)
     items = parsed.get("results") or []
 
-    from checkpoint.judge import _normalize, JudgeResult
+    from checkpoint.judge import JudgeResult, _normalize
     aligned: list[JudgeResult] = []
     used_idx: set[int] = set()
     for c in criteria:
@@ -337,7 +334,7 @@ def test_truncate_state_github_over_limit():
     """Large GitHub state → generic summary with counts, not all-zeros."""
     big_issues = {str(i): {"id": i, "title": f"Issue {i}", "state": "open"} for i in range(500)}
     state = {"issues": big_issues, "repos": {"1": {"name": "repo"}}, "labels": {}}
-    raw = __import__("json").dumps(state)
+    __import__("json").dumps(state)
     # Force truncation by using a very small limit
     out = _truncate_state(state, max_chars=100)
     assert "_note" in out

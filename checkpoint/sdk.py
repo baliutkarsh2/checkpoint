@@ -38,14 +38,15 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Generator, Literal
+from typing import Literal
 
+from .run_record import build_record, write_record
 from .runner import RunResult, run_once
 from .scenario import Criterion, Scenario
-from .run_record import build_record, write_record
 
 
 @dataclass
@@ -184,8 +185,9 @@ class Checkpoint:
                 import httpx
                 r = httpx.get(twins["github"].url + "/repos/acme/webapp")
         """
-        from . import clone_manager
         import httpx
+
+        from . import clone_manager
 
         tmp: Path | None = None
         if registry_path is None:

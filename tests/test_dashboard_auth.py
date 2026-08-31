@@ -5,9 +5,6 @@ ReadOnlyJobsMiddleware — kicks in when CHECKPOINT_DASHBOARD_READ_ONLY=1
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 from starlette.testclient import TestClient
 

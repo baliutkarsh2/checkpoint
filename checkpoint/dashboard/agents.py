@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
 
 CACHE_TTL_S = 5.0
 _cache: tuple[float, list[dict]] | None = None

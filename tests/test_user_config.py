@@ -5,16 +5,14 @@ real ~/.checkpoint directory.
 """
 from __future__ import annotations
 
-import json
-import os
 import pytest
 
 from checkpoint.user_config import (
     KNOWN_KEYS,
     UserConfig,
+    _coerce_value,
     config_path,
     home_dir,
-    _coerce_value,
 )
 
 

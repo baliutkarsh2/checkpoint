@@ -23,10 +23,9 @@ import json
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from .harness_spec import DEFAULT_TASK_ENV, template_manifest
-
 
 TaskVia = Literal["env", "arg", "stdin", "none"]
 

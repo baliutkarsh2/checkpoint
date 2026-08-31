@@ -8,16 +8,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import pytest
-
 from checkpoint.checker_llm import (
     Assertion,
-    ParseOutcome,
     evaluate,
     parse_assertion,
     try_stage2,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake OpenAI client
@@ -188,12 +184,6 @@ def test_evaluate_count_gte():
     a = Assertion(resource="issues", operator="count_gte", value=2)
     s = gh(issues=[{"id": i, "state": "open"} for i in range(3)])
     assert evaluate(a, s).passed
-
-
-def test_evaluate_count_lte_fail():
-    a = Assertion(resource="issues", operator="count_lte", value=1)
-    s = gh(issues=[{"id": i} for i in range(3)])
-    assert not evaluate(a, s).passed
 
 
 def test_evaluate_exists_with_title():

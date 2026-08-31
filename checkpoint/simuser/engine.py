@@ -11,9 +11,9 @@ import subprocess
 from dataclasses import dataclass, field
 
 from ..runner import (
-    RunResult,
-    TWIN_APPS,
     _CLONE_BOOTSTRAP_TOKEN_ENV,
+    TWIN_APPS,
+    RunResult,
     _apply_named_seed,
     _apply_seed_file,
     _evaluate,

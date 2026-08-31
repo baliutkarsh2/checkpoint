@@ -4,9 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from click.testing import CliRunner
-
-from checkpoint.cli import main
 from checkpoint.scenario import parse
 from checkpoint.trajectory import Trajectory, compute_metrics
 from checkpoint.trajectory.checker import check

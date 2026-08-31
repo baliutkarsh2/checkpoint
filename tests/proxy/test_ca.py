@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from cryptography import x509
 
@@ -22,7 +22,7 @@ def test_mint_ca_cert_is_parsable(tmp_path):
 def test_mint_ca_validity_window(tmp_path):
     out = mint_ca(tmp_path)
     cert = x509.load_pem_x509_certificate(out.read_bytes())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     nb = cert.not_valid_before_utc
     na = cert.not_valid_after_utc
     # notBefore is in the past (clock-skew buffer); within last 2h.

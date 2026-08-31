@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-
 TaskVia = Literal["env", "arg", "stdin", "none"]
 StdoutFormat = Literal["json", "text"]
 

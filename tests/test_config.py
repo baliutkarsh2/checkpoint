@@ -4,19 +4,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from checkpoint.config import (
-    CheckpointConfig,
-    HarnessConfig,
-    EvaluatorResolution,
     find_upward,
     load_checkpoint_config,
     load_harness_config,
     matches_tag,
     resolve_evaluator_model,
 )
-
 
 # ---- find_upward -----------------------------------------------------------
 

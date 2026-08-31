@@ -23,7 +23,7 @@ import uuid
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -155,7 +155,7 @@ class JobManager:
             job_id=job_id,
             scenario=scenario,
             cmd=cmd,
-            started_at=datetime.now(tz=timezone.utc).isoformat(),
+            started_at=datetime.now(tz=UTC).isoformat(),
         )
         async with self._lock:
             self._jobs[job_id] = job
@@ -249,7 +249,7 @@ class JobManager:
                 job.status = "failed"
                 job.exit_code = -1
             finally:
-                job.ended_at = datetime.now(tz=timezone.utc).isoformat()
+                job.ended_at = datetime.now(tz=UTC).isoformat()
                 await self.bus.publish("job.updated", job.public())
                 await self._broadcast_end(job)
 

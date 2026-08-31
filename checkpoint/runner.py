@@ -11,11 +11,20 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from checkpoint.fake_credentials import (
+    FAKE_DISCORD_TOKEN,
+    FAKE_GITHUB_TOKEN,
+    FAKE_GOOGLE_WORKSPACE_TOKEN,
+    FAKE_LINEAR_TOKEN,
+    FAKE_SLACK_TOKEN,
+    FAKE_STRIPE_KEY,
+    FAKE_SUPABASE_TOKEN,
+)
+
 from .checker import check
 from .checker_llm import try_stage2
 from .judge import judge
 from .scenario import Criterion, Scenario
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY, FAKE_LINEAR_TOKEN, FAKE_SUPABASE_TOKEN, FAKE_DISCORD_TOKEN, FAKE_GOOGLE_WORKSPACE_TOKEN
 
 
 @dataclass
@@ -251,7 +260,7 @@ def run_once(
                     pass
             if read_only_env:
                 cfg_body["read_only"] = True
-            for clone, port, _ in twins:
+            for _clone, port, _ in twins:
                 try:
                     httpx.post(f"http://127.0.0.1:{port}/_config", json=cfg_body, timeout=2.0)
                 except Exception:
@@ -507,7 +516,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             # Tag the criterion with the fall-through reason so the run record
             # tells us *why* stage 2 didn't carry it.
             c = Criterion(text=c.text, kind=c.kind)
-            setattr(c, "_stage2_fallthrough", stage2_reason)
+            c._stage2_fallthrough = stage2_reason
             deferred.append(c)
         elif c.kind == "T":
             # Trajectory criteria: evaluate the agent's call path deterministically.
@@ -546,7 +555,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             ))
         return
 
-    for c, v in zip(deferred, verdicts):
+    for c, v in zip(deferred, verdicts, strict=False):
         result.criteria.append(CriterionResult(
             text=c.text, kind=c.kind, passed=v.passed,
             reasoning=v.reasoning, evaluator="llm",

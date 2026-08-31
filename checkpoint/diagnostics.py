@@ -13,7 +13,6 @@ import socket
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List
 
 
 @dataclass
@@ -177,7 +176,7 @@ def run_checks(
     *,
     ports: tuple[int, ...] = DEFAULT_PORTS,
     cwd: Path | None = None,
-) -> List[Check]:
+) -> list[Check]:
     """Run the full diagnostic pipeline and return the rows in order.
 
     Pure function — no I/O beyond the network/disk probes each check
@@ -195,5 +194,5 @@ def run_checks(
     return checks
 
 
-def all_passed(checks: List[Check]) -> bool:
+def all_passed(checks: list[Check]) -> bool:
     return all(c.ok for c in checks)

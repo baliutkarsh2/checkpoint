@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import time
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -54,7 +52,7 @@ def test_start_rejects_unknown_clone(tmp_path):
 
 def test_start_rejects_duplicate_running(tmp_path):
     reg = tmp_path / "clones.json"
-    entry = clone_manager.start("github", registry_path=reg)
+    clone_manager.start("github", registry_path=reg)
     try:
         with pytest.raises(RuntimeError, match="already running"):
             clone_manager.start("github", registry_path=reg)

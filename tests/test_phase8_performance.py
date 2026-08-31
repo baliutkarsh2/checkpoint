@@ -23,7 +23,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SMOKE_SCENARIO = REPO_ROOT / "examples" / "smoke" / "smoke-scenario.md"
 FAKE_HARNESS = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"

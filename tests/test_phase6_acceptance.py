@@ -20,8 +20,12 @@ import time
 
 import httpx
 import pytest
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY
 
+from checkpoint.fake_credentials import (
+    FAKE_GITHUB_TOKEN,
+    FAKE_SLACK_TOKEN,
+    FAKE_STRIPE_KEY,
+)
 
 GITHUB_TOKEN = FAKE_GITHUB_TOKEN
 SLACK_TOKEN = FAKE_SLACK_TOKEN
@@ -100,6 +104,7 @@ async def test_three_twins_mcp_one_transport_two_doors(three_twins):
     """
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
+
     from checkpoint.runner import twin_mcp_url
 
     gh_port, sl_port, st_port = (

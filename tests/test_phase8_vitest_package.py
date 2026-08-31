@@ -18,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-
 PKG_DIR = Path(__file__).resolve().parent.parent / "packages" / "checkpoint-vitest"
 
 

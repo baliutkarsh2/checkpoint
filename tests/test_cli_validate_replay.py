@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS_DIR = REPO_ROOT / "scenarios"
 CLI = [sys.executable, "-m", "checkpoint.cli"]
@@ -139,7 +138,6 @@ def test_validate_all_bundled_scenarios_are_valid(fname):
 @pytest.fixture
 def run_record(tmp_path, monkeypatch):
     """Write a synthetic run record and point RUNS_DIR + last-run at it."""
-    from checkpoint.run_record import RUNS_DIR
 
     monkeypatch.setattr("checkpoint.run_record.RUNS_DIR", tmp_path)
     monkeypatch.setattr("checkpoint.cli.RUNS_DIR", tmp_path)
@@ -186,6 +184,7 @@ def test_replay_json_output(run_record, monkeypatch):
 def test_replay_json_output_direct(run_record, monkeypatch):
     """Exercise replay directly at the Python level (no subprocess env boundary)."""
     from click.testing import CliRunner
+
     from checkpoint.cli import replay
 
     run_id, runs_dir = run_record
@@ -202,6 +201,7 @@ def test_replay_json_output_direct(run_record, monkeypatch):
 
 def test_replay_table_output_direct(run_record, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import replay
 
     run_id, runs_dir = run_record
@@ -216,6 +216,7 @@ def test_replay_table_output_direct(run_record, monkeypatch):
 
 def test_replay_missing_run_exits_1(tmp_path, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import replay
 
     monkeypatch.setattr("checkpoint.cli.RUNS_DIR", tmp_path)
@@ -227,6 +228,7 @@ def test_replay_missing_run_exits_1(tmp_path, monkeypatch):
 
 def test_replay_clone_filter(run_record, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import replay
 
     run_id, runs_dir = run_record
@@ -242,6 +244,7 @@ def test_replay_clone_filter(run_record, monkeypatch):
 
 def test_replay_limit(run_record, monkeypatch):
     from click.testing import CliRunner
+
     from checkpoint.cli import replay
 
     run_id, runs_dir = run_record

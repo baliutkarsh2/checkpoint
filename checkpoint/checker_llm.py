@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field, ValidationError
 from .checker import (
     CheckResult,
     _collect,
-    _matches_state,
-    _has_title,
     _has_label,
+    _has_title,
+    _matches_state,
     _resource_lookup,
 )
 

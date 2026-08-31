@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 README = Path(__file__).resolve().parent.parent / "README.md"
 README_MAX_LINES = 200
 

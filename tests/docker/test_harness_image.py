@@ -2,7 +2,7 @@ import pytest
 
 docker = pytest.importorskip("docker")
 
-from checkpoint.docker.harness_image import build_harness_image, HarnessImageError
+from checkpoint.docker.harness_image import HarnessImageError, build_harness_image
 
 
 @pytest.fixture

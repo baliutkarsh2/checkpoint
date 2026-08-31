@@ -67,7 +67,7 @@ def summarize_scenario(
     # An incomplete run (harness crash / timeout) counts as a failure — you can't
     # ship on a run that never produced a verdict.
     passes = sum(
-        1 for s, ok in zip(scores, completes) if ok and s >= policy.pass_threshold
+        1 for s, ok in zip(scores, completes, strict=False) if ok and s >= policy.pass_threshold
     )
     ci = wilson_interval(passes, n, policy.confidence)
     classification = classify_stability(

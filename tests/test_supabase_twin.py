@@ -6,13 +6,11 @@ MCP-facing routes that were previously missing or duplicated.
 """
 from __future__ import annotations
 
-import json
-import pytest
 import httpx
+import pytest
 
-from checkpoint.twins.supabase import app, _fresh_state, STATE, TRACE
 from checkpoint.fake_credentials import FAKE_SUPABASE_TOKEN
-
+from checkpoint.twins.supabase import STATE, TRACE, _fresh_state, app
 
 TOKEN = FAKE_SUPABASE_TOKEN
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

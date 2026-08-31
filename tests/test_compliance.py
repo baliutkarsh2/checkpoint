@@ -65,9 +65,13 @@ def test_render_markdown_sections():
 
 def test_compliance_cli_end_to_end(tmp_path):
     # A real signed certificate so the signature verifies.
-    import datetime
     from checkpoint.gate import certificate as cert_mod
-    from checkpoint.gate.verdict import GatePolicy, GateResult, decide_verdict, summarize_scenario
+    from checkpoint.gate.verdict import (
+        GatePolicy,
+        GateResult,
+        decide_verdict,
+        summarize_scenario,
+    )
 
     stat = summarize_scenario("happy.md", [100.0] * 20, [True] * 20, GatePolicy(runs=20))
     verdict, code = decide_verdict([stat], GatePolicy(runs=20))

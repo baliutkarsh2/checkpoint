@@ -5,8 +5,8 @@ import math
 
 import pytest
 
-from checkpoint.stats import pass_hat_k
 from checkpoint.gate.verdict import GatePolicy, summarize_scenario
+from checkpoint.stats import pass_hat_k
 
 
 def test_pass_hat_k_edges():
@@ -28,7 +28,7 @@ def test_pass_hat_k_matches_hypergeometric():
 
 def test_pass_hat_k_monotonic_decreasing_in_k():
     vals = [pass_hat_k(8, 10, k) for k in range(1, 9)]
-    assert all(a >= b for a, b in zip(vals, vals[1:]))
+    assert all(a >= b for a, b in zip(vals, vals[1:], strict=False))
 
 
 def test_scenario_stat_reliability_surfaced():

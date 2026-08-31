@@ -13,7 +13,6 @@ import time
 import httpx
 import pytest
 
-
 SUPABASE_TOOL_NAMES = {
     "supabase_list_tables",
     "supabase_query",

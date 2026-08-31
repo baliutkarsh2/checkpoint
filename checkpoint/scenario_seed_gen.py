@@ -50,7 +50,7 @@ def cache_dir(root: Path | None = None) -> Path:
 def cache_key(clone: str, setup_text: str) -> str:
     """Stable cache key for (clone, setup_text). Whitespace-normalized."""
     norm = " ".join((setup_text or "").split())
-    h = hashlib.sha256(f"{clone}\n{norm}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"{clone}\n{norm}".encode()).hexdigest()
     return h
 
 

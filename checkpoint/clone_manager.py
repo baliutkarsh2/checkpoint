@@ -31,13 +31,20 @@ import socket
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import httpx
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY, FAKE_LINEAR_TOKEN, FAKE_SUPABASE_TOKEN, FAKE_DISCORD_TOKEN, FAKE_GOOGLE_WORKSPACE_TOKEN
 
+from checkpoint.fake_credentials import (
+    FAKE_DISCORD_TOKEN,
+    FAKE_GITHUB_TOKEN,
+    FAKE_GOOGLE_WORKSPACE_TOKEN,
+    FAKE_LINEAR_TOKEN,
+    FAKE_SLACK_TOKEN,
+    FAKE_STRIPE_KEY,
+    FAKE_SUPABASE_TOKEN,
+)
 
 DEFAULT_REGISTRY = Path(".checkpoint/cache/clones.json")
 
@@ -64,7 +71,7 @@ _CLONE_TOKEN = {
 
 
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _free_port() -> int:
@@ -368,7 +375,7 @@ def renew(
     registry[clone_id]["ttl_seconds"] = int(ttl_seconds)
     registry[clone_id]["expires_at"] = expires_at
     registry[clone_id]["expires_at_iso"] = datetime.fromtimestamp(
-        expires_at, tz=timezone.utc
+        expires_at, tz=UTC
     ).isoformat()
     _write_registry(registry_path, registry)
     return registry[clone_id]

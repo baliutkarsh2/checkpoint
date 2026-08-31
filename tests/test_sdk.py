@@ -2,20 +2,17 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+from checkpoint.runner import CriterionResult, RunResult
 from checkpoint.sdk import (
     Checkpoint,
     CriterionSpec,
     RunConfig,
     TwinHandle,
 )
-from checkpoint.runner import RunResult, CriterionResult
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
-
 
 # ---------------------------------------------------------------------------
 # CriterionSpec / RunConfig dataclasses

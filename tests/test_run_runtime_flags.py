@@ -11,13 +11,11 @@ from __future__ import annotations
 import json
 import os
 import sys
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from checkpoint.cli import main
-
 
 NOOP_HARNESS = (
     "import sys, json; "
@@ -57,9 +55,9 @@ def _harness_arg() -> str:
 
 def test_run_json_output_contains_summary(isolated_home, scenario_in_tmp, monkeypatch):
     """`-o json` always emits the trailing summary object even with -q."""
-    from checkpoint import runner as _runner
-    from checkpoint.runner import RunResult, CriterionResult
     import checkpoint.cli as _cli
+    from checkpoint import runner as _runner
+    from checkpoint.runner import CriterionResult, RunResult
 
     def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
         return RunResult(
@@ -126,7 +124,7 @@ def test_keep_state_removes_seed_keys(isolated_home, tmp_path, monkeypatch):
         captured["seed"] = scenario.config.get("seed")
         captured["seed_file"] = scenario.config.get("seed-file")
         captured["setup"] = scenario.setup
-        from checkpoint.runner import RunResult, CriterionResult
+        from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
             final_answer="x", stderr="", exit_code=0, trace=[], state={},
             criteria=[CriterionResult(text="ok", kind="D", passed=True,
@@ -166,7 +164,7 @@ def test_seed_file_flag_overrides_scenario(isolated_home, tmp_path, monkeypatch)
 
     def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
         captured["seed_file"] = scenario.config.get("seed-file")
-        from checkpoint.runner import RunResult, CriterionResult
+        from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
             final_answer="x", stderr="", exit_code=0, trace=[], state={},
             criteria=[CriterionResult(text="ok", kind="D", passed=True,
@@ -204,7 +202,7 @@ def test_setup_file_flag_replaces_setup_prose(isolated_home, tmp_path, monkeypat
 
     def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
         captured["setup"] = scenario.setup
-        from checkpoint.runner import RunResult, CriterionResult
+        from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
             final_answer="x", stderr="", exit_code=0, trace=[], state={},
             criteria=[CriterionResult(text="ok", kind="D", passed=True,
@@ -250,7 +248,7 @@ def test_rate_limit_flag_sets_env(isolated_home, scenario_in_tmp, monkeypatch):
     def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
         seen["rate"] = os.environ.get("CHECKPOINT_RUNTIME_RATE_LIMIT")
         seen["ro"] = os.environ.get("CHECKPOINT_RUNTIME_READ_ONLY")
-        from checkpoint.runner import RunResult, CriterionResult
+        from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
             final_answer="x", stderr="", exit_code=0, trace=[], state={},
             criteria=[CriterionResult(text="ok", kind="D", passed=True,

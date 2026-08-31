@@ -9,14 +9,12 @@ from __future__ import annotations
 import json
 import sys
 import textwrap
-import time
 from pathlib import Path
 
 import pytest
 
-from checkpoint.runner import run_once, _parse_seed_spec
+from checkpoint.runner import _parse_seed_spec, run_once
 from checkpoint.scenario import Scenario, parse
-
 
 NOOP_HARNESS = textwrap.dedent(
     """

@@ -13,12 +13,13 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+
 from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
 
 app = FastAPI(title="checkpoint google-workspace twin")
@@ -46,7 +47,7 @@ _SYSTEM_LABELS = {
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _uid() -> str:
@@ -360,9 +361,10 @@ async def gmail_list_messages(request: Request):
 
     msgs = list(STATE["gmail_messages"].values())
     if q:
-        payload_matches = lambda m: q in (m.get("snippet", "") + " ".join(
-            h.get("value", "") for h in (m.get("payload", {}).get("headers") or [])
-        )).lower()
+        def payload_matches(m):
+            return q in (m.get("snippet", "") + " ".join(
+                    h.get("value", "") for h in (m.get("payload", {}).get("headers") or [])
+                )).lower()
         msgs = [m for m in msgs if payload_matches(m)]
     if label_ids:
         msgs = [m for m in msgs if any(lid in m.get("labelIds", []) for lid in label_ids)]
@@ -441,7 +443,7 @@ def _send_message_body(body: dict) -> dict:
         "labelIds": body.get("labelIds", ["SENT"]),
         "snippet": text_body[:100],
         "historyId": "1",
-        "internalDate": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
+        "internalDate": str(int(datetime.now(UTC).timestamp() * 1000)),
         "payload": {
             "headers": [
                 {"name": "From", "value": from_addr},
@@ -767,6 +769,8 @@ def drive_delete_permission(file_id: str, permission_id: str):
 
 # --- MCP transport -----------------------------------------------------------
 
-from checkpoint.mcp_servers.google_workspace_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.google_workspace_mcp import (
+    mount_on as _mount_mcp,  # noqa: E402
+)
 
 _mount_mcp(app)

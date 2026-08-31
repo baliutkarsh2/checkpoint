@@ -5,10 +5,7 @@ twin state shapes. Synthetic state dicts only — no twin processes, no LLM.
 """
 from __future__ import annotations
 
-import pytest
-
 from checkpoint.checker import check
-
 
 # ---------------------------------------------------------------------------
 # State builders

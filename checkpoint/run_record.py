@@ -16,10 +16,9 @@ import hashlib
 import json
 import platform
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 CACHE_ROOT = Path(".checkpoint/cache")
 RUNS_DIR = CACHE_ROOT / "runs"
@@ -27,7 +26,7 @@ LAST_RUN_POINTER = CACHE_ROOT / "last-run.json"
 
 
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def make_run_id(scenario_path: str | None, timestamp: str | None = None) -> str:

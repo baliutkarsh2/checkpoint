@@ -17,12 +17,13 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+
 from checkpoint.fake_credentials import FAKE_DISCORD_TOKEN
 
 app = FastAPI(title="checkpoint discord twin")
@@ -34,7 +35,7 @@ SEEDS_DIR = Path(__file__).parent / "discord_seeds"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _snowflake() -> str:

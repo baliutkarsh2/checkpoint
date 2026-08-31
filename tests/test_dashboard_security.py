@@ -1,8 +1,6 @@
 """Security regressions for the dashboard (PR-2): no RCE, no path traversal."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from click.testing import CliRunner
 from starlette.testclient import TestClient

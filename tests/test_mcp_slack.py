@@ -15,7 +15,6 @@ import time
 import httpx
 import pytest
 
-
 SLACK_TOOL_NAMES = {
     "slack_post_message",
     "slack_reply_to_thread",
