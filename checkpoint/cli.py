@@ -38,10 +38,59 @@ from . import diagnostics as _diag
 console = Console()
 
 
-@click.group()
+# Help is grouped into sections so `checkpoint --help` opens with the handful of
+# commands a new user actually needs, not a 28-item alphabetical wall.
+_HELP_SECTIONS: list[tuple[str, list[str]]] = [
+    ("Getting started", ["demo", "init", "run", "gate", "serve", "validate", "doctor"]),
+    ("Testing depth", ["redteam", "gen-attacks", "simulate", "mcp", "redteam-mcp"]),
+    ("Compliance & evidence", ["cert", "compliance", "badge", "report"]),
+    ("Runs & history", ["runs", "compare", "replay", "traces", "otel"]),
+    ("Project, twins & config", ["scenario", "clone", "config", "db", "docker", "ci"]),
+    ("Diagnostics", ["whoami", "debug"]),
+]
+
+
+class SectionedGroup(click.Group):
+    """A click.Group whose --help lists commands under labeled sections."""
+
+    def format_commands(self, ctx, formatter):
+        available = {}
+        for name in self.list_commands(ctx):
+            cmd = self.get_command(ctx, name)
+            if cmd is not None and not getattr(cmd, "hidden", False):
+                available[name] = cmd
+
+        placed: set[str] = set()
+        for title, names in _HELP_SECTIONS:
+            rows = [
+                (n, available[n].get_short_help_str(limit=62))
+                for n in names
+                if n in available
+            ]
+            if rows:
+                placed.update(n for n, _ in rows)
+                with formatter.section(title):
+                    formatter.write_dl(rows)
+
+        leftover = [
+            (n, available[n].get_short_help_str(limit=62))
+            for n in available
+            if n not in placed
+        ]
+        if leftover:
+            with formatter.section("More"):
+                formatter.write_dl(leftover)
+
+
+@click.group(cls=SectionedGroup)
 @click.version_option(package_name="checkpoint-agents", prog_name="checkpoint")
 def main():
-    """checkpoint: the release gate for AI agents — test against stateful SaaS twins."""
+    """checkpoint — the release gate for AI agents.
+
+    Run your real agent unmodified, N times, against stateful twins; a statistical
+    verdict (SHIP / CONDITIONAL / BLOCK) decides whether the build ships. New here?
+    Start with `checkpoint demo` — it runs offline with no Docker and no API key.
+    """
 
 
 @main.command("demo")
