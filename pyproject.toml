@@ -39,7 +39,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "pytest-timeout>=2.3",
+    "ruff>=0.6",
+]
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
 anthropic = ["anthropic>=0.40"]
@@ -104,3 +110,40 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests deliberately shadow and re-import fixtures.
 "tests/**" = ["B011"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# --strict-markers turns a typo'd marker into an error instead of a silent
+# no-op; --strict-config does the same for this table. --durations surfaces the
+# slowest tests so the suite's cost stays visible.
+addopts = "-ra --strict-markers --strict-config --durations=10"
+asyncio_mode = "strict"
+# The suite spawns uvicorn subprocesses and opens MCP sessions; without a bound,
+# one hung call hangs the whole run (and the CI job) until the job timeout.
+timeout = 300
+timeout_method = "thread"
+markers = [
+    "slow: takes more than a second or two",
+    "integration: spawns a real twin subprocess or MCP session",
+    "docker: requires a working Docker daemon",
+]
+
+[tool.coverage.run]
+source = ["checkpoint"]
+branch = true
+omit = [
+    "checkpoint/demo/*",
+    "checkpoint/init_templates/*",
+    "checkpoint/dashboard/web/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

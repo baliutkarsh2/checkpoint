@@ -20,6 +20,57 @@ permissions:
   contents: read
 
 jobs:
+  # The package advertises 3.11/3.12/3.13, so all three must actually run the
+  # suite. Deliberately lean: no SPA build, no Playwright, no wheel check —
+  # those are Python-version-independent packaging concerns already covered by
+  # build-and-test, and conditioning them per-leg would break the wheel step.
+  # Note the dependency graph really does differ: mitmproxy >=11.1.3 requires
+  # Python >=3.12, so 3.11 resolves a different major than 3.12/3.13.
+  pytest-matrix:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package with dev extras
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest tests/ -q
+
+  # The container images back three documented deployment paths and the default
+  # run mode, but nothing built them — a broken base image or dependency
+  # conflict would ship undetected. Build only; no registry credentials needed.
+  docker-build:
+    name: Build container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build the runtime image
+        run: docker build -f Dockerfile -t checkpoint:ci .
+
+      - name: Build the TLS sidecar image
+        run: docker build -f checkpoint/proxy/Dockerfile -t checkpoint-sidecar:ci .
+
   # Fast feedback: a lint failure should not wait behind the full build.
   lint:
     name: Lint (ruff)
@@ -121,6 +172,7 @@ jobs:
   build-and-test:
     name: Build SPA + run pytest + verify wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -164,8 +216,16 @@ jobs:
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
-      - name: Run pytest
-        run: pytest tests/ -q
+      - name: Run pytest with coverage
+        run: pytest tests/ -q --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage.xml
+          retention-days: 14
 
       # 3. Build sdist + wheel and prove the SPA is inside.
       - name: Build sdist + wheel
@@ -222,6 +282,7 @@ jobs:
   action:
     name: Validate the GitHub Action
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
