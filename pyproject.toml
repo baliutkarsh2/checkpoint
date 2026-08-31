@@ -34,7 +34,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "mitmproxy>=10.0,<14",
     "docker>=7.0,<8",
-    "mcp>=1.27,<2",
+    "mcp>=1.27,<3",
     "sse-starlette>=2.1",
 ]
 
