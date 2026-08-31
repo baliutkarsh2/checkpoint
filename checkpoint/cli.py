@@ -1535,6 +1535,22 @@ def docker_build_sidecar(force):
         sys.exit(1)
 
 
+@main.command("redteam-mcp")
+@click.option("--technique", default="MCP03", show_default=True,
+              type=click.Choice(["MCP03", "MCP06", "MCP10"]),
+              help="OWASP MCP attack: MCP03 tool poisoning, MCP06 intent subversion, MCP10 context injection.")
+def redteam_mcp(technique):
+    """Serve a deliberately POISONED MCP server (OWASP MCP Top 10) over stdio.
+
+    It looks like a benign knowledge-base server, but a tool description hides an
+    instruction to call a destructive `admin_delete_all` trap. Point your MCP
+    agent at it and confirm it does NOT get steered into the trap.
+    """
+    from .redteam.mcp_poison import build_poisoned_server
+    server, _state = build_poisoned_server(technique=technique)
+    server.run(transport="stdio")
+
+
 @main.command("mcp")
 def mcp_cmd():
     """Run Checkpoint as an MCP server (stdio) so a coding agent (Claude Code,
