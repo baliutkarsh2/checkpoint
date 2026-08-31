@@ -108,14 +108,14 @@ def demo(ctx, dashboard):
     """
     demo_dir = Path(__file__).parent / "demo"
     scenario = str(demo_dir / "smoke-scenario.md")
-    harness_py = demo_dir / "harness_fake.py"
-    # Build a command the harness parser can re-split. It uses shlex with
-    # posix=False on Windows (quotes are NOT stripped there), so quote only on
-    # posix and pass raw tokens on Windows.
-    if sys.platform == "win32":
-        command = f"{sys.executable} {harness_py}"
-    else:
-        command = f"{shlex.quote(sys.executable)} {shlex.quote(str(harness_py))}"
+    # Invoke the bundled agent as a MODULE, never as a file path. The harness
+    # parser re-splits this string with shlex (posix=False on Windows, where
+    # quotes are not stripped), so any path containing a space — the normal case
+    # for site-packages under "C:\Program Files\..." or a profile with a space —
+    # would be split apart. "-m" keeps the long path out of the command entirely.
+    command = f"{sys.executable} -m checkpoint.demo.harness_fake"
+    if sys.platform != "win32":
+        command = f"{shlex.quote(sys.executable)} -m checkpoint.demo.harness_fake"
     click.echo("Running the Checkpoint demo — deterministic, offline, no API key.\n")
     ctx.invoke(
         run,
@@ -1712,7 +1712,15 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
 
     if not no_baseline:
         from .gate import baseline as _baseline
-        _baseline.save(Path(target), result.scenarios)
+        # Never let a failing run rewrite the baseline. Otherwise the run that
+        # BLOCKs on a regression records its own degraded rate, and re-running
+        # the identical broken build sees no drop — the gate silently flips from
+        # BLOCK to CONDITIONAL. Regressed/failing scenarios keep their old
+        # baseline (save() merges per scenario, so omitting them preserves it).
+        keep = [s for s in result.scenarios
+                if s.classification not in ("regression", "stable_fail")]
+        if keep:
+            _baseline.save(Path(target), keep)
 
     cert_written: str | None = None
     if cert_path:

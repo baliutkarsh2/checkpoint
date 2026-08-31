@@ -39,6 +39,10 @@ def _request(method: str, path: str, payload: dict) -> tuple[int, str]:
             return resp.status, resp.read().decode("utf-8", "replace")[:160]
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode("utf-8", "replace")[:160]
+    except (urllib.error.URLError, OSError) as e:
+        # The twin isn't reachable. Report it as a failed call rather than
+        # dying with a traceback — the runner scores the run either way.
+        return 0, f"connection failed: {e}"
 
 
 def main() -> None:

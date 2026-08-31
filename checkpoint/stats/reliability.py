@@ -2,9 +2,10 @@
 
 A pass *rate* answers "what fraction of runs pass?". Buyers of a release gate ask
 a sharper question: "if this ships and runs k times in production, what's the
-chance all k succeed?" That is pass^k. We report it because a 90%-pass agent is a
-~35% chance of a failure within 10 runs (pass^10 ~= 0.35) — the gate should make
-that visible, not hide it behind a reassuring mean.
+chance all k succeed?" That is pass^k. We report it because a 90%-pass agent has
+only a ~35% chance that 10 consecutive runs all pass (pass^10 ~= 0.35) — i.e. a
+~65% chance of at least one failure. The gate should make that visible, not hide
+it behind a reassuring mean.
 
 We use the unbiased tau-bench estimator (Sierra, tau-bench 2024):
 

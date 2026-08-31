@@ -143,14 +143,17 @@ class LocalSigner:
 def verify(certificate: dict) -> bool:
     """Verify a self-signed certificate's signature over its canonical body."""
     sig = certificate.get("signature")
-    if not sig or sig.get("alg") != "ed25519":
+    # A tampered certificate can carry any JSON shape here; treat anything that
+    # isn't a well-formed ed25519 signature block as unverified rather than
+    # letting it raise out of a verification routine.
+    if not isinstance(sig, dict) or sig.get("alg") != "ed25519":
         return False
     body = {k: v for k, v in certificate.items() if k != "signature"}
     try:
         public = Ed25519PublicKey.from_public_bytes(base64.b64decode(sig["public_key"]))
         public.verify(base64.b64decode(sig["value"]), _canonical(body))
         return True
-    except (InvalidSignature, ValueError, KeyError):
+    except (InvalidSignature, ValueError, KeyError, TypeError):
         return False
 
 
