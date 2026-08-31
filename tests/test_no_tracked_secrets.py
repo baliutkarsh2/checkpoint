@@ -59,7 +59,8 @@ def _text_files() -> list[Path]:
         if rel == f"tests/{_SELF}":
             continue
         path = REPO_ROOT / rel
-        # Skip binary-ish assets and the committed SPA bundle.
+        # Skip the built SPA bundle if a local build left one in the tree
+        # (it is gitignored, so normally git ls-files won't surface it).
         if rel.startswith("checkpoint/dashboard/static/"):
             continue
         if path.suffix in {".png", ".ico", ".woff", ".woff2", ".ttf", ".jpg", ".jpeg", ".gif"}:

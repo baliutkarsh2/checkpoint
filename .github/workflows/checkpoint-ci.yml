@@ -103,7 +103,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: checkpoint/dashboard/web/package-lock.json
 
@@ -113,24 +113,15 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # 1. Rebuild the SPA from source. The committed bundle in
-      # checkpoint/dashboard/static/ MUST match what `npm run build` produces;
-      # otherwise the next step will fail and force the contributor to
-      # commit the fresh bundle. (JupyterLab pattern.)
+      # 1. Build the SPA from source. The bundle is NOT committed
+      # (checkpoint/dashboard/static/ is gitignored); it is produced here and
+      # packaged into the wheel by the "Build sdist + wheel" step below, so the
+      # published artifact always ships a fresh dashboard built on this runner.
       - name: Build dashboard SPA
         working-directory: checkpoint/dashboard/web
         run: |
           npm ci
           npm run build
-
-      - name: Verify committed SPA bundle matches a fresh build
-        run: |
-          if ! git diff --quiet -- checkpoint/dashboard/static/; then
-            echo "::error::checkpoint/dashboard/static/ is stale."
-            echo "Run \`cd checkpoint/dashboard/web && npm ci && npm run build\` and commit the result."
-            git diff --stat -- checkpoint/dashboard/static/
-            exit 1
-          fi
 
       # 2. Install Python deps + run the full pytest suite.
       - name: Install package with dev extras

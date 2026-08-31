@@ -18,9 +18,20 @@ export default defineConfig({
     target: "es2020",
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ["react", "react-dom", "react-router-dom"],
-          query: ["@tanstack/react-query"],
+        // Split the big vendors into their own chunks. Vite 8's rolldown
+        // bundler types manualChunks as a function (the object-map form was
+        // dropped), so we match on module id.
+        manualChunks(id: string) {
+          if (
+            id.includes("node_modules/react-router-dom") ||
+            id.includes("node_modules/react-dom") ||
+            id.includes("node_modules/react/")
+          ) {
+            return "react";
+          }
+          if (id.includes("node_modules/@tanstack/react-query")) {
+            return "query";
+          }
         },
       },
     },
