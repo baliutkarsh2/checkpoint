@@ -1922,6 +1922,54 @@ def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
     sys.exit(exit_code)
 
 
+@main.command("compliance")
+@click.option("--certificate", "cert_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="A signed gate certificate (from `checkpoint gate --certificate`).")
+@click.option("--redteam", "redteam_path", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="A red-team report JSON (from `checkpoint redteam -o json`).")
+@click.option("--out", "out_path", type=click.Path(dir_okay=False), default=None,
+              help="Write the assurance report (markdown) to this path.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def compliance_cmd(cert_path, redteam_path, out_path, output_format):
+    """Build an Agent Assurance Report from a signed gate certificate (and an
+    optional red-team report): the verdict, the statistical evidence, and OWASP
+    Agentic / NIST / EU-AI-Act cross-references — the document a reviewer wants.
+
+    Exit 1 if the overall verdict is REJECTED.
+    """
+    import json as _json
+
+    from .compliance import build_assurance, render_markdown
+    from .gate.certificate import verify as _verify_cert
+
+    try:
+        cert = _json.loads(Path(cert_path).read_text(encoding="utf-8"))
+        redteam = _json.loads(Path(redteam_path).read_text(encoding="utf-8")) if redteam_path else None
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read input: {e}[/red]")
+        sys.exit(1)
+
+    report = build_assurance(cert, redteam, signature_valid=_verify_cert(cert))
+    markdown = render_markdown(report)
+
+    if out_path:
+        Path(out_path).write_text(markdown, encoding="utf-8")
+        if output_format == "text":
+            console.print(f"[green]Assurance report written to {out_path}[/green]")
+
+    if output_format == "json":
+        console.print_json(_json.dumps(report))
+    else:
+        console.print(markdown, highlight=False)
+        style = {"APPROVED": "green", "CONDITIONAL": "yellow", "REJECTED": "red"}[report["overall"]]
+        console.print(Panel.fit(f"[bold {style}]{report['overall']}[/bold {style}]",
+                                title="assurance", border_style=style))
+
+    sys.exit(1 if report["overall"] == "REJECTED" else 0)
+
+
 @main.command("gen-attacks")
 @click.argument("base_scenario", type=click.Path(exists=True))
 @click.option("--out", "out_dir", type=click.Path(file_okay=False), required=True,
