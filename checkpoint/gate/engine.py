@@ -1,12 +1,18 @@
 """Run the gate: execute each scenario N times and summarize the distribution."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Iterable
 
 from ..runner import run_once
 from ..scenario import parse_file
-from .verdict import GatePolicy, GateResult, ScenarioStat, decide_verdict, summarize_scenario
+from .verdict import (
+    GatePolicy,
+    GateResult,
+    ScenarioStat,
+    decide_verdict,
+    summarize_scenario,
+)
 
 # progress(scenario_name, run_index, total_runs, score, complete)
 ProgressFn = Callable[[str, int, int, float, bool], None]

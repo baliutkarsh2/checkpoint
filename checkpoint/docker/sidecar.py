@@ -22,9 +22,9 @@ import logging
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
-from typing import Callable, Optional
 
 import checkpoint
 
@@ -54,7 +54,7 @@ def sidecar_image_exists(client, tag: str = SIDECAR_IMAGE) -> bool:
         return False
 
 
-def _find_source_root() -> Optional[Path]:
+def _find_source_root() -> Path | None:
     """Return the repo root if we're running from a source checkout.
 
     A valid build context has pyproject.toml next to the checkpoint package.
@@ -129,7 +129,7 @@ def ensure_sidecar_image(
     tag: str = SIDECAR_IMAGE,
     *,
     force: bool = False,
-    log_fn: Optional[Callable[[str], None]] = None,
+    log_fn: Callable[[str], None] | None = None,
 ) -> str:
     """Ensure the sidecar image exists, building it once if needed. Returns the tag."""
     emit = log_fn or log.info

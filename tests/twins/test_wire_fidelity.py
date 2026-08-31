@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from checkpoint.twins import github as gh
 from checkpoint.twins.stripe import _assign_bracket_path, _bracket_segments
 
-
 # --- Stripe bracket-path form parsing ------------------------------------
 
 def test_bracket_segments():

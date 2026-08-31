@@ -21,9 +21,9 @@ from typing import Any
 from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
-from ._shim import make_shim, mount_mcp_on_fastapi
 from checkpoint.fake_credentials import FAKE_STRIPE_KEY
 
+from ._shim import make_shim, mount_mcp_on_fastapi
 
 STRIPE_BOOTSTRAP_TOKEN = FAKE_STRIPE_KEY
 

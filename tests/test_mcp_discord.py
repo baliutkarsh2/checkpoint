@@ -13,7 +13,6 @@ import time
 import httpx
 import pytest
 
-
 DISCORD_TOOL_NAMES = {
     "discord_get_current_user",
     "discord_get_user",

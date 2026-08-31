@@ -19,21 +19,19 @@ from rich.table import Table
 # anything already in the environment.
 load_dotenv(find_dotenv(usecwd=True), override=False)
 
-from .runner import RunResult, run_once
-from .scenario import Scenario, parse_file
+from . import diagnostics as _diag
+from .compare_diff import build_compare_diff as _build_compare_diff
 from .config import (
-    CheckpointConfig,
-    HarnessConfig,
     load_checkpoint_config,
     load_harness_config,
-    resolve_evaluator_model,
     matches_tag,
+    resolve_evaluator_model,
 )
 from .failure_analyzer import analyze as analyze_failures
-from .run_record import build_record, write_record, load_last_run, RUNS_DIR
-from .compare_diff import build_compare_diff as _build_compare_diff
+from .run_record import RUNS_DIR, build_record, load_last_run, write_record
+from .runner import RunResult, run_once
+from .scenario import Scenario, parse_file
 from .telemetry import build_telemetry_report
-from . import diagnostics as _diag
 
 console = Console()
 
@@ -465,7 +463,7 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
             })
 
         # EV-05 + EV-06: per-run failure analysis + persisted run record.
-        for r, dur_ms in zip(results, durations_ms):
+        for r, dur_ms in zip(results, durations_ms, strict=False):
             _persist_run_record(
                 r,
                 scenario_name=scenario.title or (Path(scn_path).name if scn_path else "<inline>"),
@@ -932,6 +930,7 @@ def _enumerate_scenarios(root: Path) -> list[dict]:
 def _suggest_reword(text: str) -> str | None:
     """Return a reword hint when a [D] criterion noun is recognisable but unmatched."""
     import re as _re
+
     from .checker import _RESOURCE_MAP
     t = text.lower()
     for noun, _twin, _key in _RESOURCE_MAP:
@@ -955,6 +954,7 @@ def scenario_generate(description, output, clone, model):
     """Generate a scenario .md from a prose description (uses LLM)."""
     import os
     import tempfile
+
     from .scenario_gen import generate as _gen
 
     content = _gen(description, clone=clone, model=model)
@@ -1527,7 +1527,7 @@ def report(scenario_pattern, limit, as_json):
 
     SCENARIO_PATTERN is a substring filter on scenario name (empty = all runs).
     """
-    from .analytics import load_runs_for_scenario, compute_trend, detect_flaky
+    from .analytics import compute_trend, detect_flaky, load_runs_for_scenario
 
     runs = load_runs_for_scenario(scenario_pattern, RUNS_DIR, limit)
     if not runs:
@@ -1823,7 +1823,9 @@ def cert_group():
 def cert_verify(cert_file):
     """Verify a certificate's signature (and report expiry). Exit 1 if invalid."""
     import json as _json2
-    from .gate.certificate import is_expired, verify as _verify
+
+    from .gate.certificate import is_expired
+    from .gate.certificate import verify as _verify
 
     try:
         certificate = _json2.loads(Path(cert_file).read_text(encoding="utf-8"))
@@ -1970,7 +1972,8 @@ def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
     import json as _json
     import shlex as _shlex
 
-    from .simuser import Persona, simulate as run_sim
+    from .simuser import Persona
+    from .simuser import simulate as run_sim
     from .simuser.persona import scenario_persona
 
     scenario = parse_file(scenario_path)
@@ -2070,6 +2073,7 @@ def db_migrate_cmd():
 def db_list_cmd(scenario, limit, as_json):
     """List recent runs from the store."""
     import json as _json
+
     from .store import SqliteRunStore
     store = SqliteRunStore()
     try:
@@ -2462,10 +2466,12 @@ def serve(port, host, scenarios_dir, auto_open, judge_model):
             sys.exit(1)
 
     import logging
-    import uvicorn
     import webbrowser
-    from .dashboard.app import create_app
+
+    import uvicorn
+
     from .clone_manager import DEFAULT_REGISTRY
+    from .dashboard.app import create_app
 
     # Wire stdlib logging once so middleware + watcher logs appear under
     # uvicorn's color-aware handler.
@@ -2573,7 +2579,8 @@ def config_path_cmd():
               help="Overwrite an existing config file.")
 def config_init(force):
     """Create ~/.checkpoint/config.json with sensible defaults."""
-    from .user_config import UserConfig, config_path as _cp
+    from .user_config import UserConfig
+    from .user_config import config_path as _cp
     p = _cp()
     if p.exists() and not force:
         console.print(f"[yellow]Config already exists at {p}. Use --force to overwrite.[/yellow]")
@@ -2594,7 +2601,7 @@ def config_init(force):
               help="Resolve env: indirections (default: show env: literally).")
 def config_show(as_json, reveal_env):
     """Show all keys in the user config."""
-    from .user_config import UserConfig, KNOWN_KEYS
+    from .user_config import KNOWN_KEYS, UserConfig
     cfg = UserConfig.load()
     flat = cfg.flatten()
     if reveal_env:
@@ -2642,7 +2649,7 @@ def config_set(key, value):
         checkpoint config set defaults.pass_threshold 80
         checkpoint config set engine.openai_api_key env:OPENAI_API_KEY
     """
-    from .user_config import UserConfig, KNOWN_KEYS
+    from .user_config import KNOWN_KEYS, UserConfig
     if key not in KNOWN_KEYS:
         console.print(
             f"[yellow]Warning: '{key}' is not a known config key. "
@@ -2689,7 +2696,6 @@ def debug_group():
 @debug_group.command("doctor")
 def debug_doctor_alias():
     """Alias for `checkpoint doctor` — environment readiness check."""
-    from click.testing import CliRunner
     # Re-invoke the existing top-level doctor command.
     from .cli import doctor as _d
     ctx = click.Context(_d)

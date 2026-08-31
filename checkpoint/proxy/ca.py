@@ -9,7 +9,7 @@ that bites the smoke test (Phase 1 risk #1).
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cryptography import x509
@@ -25,7 +25,7 @@ def mint_ca(out_dir: Path, *, validity_hours: int = 24) -> Path:
     key_path = out_dir / "ca.key"
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, "checkpoint-sidecar-ca"),
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "checkpoint"),

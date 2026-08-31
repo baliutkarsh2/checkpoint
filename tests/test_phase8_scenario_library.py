@@ -16,7 +16,6 @@ import pytest
 
 from checkpoint.scenario import parse_file
 
-
 SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "scenarios"
 
 EXPECTED = {

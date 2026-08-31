@@ -11,7 +11,6 @@ from starlette.testclient import TestClient
 
 from checkpoint.dashboard.app import create_app
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -316,6 +315,7 @@ def test_jobs_start_and_lifecycle(tmp_path, monkeypatch):
 
     # Replace the cmd so we just exit 0 quickly without running the real CLI.
     import sys as _sys
+
     from checkpoint.dashboard import jobs as jobs_mod
 
     real_start = jobs_mod.JobManager.start

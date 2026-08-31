@@ -14,13 +14,13 @@ into the FastAPI lifespan (without it, the mounted MCP returns 500
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Callable, Awaitable, Mapping
+from typing import Any
 
 import httpx
 from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
-
 
 ShimFn = Callable[..., Awaitable[Any]]
 

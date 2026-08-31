@@ -7,9 +7,8 @@ signature.
 """
 from __future__ import annotations
 
-from checkpoint.compliance.report import _overall, APPROVED, CONDITIONAL, REJECTED
+from checkpoint.compliance.report import APPROVED, CONDITIONAL, REJECTED, _overall
 from checkpoint.gate.certificate import verify
-
 
 # --- assurance report must not approve unverifiable evidence ---------------
 

@@ -23,8 +23,8 @@ from pathlib import Path
 from . import __version__
 from .clone_manager import DEFAULT_REGISTRY
 from .config import load_checkpoint_config
-from .user_config import UserConfig, config_path, home_dir
 from .run_record import RUNS_DIR
+from .user_config import UserConfig, config_path, home_dir
 
 
 @dataclass

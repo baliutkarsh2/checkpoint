@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from checkpoint.twins import github as gh
 
-
 SEED_NAMES = [
     "empty", "small-project", "enterprise-repo", "stale-issues",
     "large-backlog", "merge-conflict", "ci-cd-pipeline",

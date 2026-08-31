@@ -34,25 +34,19 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import docker
 from docker.errors import APIError, NotFound
 
+from ..proxy.routes import all_domains, lookup, register
 from ..runner import (
     RunResult,
     _evaluate,
     _extract_final_answer,
-    _fetch_state,
-    _fetch_trace,
-    _free_port,
-    _wait_healthy,
 )
 from ..scenario import Scenario
-from ..proxy.routes import register, lookup, all_domains
-from .harness_image import build_harness_image, HarnessImageError
+from .harness_image import HarnessImageError, build_harness_image
 from .sidecar import SIDECAR_IMAGE, ensure_sidecar_image
-
 
 _DOCKER_TWIN_APPS = {
     "github": "checkpoint.twins.github:app",
@@ -85,8 +79,8 @@ log = logging.getLogger("checkpoint.docker.runner")
 
 @dataclass
 class DockerRunResult(RunResult):
-    metrics: Optional[dict] = None
-    agent_trace: Optional[dict] = None
+    metrics: dict | None = None
+    agent_trace: dict | None = None
 
 
 def _write_hosts_file(tmpdir: Path) -> Path:
@@ -233,7 +227,7 @@ def _build_env(scenario: Scenario, judge_model: str) -> dict:
     return env
 
 
-def _read_output(archal_out: Path, name: str) -> Optional[dict]:
+def _read_output(archal_out: Path, name: str) -> dict | None:
     p = Path(archal_out) / name
     if not p.exists():
         return None
@@ -248,7 +242,7 @@ def docker_run_once(
     scenario: Scenario,
     harness_cmd: list,
     harness_dir: Path,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     judge_model: str = "gpt-4o-mini",
     verbose: bool = False,
 ) -> DockerRunResult:
@@ -283,7 +277,7 @@ def docker_run_once(
         for domain in _CLONE_DOMAINS.get(clone, []):
             routes[domain] = twin_url
             # For subdomains not in _ROUTES, inherit the parent domain's bootstrap token.
-            token: Optional[str] = None
+            token: str | None = None
             parts = domain.split(".")
             for i in range(len(parts)):
                 parent_route = lookup(".".join(parts[i:]))

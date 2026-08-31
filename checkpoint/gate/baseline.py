@@ -59,7 +59,7 @@ def load(target: Path) -> dict[str, float]:
 def save(target: Path, stats) -> None:
     """Record the pass rate of each ScenarioStat as the new baseline."""
     all_data = _read_all()
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now = datetime.datetime.now(datetime.UTC).isoformat()
     section = all_data.setdefault(_target_key(target), {})
     for s in stats:
         section[s.scenario] = {

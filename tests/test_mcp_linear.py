@@ -13,7 +13,6 @@ import time
 import httpx
 import pytest
 
-
 LINEAR_TOOL_NAMES = {
     "linear_get_organization",
     "linear_list_teams",

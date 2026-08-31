@@ -8,11 +8,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
-from checkpoint.scenario_gen import generate
 from checkpoint.cli import _suggest_reword
-
+from checkpoint.scenario_gen import generate
 
 # ---------------------------------------------------------------------------
 # Fake OpenAI client
@@ -163,6 +160,7 @@ def test_coverage_json_structure(tmp_path):
     (tmp_path / "ft.md").write_text(_FALLTHROUGH_SCENARIO, encoding="utf-8")
 
     from click.testing import CliRunner
+
     from checkpoint.cli import main
 
     runner = CliRunner()

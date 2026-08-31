@@ -6,7 +6,12 @@ import datetime
 import pytest
 
 from checkpoint.gate import certificate as cert
-from checkpoint.gate.verdict import GatePolicy, GateResult, summarize_scenario, decide_verdict
+from checkpoint.gate.verdict import (
+    GatePolicy,
+    GateResult,
+    decide_verdict,
+    summarize_scenario,
+)
 
 
 def _gate_result(scores_per_scenario: dict[str, list[float]], policy: GatePolicy) -> GateResult:
@@ -78,6 +83,6 @@ def test_expiry_check(signer):
     p = GatePolicy(runs=5)
     gr = _gate_result({"a.md": [100.0] * 5}, p)
     body = cert.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"], valid_days=1)
-    future = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)
+    future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=2)
     assert cert.is_expired(body, now=future) is True
     assert cert.is_expired(body) is False
