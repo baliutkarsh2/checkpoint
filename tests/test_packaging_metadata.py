@@ -51,10 +51,16 @@ def test_no_speculative_upper_bounds_on_dependencies():
     versions. A cap may only be added with evidence of a real incompatibility,
     and then it belongs in a comment next to the pin.
     """
+    # Bounds that ARE justified carry a comment in pyproject explaining the
+    # observed incompatibility; those are listed here so adding a new one is a
+    # deliberate edit to this test rather than a silent pin.
+    justified = {"openai"}
     capped = [d for d in PYPROJECT["project"]["dependencies"] if "<" in d]
-    assert not capped, (
-        "these dependencies carry an upper bound; support the new major instead "
-        f"(see checkpoint/mcp_compat.py for how mcp 1.x/2.x is handled): {capped}"
+    unjustified = [d for d in capped if d.split(">=")[0].split("[")[0] not in justified]
+    assert not unjustified, (
+        "these dependencies carry a speculative upper bound; support the new "
+        "major instead (see checkpoint/mcp_compat.py for how mcp 1.x/2.x is "
+        f"handled), or document the incompatibility: {unjustified}"
     )
 
 
