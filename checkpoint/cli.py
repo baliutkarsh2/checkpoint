@@ -39,8 +39,9 @@ console = Console()
 
 
 @click.group()
+@click.version_option(package_name="checkpoint-agents", prog_name="checkpoint")
 def main():
-    """checkpoint: agent testing against stateful SaaS twins."""
+    """checkpoint: the release gate for AI agents — test against stateful SaaS twins."""
 
 
 @main.command()
