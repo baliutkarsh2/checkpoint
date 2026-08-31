@@ -18,15 +18,9 @@ jobs:
           fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
 
       - name: Run gitleaks
-        # Non-blocking: the full-history scan currently flags a key that was
-        # committed to .env in OLD history (before this work). That is a known
-        # issue with a maintainer runbook in SECURITY.md (rotate the key, then
-        # purge history) — CI can't fix it, so it must not block merges. Every
-        # NEW commit is still gated: `.env` is untracked, and the pytest tripwire
-        # (tests/test_no_tracked_secrets.py) fails the test suite on any real key.
-        # Once history is purged this passes cleanly and the guard can be removed.
-        # Removal is step 5 of docs/releasing.md.
-        continue-on-error: true
+        # BLOCKING. This repo's history was published with the old `.env` blob
+        # already purged (git filter-repo), so the full-history scan is clean and
+        # a secret in any commit — new or old — must fail the build.
         uses: gitleaks/gitleaks-action@v3
         env:
           GITLEAKS_CONFIG: .gitleaks.toml

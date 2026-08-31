@@ -43,13 +43,14 @@ Settings → Code security:
 
 ## 5. Make the security gates blocking
 
-Both gates are currently non-blocking for reasons that disappear once the repo is
-public and the history is purged. Delete one line from each:
+The gitleaks gate is already blocking (this history is clean). CodeQL stays
+non-blocking until the repository is public, because code scanning needs GitHub
+Advanced Security on a private repo. One line to delete once public:
 
 | File | Line to delete | Why it was there |
 |---|---|---|
 | `.github/workflows/codeql.yml` | `continue-on-error: true` | Code scanning needs Advanced Security on a private repo; it is free once public. Verify with `gh api repos/<owner>/<repo>/code-scanning/alerts` — a 403 means it is still off. |
-| `.github/workflows/gitleaks.yml` | `continue-on-error: true` | The full-history scan flagged the key from step 1. Safe to enforce after the purge. |
+
 
 Blocking coverage does not depend on these: `tests/test_no_tracked_secrets.py`
 runs in the gating test job and fails on a real provider key in any tracked file.
