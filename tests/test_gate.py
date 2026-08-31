@@ -127,3 +127,30 @@ def test_gate_cli_end_to_end(tmp_path, monkeypatch):
     assert payload["verdict"] in ("SHIP", "CONDITIONAL")
     assert payload["scenarios"][0]["passes"] == 5
     assert payload["scenarios"][0]["mean_score"] == 100.0
+
+
+def test_gate_writes_and_verifies_certificate(tmp_path, monkeypatch):
+    if not SMOKE.is_file() or not FAKE_HARNESS.is_file():
+        import pytest
+        pytest.skip("smoke assets missing")
+    monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))  # isolate the signing key
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cert_file = tmp_path / "cert.json"
+
+    r = CliRunner().invoke(main, [
+        "gate", str(SMOKE),
+        "--harness", f"{sys.executable} {FAKE_HARNESS}",
+        "-n", "3", "--agent", "smoke-bot",
+        "--certificate", str(cert_file), "-o", "json",
+    ])
+    assert r.exit_code == 0, r.output
+    assert cert_file.is_file()
+    cert_doc = json.loads(cert_file.read_text())
+    assert cert_doc["subject"]["agent"] == "smoke-bot"
+    assert "signature" in cert_doc
+
+    # The `cert verify` command accepts the freshly written certificate.
+    v = CliRunner().invoke(main, ["cert", "verify", str(cert_file)])
+    assert v.exit_code == 0, v.output
+    assert "VALID" in v.output

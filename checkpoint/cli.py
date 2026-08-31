@@ -1552,10 +1552,13 @@ def docker_build_sidecar(force):
 @click.option("--strict", is_flag=True, default=False,
               help="Exit non-zero on CONDITIONAL as well as BLOCK.")
 @click.option("--judge-model", default=None, help="Model for [P] LLM-judged criteria.")
+@click.option("--agent", default=None, help="Agent name recorded in the certificate.")
+@click.option("--certificate", "cert_path", type=click.Path(dir_okay=False), default=None,
+              help="Write a signed Trust Certificate of the verdict to this path.")
 @click.option("-o", "--output", "output_format",
               type=click.Choice(["text", "json"]), default="text", show_default=True)
 def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
-         strict, judge_model, output_format):
+         strict, judge_model, agent, cert_path, output_format):
     """Statistically gate an agent: run each scenario N times and decide
     SHIP / CONDITIONAL / BLOCK from the pass-rate distribution (not one run).
 
@@ -1587,6 +1590,20 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
 
     result = run_gate(Path(target), harness_cmd, policy, judge_model=jm, progress=_progress)
 
+    cert_written: str | None = None
+    if cert_path:
+        from .gate.certificate import LocalSigner, build_certificate
+        body = build_certificate(
+            result,
+            agent=agent or Path(target).stem,
+            harness_cmd=harness_cmd,
+            commit_sha=_git_commit_sha(),
+            model=jm,
+        )
+        signed = LocalSigner().sign(body)
+        Path(cert_path).write_text(_json.dumps(signed, indent=2), encoding="utf-8")
+        cert_written = cert_path
+
     if output_format == "json":
         console.print_json(_json.dumps({
             "verdict": result.verdict,
@@ -1604,6 +1621,7 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
                 "mean_score": round(s.mean_score, 2),
             } for s in result.scenarios],
             "errors": result.errors,
+            "certificate": cert_written,
         }))
         sys.exit(result.exit_code)
 
@@ -1637,7 +1655,57 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         title="gate verdict",
         border_style=verdict_style.split()[-1],
     ))
+    if cert_written:
+        console.print(f"[dim]Signed certificate written to {cert_written}[/dim]")
     sys.exit(result.exit_code)
+
+
+def _git_commit_sha() -> str | None:
+    """Best-effort current commit SHA, for certificate provenance."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() or None if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+@main.group("cert")
+def cert_group():
+    """Work with signed Trust Certificates."""
+
+
+@cert_group.command("verify")
+@click.argument("cert_file", type=click.Path(exists=True, dir_okay=False))
+def cert_verify(cert_file):
+    """Verify a certificate's signature (and report expiry). Exit 1 if invalid."""
+    import json as _json2
+    from .gate.certificate import is_expired, verify as _verify
+
+    try:
+        certificate = _json2.loads(Path(cert_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        console.print(f"[red]Cannot read certificate: {e}[/red]")
+        sys.exit(1)
+
+    ok = _verify(certificate)
+    expired = is_expired(certificate)
+    subject = certificate.get("subject", {})
+    console.print(Panel.fit(
+        f"[bold]{'VALID' if ok else 'INVALID'}[/bold]  signature\n"
+        f"verdict:  {certificate.get('verdict', '?')}\n"
+        f"agent:    {subject.get('agent', '?')}\n"
+        f"gate id:  {certificate.get('gate_id', '?')}\n"
+        f"issued:   {certificate.get('issued_at', '?')}\n"
+        f"expires:  {certificate.get('expires_at', '?')}"
+        + ("  [red](EXPIRED)[/red]" if expired else ""),
+        title="checkpoint cert verify",
+        border_style="green" if ok and not expired else "red",
+    ))
+    sys.exit(0 if (ok and not expired) else 1)
 
 
 @main.command("validate")
