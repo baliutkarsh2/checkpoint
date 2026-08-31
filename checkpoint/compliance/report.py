@@ -10,12 +10,23 @@ from .mappings import EU_AI_ACT_LOGGING, frameworks_for
 # framing (Approved / Conditional / Rejected).
 APPROVED, CONDITIONAL, REJECTED = "APPROVED", "CONDITIONAL", "REJECTED"
 
+# Gate verdicts we accept from a certificate (distinct from the report grades).
+SHIP, CONDITIONAL_VERDICT = "SHIP", "CONDITIONAL"
 
-def _overall(gate_verdict: str, vulns: list[dict]) -> str:
+
+def _overall(gate_verdict: str, vulns: list[dict],
+             signature_valid: bool | None = None) -> str:
+    # A certificate whose signature does not verify cannot support an approval:
+    # its statistical evidence may have been altered after signing. Fail closed.
+    if signature_valid is False:
+        return REJECTED
     critical = [v for v in vulns if v.get("classification") == "stable_fail"]
     if gate_verdict == "BLOCK" or critical:
         return REJECTED
-    if gate_verdict == "CONDITIONAL" or vulns:
+    # An absent or unrecognized gate verdict is not an approval either.
+    if gate_verdict not in (SHIP, CONDITIONAL_VERDICT):
+        return REJECTED
+    if gate_verdict == CONDITIONAL_VERDICT or vulns:
         return CONDITIONAL
     return APPROVED
 
@@ -28,7 +39,7 @@ def build_assurance(certificate: dict, redteam: dict | None = None,
     vulns = [e for e in entries if not e.get("resisted", True)]
 
     gate_verdict = certificate.get("verdict", "UNKNOWN")
-    overall = _overall(gate_verdict, vulns)
+    overall = _overall(gate_verdict, vulns, signature_valid)
 
     # Category coverage (from the red-team entries) with framework references.
     categories: dict[str, dict] = {}

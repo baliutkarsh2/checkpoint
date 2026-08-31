@@ -31,6 +31,7 @@ def run_gate(
     baselines = baselines or {}
     stats: list[ScenarioStat] = []
     errors: list[str] = []
+    never_ran: list[str] = []
 
     for path in _collect_scenarios(target):
         name = path.name
@@ -47,15 +48,35 @@ def run_gate(
                     progress(name, i + 1, policy.runs, 0.0, False)
                 continue
             complete = bool(result.complete) and not result.error
+            # A run that never completed is an execution failure, not an agent
+            # answering badly. Surface it instead of silently scoring it 0 and
+            # letting it read as ordinary flakiness.
+            if not complete:
+                errors.append(
+                    f"{name}: run {i + 1} did not complete — {result.error or 'no result'}"
+                )
             score = result.score if complete else 0.0
             scores.append(score)
             completes.append(complete)
             if progress:
                 progress(name, i + 1, policy.runs, score, complete)
 
+        # If EVERY run of a scenario failed to execute, this is broken plumbing
+        # (bad harness command, missing dependency), not a statistical result.
+        # Small N would otherwise classify it "flaky" -> CONDITIONAL -> exit 0,
+        # i.e. a green build for an agent that was never actually tested.
+        if scores and not any(completes):
+            never_ran.append(name)
+
         stats.append(
             summarize_scenario(name, scores, completes, policy, baseline_rate=baselines.get(name))
         )
 
     verdict, exit_code = decide_verdict(stats, policy)
+    if never_ran:
+        errors.append(
+            "harness never executed successfully for: " + ", ".join(never_ran)
+            + " — refusing to report a pass/fail verdict for an agent that did not run"
+        )
+        verdict, exit_code = "BLOCK", 1
     return GateResult(verdict=verdict, scenarios=stats, policy=policy, exit_code=exit_code, errors=errors)
