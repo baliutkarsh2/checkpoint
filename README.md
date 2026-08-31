@@ -121,6 +121,10 @@ Add `--certificate cert.json` to issue a **signed Trust Certificate** — the ve
 
 `checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack — scenarios mapped to the **OWASP Agentic Top 10** where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate) — and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them.
 
+## Simulated users
+
+A single prompt tests a single exchange; real users push back, clarify, and get impatient. `checkpoint simulate <scenario> --harness "..." --goal "..."` drives an LLM **persona** through a multi-turn conversation with your agent against stateful twins (state accumulates turn over turn), then scores whether the goal was met. Because simulated users are imperfect proxies for humans, every run reports a **calibration confidence** — the score is never presented as ground truth. Use `--persona`, `--tone`, `--patience`, and `--adversarial` to shape the user.
+
 ## CI integration
 
 ```yaml
@@ -143,6 +147,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
 | `checkpoint gate ... --certificate cert.json` / `checkpoint cert verify cert.json` | Issue / verify a signed Trust Certificate |
 | `checkpoint redteam --harness "..."` | Run the OWASP Agentic Top 10 adversarial pack; report vulnerabilities |
+| `checkpoint simulate <scenario> --harness "..."` | Multi-turn simulated-user conversation with a calibration confidence |
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
@@ -152,7 +157,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, and trajectory-level `[T]` scoring ship today. Next: automated adversarial generation, calibrated multi-turn user simulation, persistent baselines for regression detection, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, and trajectory-level `[T]` scoring ship today. Next: automated adversarial generation, persona calibration against real transcripts, a full SQLite run store, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 
