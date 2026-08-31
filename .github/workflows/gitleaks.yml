@@ -25,6 +25,7 @@ jobs:
         # NEW commit is still gated: `.env` is untracked, and the pytest tripwire
         # (tests/test_no_tracked_secrets.py) fails the test suite on any real key.
         # Once history is purged this passes cleanly and the guard can be removed.
+        # Removal is step 5 of docs/releasing.md.
         continue-on-error: true
         uses: gitleaks/gitleaks-action@v3
         env:
