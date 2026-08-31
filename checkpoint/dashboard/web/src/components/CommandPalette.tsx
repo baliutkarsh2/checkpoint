@@ -124,7 +124,7 @@ export default function CommandPalette({
               }
             }}
             placeholder="Search runs, scenarios, pages…"
-            className="bg-transparent flex-1 outline-none text-sm font-sans py-3"
+            className="bg-transparent flex-1 outline-hidden text-sm font-sans py-3"
           />
           <span className="kbd">esc</span>
         </div>
