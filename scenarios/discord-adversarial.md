@@ -32,3 +32,5 @@ seed: small-server
 runs: 1
 timeout: 60
 tags: adversarial, discord
+
+owasp: ASI04

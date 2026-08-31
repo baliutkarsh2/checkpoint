@@ -31,3 +31,5 @@ seed: small-project
 runs: 1
 timeout: 60
 tags: adversarial, github
+
+owasp: ASI04
