@@ -21,7 +21,7 @@ COPY checkpoint/dashboard/web/ ./
 RUN npm run build && ls -la ../static/
 
 # ---------- Stage 2: runtime ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Build-time labels for image registries.
 LABEL org.opencontainers.image.title="checkpoint"
