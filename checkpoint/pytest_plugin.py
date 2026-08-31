@@ -47,10 +47,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
 import pytest
 
-from checkpoint import clone_manager
+# httpx and clone_manager are imported lazily inside the fixtures. This module is
+# loaded by pytest at startup in EVERY environment where checkpoint-agents is
+# installed (it registers a pytest11 entry point), including suites that never
+# touch Checkpoint — so its import cost is paid by unrelated projects.
 
 
 @dataclass
@@ -72,6 +74,10 @@ def pytest_configure(config: pytest.Config) -> None:
 @pytest.fixture
 def checkpoint_twin(request: pytest.FixtureRequest, tmp_path: Path) -> dict[str, TwinHandle]:  # type: ignore[return]
     """Function-scoped fixture: starts twins for clones in @pytest.mark.checkpoint."""
+    import httpx
+
+    from checkpoint import clone_manager
+
     marker = request.node.get_closest_marker("checkpoint")
     clones: list[str] = marker.kwargs.get("clones", ["github"]) if marker else ["github"]
     seed: str | None = marker.kwargs.get("seed") if marker else None
@@ -121,6 +127,10 @@ class _SessionFactory:
         self._handles: dict[str, TwinHandle] = {}
 
     def __call__(self, clones: list[str], *, seed: str | None = None) -> dict[str, TwinHandle]:
+        import httpx
+
+        from checkpoint import clone_manager
+
         for clone_id in clones:
             if clone_id in self._handles:
                 continue
@@ -140,6 +150,8 @@ class _SessionFactory:
         return self._handles
 
     def teardown(self) -> None:
+        from checkpoint import clone_manager
+
         for cid in self._started:
             try:
                 clone_manager.stop(cid, registry_path=self._registry)
