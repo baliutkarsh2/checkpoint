@@ -157,6 +157,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint mcp` | Run Checkpoint as an MCP server so a coding agent can test the agent it's building |
+| `checkpoint redteam-mcp` | Serve a poisoned MCP server (OWASP MCP Top 10) to test MCP-attack resistance |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
 | `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
