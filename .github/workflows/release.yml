@@ -51,14 +51,30 @@ jobs:
           python -m build
           python -m twine check dist/*
 
-      - name: Verify the wheel ships the SPA bundle
+      # Guard the published artifact: everything read at runtime must be inside
+      # the wheel, or `pip install checkpoint-agents` ships a broken package.
+      - name: Verify the wheel ships all runtime assets
         run: |
           python - <<'PY'
           import glob, sys, zipfile
           whl = sorted(glob.glob("dist/*.whl"))[-1]
           names = zipfile.ZipFile(whl).namelist()
-          assert any("dashboard/static/index.html" in n for n in names), "SPA bundle missing"
-          print("OK:", whl)
+
+          def need(pred, what):
+              if not any(pred(n) for n in names):
+                  sys.exit(f"FAIL: {whl} is missing {what}")
+              print("OK:", what)
+
+          need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
+          need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
+          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+
+          seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
+          if len(seeds) < 20:
+              sys.exit(f"FAIL: {whl} ships only {len(seeds)} twin seed files")
+          print(f"OK: {len(seeds)} twin seed fixtures")
+          print("release wheel verified:", whl)
           PY
 
       - name: Upload distributions
