@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# SBX-02: gh CLI bridge to the GitHub twin.
-# Thin shim — all logic lives in checkpoint.sandbox.gh_bridge.
-exec python3 -m checkpoint.sandbox.gh_bridge "$@"

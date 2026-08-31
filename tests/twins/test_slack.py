@@ -33,16 +33,16 @@ def test_missing_token_returns_not_authed(client):
 
 
 def test_wrong_token_returns_invalid_auth(client):
-    r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-wrong"})
+    r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-CHECKPOINTFAKE-wrong"})
     assert r.status_code == 200
     assert r.json() == {"ok": False, "error": "invalid_auth"}
 
 
 def test_env_override(monkeypatch, client):
-    monkeypatch.setenv("SLACK_BOOTSTRAP_TOKEN", "xoxb-env-override")
+    monkeypatch.setenv("SLACK_BOOTSTRAP_TOKEN", "xoxb-CHECKPOINTFAKE-env-override")
     r = client.get("/api/conversations.list", headers=H)
     assert r.json() == {"ok": False, "error": "invalid_auth"}
-    r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-env-override"})
+    r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-CHECKPOINTFAKE-env-override"})
     assert r.json()["ok"] is True
 
 
@@ -227,6 +227,105 @@ def test_reactions_add_message_not_found(client):
         "channel": "C0001", "timestamp": "9999.000001", "name": "fire",
     })
     assert r.json() == {"ok": False, "error": "message_not_found"}
+
+
+# --- conversations.create -----------------------------------------------
+
+def test_conversations_create_happy_path(client):
+    r = client.post("/api/conversations.create", headers=H, json={"name": "engineering"})
+    body = r.json()
+    assert body["ok"] is True
+    ch = body["channel"]
+    assert ch["name"] == "engineering"
+    assert ch["id"].startswith("C")
+    assert ch["is_channel"] is True
+    assert ch["is_private"] is False
+    assert ch["is_archived"] is False
+    # Recorded in state, message list initialized.
+    assert sl.STATE["channels"][ch["id"]]["name"] == "engineering"
+    assert sl.STATE["messages"][ch["id"]] == []
+
+
+def test_conversations_create_missing_name(client):
+    r = client.post("/api/conversations.create", headers=H, json={})
+    assert r.json() == {"ok": False, "error": "missing required arguments: name"}
+
+
+def test_conversations_create_name_taken(client):
+    _seed_channel(name="general")
+    r = client.post("/api/conversations.create", headers=H, json={"name": "general"})
+    assert r.json() == {"ok": False, "error": "name_taken"}
+
+
+def test_conversations_create_invalid_name(client):
+    r = client.post("/api/conversations.create", headers=H, json={"name": "Bad Name!!"})
+    assert r.json() == {"ok": False, "error": "invalid_name"}
+
+
+def test_conversations_create_strips_hash_and_lowercases(client):
+    r = client.post("/api/conversations.create", headers=H, json={"name": "#Incident-2026"})
+    body = r.json()
+    assert body["ok"] is True
+    assert body["channel"]["name"] == "incident-2026"
+
+
+def test_conversations_create_private(client):
+    r = client.post("/api/conversations.create", headers=H, json={"name": "secrets", "is_private": True})
+    ch = r.json()["channel"]
+    assert ch["is_private"] is True
+    assert ch["is_channel"] is False
+
+
+def test_conversations_create_then_post_and_list(client):
+    ch = client.post("/api/conversations.create", headers=H, json={"name": "incident-1"}).json()["channel"]
+    r = client.post("/api/chat.postMessage", headers=H, json={"channel": "incident-1", "text": "fire"})
+    assert r.json()["ok"] is True
+    listed = client.get("/api/conversations.list", headers=H).json()
+    assert any(c["id"] == ch["id"] for c in listed["channels"])
+
+
+def test_conversations_create_requires_auth(client):
+    r = client.post("/api/conversations.create", json={"name": "nope"})
+    assert r.json() == {"ok": False, "error": "not_authed"}
+
+
+def test_conversations_create_recorded_in_trace(client):
+    client.post("/api/conversations.create", headers=H, json={"name": "traced"})
+    trace = client.get("/_trace").json()
+    assert any(e["path"] == "/api/conversations.create" for e in trace)
+
+
+def test_conversations_create_reset_clears(client):
+    client.post("/api/conversations.create", headers=H, json={"name": "temp"})
+    assert len(sl.STATE["channels"]) == 1
+    client.post("/_reset")
+    assert sl.STATE["channels"] == {}
+
+
+# --- conversations.info -------------------------------------------------
+
+def test_conversations_info_by_id(client):
+    _seed_channel("C0001", "general")
+    r = client.get("/api/conversations.info?channel=C0001", headers=H)
+    body = r.json()
+    assert body["ok"] is True
+    assert body["channel"]["name"] == "general"
+
+
+def test_conversations_info_by_name(client):
+    _seed_channel("C0001", "general")
+    r = client.get("/api/conversations.info?channel=general", headers=H)
+    assert r.json()["channel"]["id"] == "C0001"
+
+
+def test_conversations_info_missing_channel_arg(client):
+    r = client.get("/api/conversations.info", headers=H)
+    assert r.json() == {"ok": False, "error": "missing required arguments: channel"}
+
+
+def test_conversations_info_not_found(client):
+    r = client.get("/api/conversations.info?channel=C_NOPE", headers=H)
+    assert r.json() == {"ok": False, "error": "channel_not_found"}
 
 
 # --- users.list & users.profile.get -------------------------------------

@@ -17,9 +17,10 @@ from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
 from ._shim import make_shim
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
-GITHUB_BOOTSTRAP_TOKEN = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
+GITHUB_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
 
 
 def build_mcp(app: FastAPI) -> FastMCP:

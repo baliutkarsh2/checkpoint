@@ -20,11 +20,12 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 app = FastAPI(title="checkpoint github twin")
 
 # Per SCOPE §3.2 / REQUIREMENTS.md GH-02.
-DEFAULT_BOOTSTRAP_TOKEN = "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
 DOC_URL = "https://docs.github.com/rest"
 RATE_DOC_URL = (
     "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
@@ -760,6 +761,8 @@ async def create_pull_request(owner: str, name: str, request: Request):
         "head": {"ref": head, "sha": head_sha},
         "base": {"ref": base, "sha": base_sha},
         "user": _user("default-user"),
+        "labels": [],
+        "requested_reviewers": [],
         "created_at": _now(),
         "updated_at": _now(),
         "merged_at": None,
@@ -778,6 +781,43 @@ async def create_pull_request(owner: str, name: str, request: Request):
 def _pr_view(pr: dict) -> dict:
     """Strip private inline children before serializing."""
     return {k: v for k, v in pr.items() if not k.startswith("_")}
+
+
+@app.post("/repos/{owner}/{name}/issues/{number}/labels", status_code=200)
+async def add_labels(owner: str, name: str, number: int, request: Request):
+    """Add labels to an issue or pull request (GitHub routes both through the
+    issues endpoint). Returns the resulting label list."""
+    body = await request.json()
+    names = body.get("labels") if isinstance(body, dict) else body
+    if not isinstance(names, list):
+        return gh_error(422, "labels must be an array")
+    target = STATE["pulls"].get(_pr_key(owner, name, number))
+    if target is None:
+        target = STATE["issues"].get(f"{owner}/{name}#{number}")
+    if target is None:
+        return gh_error(404, "Not Found")
+    existing = {l["name"] for l in target.get("labels", []) if isinstance(l, dict)}
+    for n in names:
+        if n not in existing:
+            target.setdefault("labels", []).append({"name": n, "color": "ededed"})
+            existing.add(n)
+    return target["labels"]
+
+
+@app.post("/repos/{owner}/{name}/pulls/{number}/requested_reviewers", status_code=201)
+async def request_reviewers(owner: str, name: str, number: int, request: Request):
+    """Request reviewers on a pull request. Returns the updated PR."""
+    body = await request.json()
+    reviewers = body.get("reviewers") or []
+    pr = STATE["pulls"].get(_pr_key(owner, name, number))
+    if pr is None:
+        return gh_error(404, "Not Found")
+    existing = {r["login"] for r in pr.get("requested_reviewers", []) if isinstance(r, dict)}
+    for login in reviewers:
+        if login not in existing:
+            pr.setdefault("requested_reviewers", []).append(_user(login))
+            existing.add(login)
+    return _pr_view(pr)
 
 
 # Registered BEFORE `/pulls/{number}` so FastAPI's int validator doesn't 422

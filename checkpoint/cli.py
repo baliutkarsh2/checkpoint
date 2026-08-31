@@ -199,6 +199,16 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
                 )
                 sys.exit(2)
 
+    # Docker mode delivers the task only via the CHECKPOINT_TASK env var; the
+    # arg/stdin injection modes are a subprocess-mode feature. Fail loudly
+    # rather than silently ignoring the flag (B6).
+    if docker and extra_env.get("CHECKPOINT_TASK_VIA") in ("arg", "stdin"):
+        raise click.UsageError(
+            f"--task-via {extra_env['CHECKPOINT_TASK_VIA']} is not supported in Docker mode "
+            "(the task is delivered via the CHECKPOINT_TASK env var). "
+            "Use --task-via env (the default), or pass --no-docker for subprocess mode."
+        )
+
     # --- Iterate scenarios with --tag filter ---
     any_failed = False
     any_run = False
@@ -1470,10 +1480,31 @@ def docker_build(harness_dir, tag):
     tag = tag or "checkpoint-harness:latest"
     console.print(f"[dim]Building harness image from {harness_dir!r} -> {tag}[/dim]")
     try:
-        build_harness_image(Path(harness_dir), tag=tag)
+        build_harness_image(Path(harness_dir), None, tag)
         console.print(f"[green]Built {tag}[/green]")
     except Exception as e:
         console.print(f"[red]Build failed: {e}[/red]")
+        sys.exit(1)
+
+
+@docker_group.command("build-sidecar")
+@click.option("--force", is_flag=True, default=False,
+              help="Rebuild even if the sidecar image already exists.")
+def docker_build_sidecar(force):
+    """Pre-build the TLS sidecar image (otherwise built automatically on first run)."""
+    from .docker.sidecar import SIDECAR_IMAGE, ensure_sidecar_image
+    try:
+        import docker as _docker
+        client = _docker.from_env()
+        client.ping()
+    except Exception as e:
+        console.print(f"[red]Docker not reachable: {e}[/red]")
+        sys.exit(1)
+    try:
+        ensure_sidecar_image(client, force=force, log_fn=lambda m: console.print(f"[dim]{m}[/dim]"))
+        console.print(f"[green]Sidecar image ready: {SIDECAR_IMAGE}[/green]")
+    except Exception as e:
+        console.print(f"[red]Sidecar build failed: {e}[/red]")
         sys.exit(1)
 
 
@@ -1670,6 +1701,21 @@ def replay(run_id, clone, limit, as_json):
               help="Default judge model surfaced in the dashboard meta + new runs.")
 def serve(port, host, scenarios_dir, auto_open, judge_model):
     """Start the checkpoint web dashboard."""
+    # The dashboard can spawn `checkpoint run` subprocesses (POST /api/jobs).
+    # On loopback that's fine (single-user local tool). But binding to any
+    # other interface exposes that to the network, so require an API key there.
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        if not os.environ.get("CHECKPOINT_DASHBOARD_API_KEY"):
+            console.print(
+                f"[red]Refusing to serve on {host!r} without authentication.[/red]\n"
+                "[dim]Binding off loopback exposes POST /api/jobs (which runs agent "
+                "harnesses) to the network. Set an API key first:[/dim]\n"
+                "  export CHECKPOINT_DASHBOARD_API_KEY=$(python -c "
+                "'import secrets;print(secrets.token_urlsafe(32))')\n"
+                "[dim]or bind to the default 127.0.0.1.[/dim]"
+            )
+            sys.exit(1)
+
     import logging
     import uvicorn
     import webbrowser
@@ -2004,7 +2050,7 @@ def _build_usage_summary(rows: list[dict]) -> dict:
 
 _PII_RE = {
     "email": __import__("re").compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
-    "ghp_token": __import__("re").compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    "github_pat": __import__("re").compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
     "bearer": __import__("re").compile(r"\bsk-[A-Za-z0-9-_]{16,}\b"),
 }
 
@@ -2015,12 +2061,12 @@ def _anonymize_record(record: dict) -> dict:
     Conservative substitutions only — preserves shape so the trace remains
     useful for debugging:
       * emails -> ``user@example.com``
-      * GitHub PATs -> ``ghp_REDACTED``
+      * GitHub PATs -> ``ghp-REDACTED``
       * OpenAI-shaped keys -> ``sk-REDACTED``
     """
     text = json.dumps(record, default=str)
     text = _PII_RE["email"].sub("user@example.com", text)
-    text = _PII_RE["ghp_token"].sub("ghp_REDACTED", text)
+    text = _PII_RE["github_pat"].sub("ghp-REDACTED", text)
     text = _PII_RE["bearer"].sub("sk-REDACTED", text)
     return json.loads(text)
 

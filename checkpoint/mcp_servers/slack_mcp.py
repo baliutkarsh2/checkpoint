@@ -15,9 +15,10 @@ from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
 from ._shim import make_shim, mount_mcp_on_fastapi
+from checkpoint.fake_credentials import FAKE_SLACK_TOKEN
 
 
-SLACK_BOOTSTRAP_TOKEN = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+SLACK_BOOTSTRAP_TOKEN = FAKE_SLACK_TOKEN
 
 
 def build_mcp(app: FastAPI) -> FastMCP:
