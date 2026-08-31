@@ -78,7 +78,11 @@ runs:
         # so the action works before the first PyPI release lands.
         if ! python -m pip install --upgrade "checkpoint-agents${VERSION}"; then
           echo "checkpoint-agents${VERSION} not available on PyPI — installing from source."
-          python -m pip install --upgrade "git+https://github.com/baliutkarsh2/checkpoint"
+          # Pin the fallback to the ref the caller pinned the action to, so a
+          # consumer never silently installs whatever is on trunk. Falls back to
+          # a released tag rather than HEAD. Remove this branch entirely once the
+          # distribution is on PyPI (docs/releasing.md step 7).
+          python -m pip install --upgrade "git+https://github.com/baliutkarsh2/checkpoint@${GITHUB_ACTION_REF:-v0.1.0}"
         fi
 
     - name: Run the gate

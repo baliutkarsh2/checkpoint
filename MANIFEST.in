@@ -9,3 +9,8 @@ recursive-include checkpoint/twins *.json
 recursive-include checkpoint/proxy Dockerfile entrypoint.sh
 include README.md
 include LICENSE
+
+# Never ship stale bytecode: the blanket recursive-include lines above would
+# otherwise sweep __pycache__ from the build tree into the distribution.
+global-exclude __pycache__/* *.py[cod] *.so
+prune **/__pycache__
