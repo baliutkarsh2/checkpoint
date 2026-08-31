@@ -1817,6 +1817,99 @@ def redteam(harness, pack_dir, runs, pass_threshold, judge_model, output_format)
     sys.exit(report.exit_code)
 
 
+@main.command("simulate")
+@click.argument("scenario_path", type=click.Path(exists=True))
+@click.option("--harness", required=True,
+              help="Command that runs your agent, e.g. 'python my_agent.py'.")
+@click.option("--goal", default=None, help="The user's goal (default: the scenario prompt).")
+@click.option("--persona", "persona_name", default=None, help="Persona name.")
+@click.option("--tone", default=None, help="How the user writes (terse, polite, frustrated...).")
+@click.option("--patience", type=int, default=None, help="User's turns before giving up.")
+@click.option("--adversarial", is_flag=True, default=False,
+              help="User applies social pressure to get past a policy boundary.")
+@click.option("--max-turns", type=int, default=6, show_default=True)
+@click.option("--judge-model", default=None, help="Model for the simulated user + [P] criteria.")
+@click.option("-o", "--output", "output_format",
+              type=click.Choice(["text", "json"]), default="text", show_default=True)
+def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
+                 adversarial, max_turns, judge_model, output_format):
+    """Run a multi-turn conversation between a simulated user and your agent,
+    against stateful twins, and evaluate whether the goal was met.
+
+    Each result carries a calibration confidence — LLM-simulated users are
+    imperfect proxies for humans, so the score is reported with that caveat.
+    """
+    import json as _json
+    import shlex as _shlex
+
+    from .simuser import Persona, simulate as run_sim
+    from .simuser.persona import scenario_persona
+
+    scenario = parse_file(scenario_path)
+    base = scenario_persona(scenario)
+    persona = Persona(
+        name=persona_name or base.name,
+        goal=goal or base.goal,
+        tone=tone or base.tone,
+        patience=patience if patience is not None else base.patience,
+        adversarial=adversarial or base.adversarial,
+    )
+    harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
+    jm = judge_model or "gpt-4o-mini"
+
+    res = run_sim(scenario, harness_cmd, persona, max_turns=max_turns, judge_model=jm)
+
+    passed = res.error is None and res.result is not None and res.result.score >= 80.0
+    exit_code = 0 if passed else 1
+
+    if output_format == "json":
+        console.print_json(_json.dumps({
+            "persona": persona.name,
+            "goal": persona.goal,
+            "turns": res.turns,
+            "satisfied": res.satisfied,
+            "gave_up": res.gave_up,
+            "score": res.score,
+            "calibration": res.calibration,
+            "error": res.error,
+            "transcript": res.transcript,
+            "criteria": [
+                {"text": c.text, "kind": c.kind, "passed": c.passed, "evaluator": c.evaluator}
+                for c in (res.result.criteria if res.result else [])
+            ],
+        }))
+        sys.exit(exit_code)
+
+    if res.error:
+        console.print(f"[red]Simulation error: {res.error}[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold]Conversation[/bold] — persona: {persona.name}")
+    for turn in res.transcript:
+        who = "[cyan]user[/cyan]" if turn["role"] == "user" else "[magenta]agent[/magenta]"
+        console.print(f"  {who}: {turn['content']}", highlight=False)
+
+    if res.result and res.result.criteria:
+        table = Table(box=box.SIMPLE, show_edge=False)
+        table.add_column("")
+        table.add_column("Criterion")
+        for c in res.result.criteria:
+            mark = "[green]PASS[/green]" if c.passed else "[red]FAIL[/red]"
+            table.add_row(mark, c.text)
+        console.print(table)
+
+    outcome = "satisfied" if res.satisfied else ("gave up" if res.gave_up else "inconclusive")
+    style = "green" if passed else "yellow"
+    console.print(Panel.fit(
+        f"[bold {style}]{outcome}[/bold {style}]  in {res.turns} turn(s)\n"
+        f"score: {res.score:.0f}/100\n"
+        f"calibration: {res.calibration:.2f}  "
+        f"[dim](confidence this sim was human-like; not ground truth)[/dim]",
+        title="simulate", border_style=style,
+    ))
+    sys.exit(exit_code)
+
+
 @main.command("validate")
 @click.argument("scenario_path", type=click.Path(exists=True))
 @click.option("--json", "as_json", is_flag=True, default=False, help="Emit structured JSON instead of a table.")
