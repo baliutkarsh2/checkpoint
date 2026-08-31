@@ -41,15 +41,12 @@ Settings → Code security:
 - **Push protection** — blocks the commit that would leak one. This is what
   prevents a repeat of step 1.
 
-## 5. Make the security gates blocking
+## 5. Security gates are blocking — done
 
-The gitleaks gate is already blocking (this history is clean). CodeQL stays
-non-blocking until the repository is public, because code scanning needs GitHub
-Advanced Security on a private repo. One line to delete once public:
-
-| File | Line to delete | Why it was there |
-|---|---|---|
-| `.github/workflows/codeql.yml` | `continue-on-error: true` | Code scanning needs Advanced Security on a private repo; it is free once public. Verify with `gh api repos/<owner>/<repo>/code-scanning/alerts` — a 403 means it is still off. |
+Both gates now fail the build rather than reporting and continuing: gitleaks
+(this history is clean) and CodeQL (code scanning is free and enabled on a public
+repo). Verify code scanning with `gh api repos/<owner>/<repo>/code-scanning/alerts`
+— a 403 means it is off; "no analysis found" just means none uploaded yet.
 
 
 Blocking coverage does not depend on these: `tests/test_no_tracked_secrets.py`
