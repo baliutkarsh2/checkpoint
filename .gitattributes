@@ -1,6 +1,7 @@
 # Normalize line endings so the repo behaves identically on Windows, macOS, and
 # Linux. Shell scripts and Dockerfiles MUST stay LF or they break inside Linux
-# containers; the committed SPA bundle is treated as binary so it is never munged.
+# containers. The SPA bundle itself is not committed (it is built in CI); these
+# rules keep the dashboard *sources* LF so the build is byte-identical anywhere.
 * text=auto
 
 *.sh    text eol=lf
@@ -18,9 +19,7 @@
 Dockerfile      text eol=lf
 entrypoint.sh   text eol=lf
 
-# The committed SPA bundle is all text (html/svg/css/js) and MUST match a fresh
-# `npm run build` on Linux CI, so force LF just like the sources.
-checkpoint/dashboard/static/**  text eol=lf
+# Binary assets — never munge line endings.
 *.png   binary
 *.ico   binary
 *.woff  binary

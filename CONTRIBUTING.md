@@ -14,7 +14,15 @@ pip install -e ".[dev]"
 checkpoint doctor
 ```
 
-Node 20+ is needed only if you touch the dashboard SPA.
+Node 22+ is needed to build the dashboard SPA (the bundler ships native bindings
+built for current Node). The built bundle is not committed — build it once so
+`checkpoint serve` has a dashboard to serve from a source checkout:
+
+```bash
+cd checkpoint/dashboard/web && npm ci && npm run build
+```
+
+Skip this if you never run the dashboard; the CLI works without it.
 
 ## Running the tests
 
@@ -30,13 +38,17 @@ docker client, so a running daemon is not required to run the suite.
 
 ## Changing the dashboard
 
-The SPA source lives in `checkpoint/dashboard/web`; the built bundle is committed to
-`checkpoint/dashboard/static` and shipped in the wheel. If you edit the SPA you must
-rebuild and commit the bundle, or CI fails the drift check:
+The SPA source lives in `checkpoint/dashboard/web`. The built bundle
+(`checkpoint/dashboard/static/`) is **not** committed — it is gitignored and built
+fresh in CI, then packaged into the wheel. Build it locally to preview your changes:
 
 ```bash
-cd checkpoint/dashboard/web && npm ci && npm run build
+cd checkpoint/dashboard/web && npm ci && npm run build   # outputs ../static
+checkpoint serve                                          # serves the fresh bundle
 ```
+
+CI (and the release workflow) run this same build on Node 22, so what ships is
+always a clean build from source — there is no committed artifact to keep in sync.
 
 ## Adding a twin or scenario
 
