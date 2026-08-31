@@ -59,7 +59,7 @@ runs:
     # silently change the interpreter the user's own harness runs under.
     - name: Set up Python
       if: inputs.python-version != ''
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ inputs.python-version }}
 
