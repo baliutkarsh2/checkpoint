@@ -87,13 +87,14 @@ File a GitHub issue in `acme/webapp` titled "Login broken" with the symptom.
 ## Success Criteria
 - [D] An issue titled "Login broken" exists
 - [D] The issue is in the open state
+- [T] no redundant calls
 - [P] The agent's final answer references the new issue number
 
 ## Config
 clones: github
 ```
 
-Lint before running with `checkpoint validate scenarios/my-test.md`. The 16 bundled scenarios under `scenarios/` are the reference for both shape and coverage.
+`[D]` checks final twin state, `[P]` is LLM-judged, and **`[T]` scores the agent's trajectory** — the actual sequence of API calls, deterministically and for free (`at most N calls`, `no failed calls`, `no redundant calls`, `did not call DELETE`). Output-only checks miss the agent that reaches the right end state through a wasteful or unsafe path. Lint with `checkpoint validate scenarios/my-test.md`.
 
 ## The dashboard
 
@@ -151,7 +152,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, and OWASP-Agentic red-team packs ship today. Next: trajectory-level scoring, automated adversarial generation, calibrated multi-turn user simulation, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, and trajectory-level `[T]` scoring ship today. Next: automated adversarial generation, calibrated multi-turn user simulation, persistent baselines for regression detection, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 

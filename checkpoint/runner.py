@@ -509,6 +509,20 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
             c = Criterion(text=c.text, kind=c.kind)
             setattr(c, "_stage2_fallthrough", stage2_reason)
             deferred.append(c)
+        elif c.kind == "T":
+            # Trajectory criteria: evaluate the agent's call path deterministically.
+            from .trajectory import Trajectory, compute_metrics
+            from .trajectory.checker import check as _check_traj
+
+            traj = Trajectory.from_trace(result.trace)
+            passed, reasoning = _check_traj(c.text, traj, compute_metrics(traj))
+            if passed is not None:
+                result.criteria.append(CriterionResult(
+                    text=c.text, kind="T", passed=passed,
+                    reasoning=reasoning, evaluator="trajectory",
+                ))
+                continue
+            deferred.append(c)  # unrecognized phrasing -> judge
         else:
             deferred.append(c)
 
