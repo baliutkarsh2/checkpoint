@@ -4,7 +4,7 @@
 #   docker build -f checkpoint/proxy/Dockerfile -t checkpoint-sidecar .
 #
 # CA is minted at container startup, NOT at build time.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # NOTE: We skip apt-get because the base image already ships ca-certificates
 # and mitmproxy/cryptography distribute manylinux wheels — no compiler needed.
