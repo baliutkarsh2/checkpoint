@@ -1555,10 +1555,12 @@ def docker_build_sidecar(force):
 @click.option("--agent", default=None, help="Agent name recorded in the certificate.")
 @click.option("--certificate", "cert_path", type=click.Path(dir_okay=False), default=None,
               help="Write a signed Trust Certificate of the verdict to this path.")
+@click.option("--no-baseline", is_flag=True, default=False,
+              help="Do not compare against / update the stored pass-rate baseline.")
 @click.option("-o", "--output", "output_format",
               type=click.Choice(["text", "json"]), default="text", show_default=True)
 def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
-         strict, judge_model, agent, cert_path, output_format):
+         strict, judge_model, agent, cert_path, no_baseline, output_format):
     """Statistically gate an agent: run each scenario N times and decide
     SHIP / CONDITIONAL / BLOCK from the pass-rate distribution (not one run).
 
@@ -1588,7 +1590,17 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         mark = "[green]P[/green]" if (complete and score >= policy.pass_threshold) else "[red]F[/red]"
         console.print(f"[dim]{name}[/dim]  run {i}/{total}  {mark} {score:.0f}/100", highlight=False)
 
-    result = run_gate(Path(target), harness_cmd, policy, judge_model=jm, progress=_progress)
+    baselines = None
+    if not no_baseline:
+        from .gate import baseline as _baseline
+        baselines = _baseline.load(Path(target))
+
+    result = run_gate(Path(target), harness_cmd, policy, judge_model=jm,
+                      progress=_progress, baselines=baselines)
+
+    if not no_baseline:
+        from .gate import baseline as _baseline
+        _baseline.save(Path(target), result.scenarios)
 
     cert_written: str | None = None
     if cert_path:

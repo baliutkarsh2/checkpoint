@@ -71,14 +71,19 @@ def classify_stability(
     - ``stable_pass``  — we're confident the pass rate is high (CI low >= ship_min).
     - ``stable_fail``  — we're confident it's low (CI high <= block_max).
     - ``regression``   — a real drop vs. a known baseline (point estimate fell by
-                         at least ``regression_drop`` and the CI clears block_max).
+                         at least ``regression_drop``). Overrides a non-passing
+                         base verdict so a build that *used* to pass and now
+                         fails reads as a regression, not just a failure.
     - ``flaky``        — everything else: the interval straddles the thresholds,
                          so more runs are needed before trusting either verdict.
     """
-    if baseline_rate is not None and (baseline_rate - ci.point) >= regression_drop and ci.high > block_max:
-        return "regression"
     if ci.low >= ship_min:
-        return "stable_pass"
-    if ci.high <= block_max:
-        return "stable_fail"
-    return "flaky"
+        base = "stable_pass"
+    elif ci.high <= block_max:
+        base = "stable_fail"
+    else:
+        base = "flaky"
+
+    if base != "stable_pass" and baseline_rate is not None and (baseline_rate - ci.point) >= regression_drop:
+        return "regression"
+    return base
