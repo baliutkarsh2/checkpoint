@@ -12,9 +12,9 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
 from checkpoint.fake_credentials import FAKE_SLACK_TOKEN
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from ._shim import make_shim, mount_mcp_on_fastapi
 
@@ -26,11 +26,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
     token = os.environ.get("SLACK_BOOTSTRAP_TOKEN", SLACK_BOOTSTRAP_TOKEN)
     shim = make_shim(app, token, auth_scheme="Bearer")
 
-    mcp = FastMCP(
+    mcp = make_server(
         name="checkpoint-slack",
         instructions="Stateful synthetic Slack. Tool names match Archal §3.4.",
-        stateless_http=True,
-        streamable_http_path="/",
     )
 
     # ----- chat ---------------------------------------------------------

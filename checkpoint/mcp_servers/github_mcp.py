@@ -14,9 +14,9 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from ._shim import make_shim
 
@@ -30,11 +30,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
     token = os.environ.get("GITHUB_BOOTSTRAP_TOKEN", GITHUB_BOOTSTRAP_TOKEN)
     shim = make_shim(app, token, auth_scheme="token")
 
-    mcp = FastMCP(
+    mcp = make_server(
         name="checkpoint-github",
         instructions="Stateful synthetic GitHub. Tool names match Archal §3.2.",
-        stateless_http=True,
-        streamable_http_path="/",
     )
 
     # ----- Repositories -------------------------------------------------

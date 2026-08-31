@@ -88,10 +88,11 @@ def github_twin():
 @pytest.mark.asyncio
 async def test_github_mcp_lists_archal_tool_set(github_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{github_twin}/mcp/"
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -105,12 +106,13 @@ async def test_github_mcp_lists_archal_tool_set(github_twin):
 @pytest.mark.asyncio
 async def test_github_mcp_mutations_share_state_with_rest(github_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{github_twin}/mcp/"
     state_url = f"http://127.0.0.1:{github_twin}/_state"
 
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -178,7 +180,8 @@ async def test_github_mcp_and_rest_see_same_state(github_twin):
     """Cross-transport: MCP creates a repo, REST creates a second; both visible
     in /_state via either transport."""
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     mcp_url = f"http://127.0.0.1:{github_twin}/mcp/"
     state_url = f"http://127.0.0.1:{github_twin}/_state"
@@ -186,7 +189,7 @@ async def test_github_mcp_and_rest_see_same_state(github_twin):
         "Authorization": f"token {FAKE_GITHUB_TOKEN}",
     }
 
-    async with streamablehttp_client(mcp_url) as (read, write, _):
+    async with client_streams(mcp_url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             # MCP creates one repo.

@@ -20,7 +20,9 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
+
+from checkpoint.mcp_compat import FastMCP
+from checkpoint.mcp_compat import streamable_http_app as compat_streamable_http_app
 
 ShimFn = Callable[..., Awaitable[Any]]
 
@@ -94,7 +96,7 @@ def mount_mcp_on_fastapi(app: FastAPI, mcp: FastMCP, path: str = "/mcp") -> None
     while requests are served. Without the lifespan chain, MCP returns
     500 "Task group is not initialized" on the first request.
     """
-    sub_app = mcp.streamable_http_app()
+    sub_app = compat_streamable_http_app(mcp)
     app.mount(path, sub_app)
 
     previous_lifespan = app.router.lifespan_context

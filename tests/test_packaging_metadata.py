@@ -41,15 +41,21 @@ def test_py_typed_marker_ships():
     assert "Typing :: Typed" in PYPROJECT["project"]["classifiers"]
 
 
-def test_runtime_dependencies_are_bounded():
-    """An unbounded dep lets a breaking major install cleanly and break users."""
-    unbounded = [
-        d for d in PYPROJECT["project"]["dependencies"]
-        if ">=" in d and "<" not in d and d.split(">=")[0].strip('"') in {
-            "openai", "pydantic", "mitmproxy", "docker", "mcp",
-        }
-    ]
-    assert not unbounded, f"volatile dependencies need an upper bound: {unbounded}"
+def test_no_speculative_upper_bounds_on_dependencies():
+    """A published library must not cap its dependencies speculatively.
+
+    An upper bound propagates into every downstream resolver and can make this
+    package uninstallable alongside a newer release of a shared dependency, so
+    the cost of a guess lands on users. Compatibility is proven by testing
+    instead: CI resolves the latest of everything across the supported Python
+    versions. A cap may only be added with evidence of a real incompatibility,
+    and then it belongs in a comment next to the pin.
+    """
+    capped = [d for d in PYPROJECT["project"]["dependencies"] if "<" in d]
+    assert not capped, (
+        "these dependencies carry an upper bound; support the new major instead "
+        f"(see checkpoint/mcp_compat.py for how mcp 1.x/2.x is handled): {capped}"
+    )
 
 
 def test_no_empty_optional_dependency_groups():
