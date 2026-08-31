@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/Aaditya2605/checkpoint/security/advisories/new
+    url: https://github.com/baliutkarsh2/checkpoint/security/advisories/new
     about: Please report security issues privately — see SECURITY.md. Do not open a public issue.
   - name: Question or idea
-    url: https://github.com/Aaditya2605/checkpoint/discussions
+    url: https://github.com/baliutkarsh2/checkpoint/discussions
     about: Ask questions and share scenarios with the community.

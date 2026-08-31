@@ -78,7 +78,7 @@ runs:
         # so the action works before the first PyPI release lands.
         if ! python -m pip install --upgrade "checkpoint-agents${VERSION}"; then
           echo "checkpoint-agents${VERSION} not available on PyPI — installing from source."
-          python -m pip install --upgrade "git+https://github.com/Aaditya2605/checkpoint"
+          python -m pip install --upgrade "git+https://github.com/baliutkarsh2/checkpoint"
         fi
 
     - name: Run the gate

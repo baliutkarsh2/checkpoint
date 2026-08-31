@@ -8,7 +8,7 @@ name: Release to PyPI
 # One-time PyPI setup (done by a maintainer, cannot be scripted):
 #   1. Create the project owner account on https://pypi.org.
 #   2. PyPI → the `checkpoint-agents` project → Publishing → Add a trusted
-#      publisher: owner=Aaditya2605, repo=checkpoint, workflow=release.yml,
+#      publisher: owner=baliutkarsh2, repo=checkpoint, workflow=release.yml,
 #      environment=pypi. (For the very first release use "pending publisher".)
 #   3. Optionally do a dry run against TestPyPI first with a `v*rc*` tag.
 
