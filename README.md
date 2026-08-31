@@ -1,10 +1,15 @@
 # Checkpoint
 
-Test your AI agent against stateful synthetic GitHub, Slack, Stripe, Linear, Supabase, Discord, and Google Workspace — then gate the build on the result. Your agent calls the production URLs unmodified; Checkpoint intercepts at the TLS layer, routes to a local twin, records every call, and scores the run 0–100 with deterministic + LLM-judged criteria.
+**The release gate for AI agents.** Run your real agent — unmodified — N times against real tools, score every run, and let a statistical verdict decide: **SHIP** or **BLOCK**. Checkpoint is the CI gate that fails the build *before* a flaky agent reaches production.
 
-**The release gate for AI agents.** Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs your agent through stateful, multi-step scenarios against twins that hold real state and respond wire-compatibly — happy paths, edge cases, adversarial inputs, policy boundaries — scores each run, and fails your CI when the average drops below your threshold. The code path you ship is the code path you test.
+Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. Your agent calls its real APIs unmodified; Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**.
 
-**Status:** v0.1.0 · open source (Apache-2.0) · 7 twins · 16 scenarios · 4 example agents
+```bash
+pip install checkpoint-agents
+checkpoint demo          # deterministic, offline, no API key — see it score in ~5s
+```
+
+**Status:** v0.1.0 · open source (Apache-2.0) · statistical gate · trajectory scoring · signed evidence
 
 ## Install
 
@@ -19,20 +24,29 @@ Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelit
 
 ## Quickstart
 
+**1. See it work — no Docker, no API key.**
+
 ```bash
-# Run a bundled scenario against a bundled agent.
+checkpoint demo
+```
+
+Runs a bundled deterministic scenario against a bundled agent entirely offline (the LLM judge never runs), and prints a green criterion table with `Score: 100/100` in a few seconds. This is the "does it work?" proof.
+
+**2. Test a real agent** against a stateful twin with full SDK fidelity (needs Docker + an API key):
+
+```bash
 checkpoint run scenarios/github-happy-path.md \
     --harness-dir examples/agents/openai-tools \
     --docker-logs
 ```
 
-The first Docker run builds a small TLS-sidecar image once (~1–2 min); after that a run takes seconds. You'll see the agent's stderr stream live, then a scored criterion table. Open the dashboard for the same view with history and comparison:
+The first Docker run builds a small TLS-sidecar image once (~1–2 min); after that a run takes seconds. You'll see the agent's stderr stream live, then a scored criterion table. No Docker? Add `--no-docker` for fast subprocess mode (your agent reads `CHECKPOINT_<CLONE>_URL` instead of hitting intercepted production URLs).
+
+**3. Open the dashboard** for the same view with history and comparison:
 
 ```bash
 checkpoint serve   # http://127.0.0.1:4001
 ```
-
-No Docker? Add `--no-docker` for fast subprocess mode (your agent reads `CHECKPOINT_<CLONE>_URL` instead of hitting intercepted production URLs).
 
 ## Mental model
 
@@ -48,7 +62,7 @@ Your agent talks to production URLs; in Docker mode a mitmproxy sidecar transpar
 ## Highlights
 
 - **Zero-code integration.** Your agent doesn't import Checkpoint or change a line. Point us at the command that runs it: `checkpoint init --command "python my_agent.py"`. Checkpoint handles task injection (env / arg / stdin) and stdout capture.
-- **7 SaaS twins** with REST + MCP tool surfaces, named seeds, and runtime knobs (rate-limit, read-only, permissions-denied). Six are wire-compatible with the official SDKs; the **Linear** twin currently exposes a REST-style + MCP surface (the official GraphQL SDK is not yet supported).
+- **Stateful twins** (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) with REST + MCP tool surfaces and named seeds. Your agent's real SDK calls are TLS-intercepted and routed here unmodified. The twins are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (the Linear twin is REST/MCP, not the official GraphQL SDK). Fault-injection knobs vary by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record* — rate limits, permission errors, read-only windows.
 - **Failure-first dashboard.** Browse runs, compare scores, watch scenarios stream live, manage twin state. A failed run leads with a red "What went wrong" card: each failed criterion plus the judge's reasoning.
 - **Deterministic + LLM grading.** `[D]` criteria are checked against twin state by a deterministic catalog (free, no LLM) where a matching check exists; unrecognized phrasings fall back to a schema-validated LLM parse. `[P]` criteria are graded by the judge model (default `gpt-4o-mini`).
 - **16 bundled scenarios** covering happy paths, adversarial inputs, and multi-clone cross-system flows.
@@ -129,7 +143,7 @@ Add `--certificate cert.json` to issue a **signed Trust Certificate** — the ve
 
 ## Simulated users
 
-A single prompt tests a single exchange; real users push back, clarify, and get impatient. `checkpoint simulate <scenario> --harness "..." --goal "..."` drives an LLM **persona** through a multi-turn conversation with your agent against stateful twins (state accumulates turn over turn), then scores whether the goal was met. Because simulated users are imperfect proxies for humans, every run reports a **calibration confidence** — the score is never presented as ground truth. Use `--persona`, `--tone`, `--patience`, and `--adversarial` to shape the user.
+A single prompt tests a single exchange; real users push back, clarify, and get impatient. `checkpoint simulate <scenario> --harness "..." --goal "..."` drives an LLM **persona** through a multi-turn conversation with your agent against stateful twins (state accumulates turn over turn), then scores whether the goal was met. Because simulated users are imperfect proxies for humans, every run reports a **plausibility signal** — a transparent heuristic on the conversation's shape (turns taken, whether the persona gave up), so the score is never mistaken for ground truth. Use `--persona`, `--tone`, `--patience`, and `--adversarial` to shape the user.
 
 ## CI integration
 
@@ -157,7 +171,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
 | `checkpoint serve` | Start the web dashboard |
 | `checkpoint mcp` | Run Checkpoint as an MCP server so a coding agent can test the agent it's building |
-| `checkpoint redteam-mcp` | Serve a poisoned MCP server (OWASP MCP Top 10) to test MCP-attack resistance |
+| `checkpoint redteam-mcp` | Serve a poisoned MCP server (tool-poisoning / injection techniques from the OWASP MCP Top 10) to test MCP-attack resistance |
 | `checkpoint validate <scenario.md>` | Lint a scenario |
 | `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
@@ -167,7 +181,7 @@ Run `checkpoint <command> --help` for full options.
 
 ## Roadmap
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, and trajectory-level `[T]` scoring ship today. Next: automated adversarial generation, persona calibration against real transcripts, a full SQLite run store, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
+Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, OWASP-Agentic red-team packs, automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see `CONTRIBUTING.md`.
 
 ## Contact
 

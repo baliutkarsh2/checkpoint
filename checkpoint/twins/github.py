@@ -81,6 +81,38 @@ def gh_error(status: int, message: str, *, documentation_url: str = DOC_URL,
     return JSONResponse(status_code=status, content=body)
 
 
+def _paginated(items: list, request: Request, per_page: int, page: int) -> JSONResponse:
+    """Return one page of ``items`` plus a GitHub-style ``Link`` header.
+
+    The official SDKs (Octokit, PyGithub) follow the ``Link: ...; rel="next"``
+    header to auto-paginate; without it they stop at page 1. We emit it whenever
+    another page exists so seeded lists longer than ``per_page`` paginate like
+    the real API.
+    """
+    from urllib.parse import urlencode
+
+    per_page = max(1, min(per_page, 100))
+    page = max(1, page)
+    total = len(items)
+    last = max(1, (total + per_page - 1) // per_page)
+    window = items[(page - 1) * per_page: (page - 1) * per_page + per_page]
+
+    base = str(request.url).split("?")[0]
+
+    def link(p: int) -> str:
+        params = dict(request.query_params)
+        params["page"], params["per_page"] = p, per_page
+        return f"<{base}?{urlencode(params)}>"
+
+    rels: list[str] = []
+    if page < last:
+        rels += [f'{link(page + 1)}; rel="next"', f'{link(last)}; rel="last"']
+    if page > 1:
+        rels += [f'{link(page - 1)}; rel="prev"', f'{link(1)}; rel="first"']
+    headers = {"Link": ", ".join(rels)} if rels else None
+    return JSONResponse(content=window, headers=headers)
+
+
 def _bootstrap_token() -> str:
     return os.environ.get("GITHUB_BOOTSTRAP_TOKEN", DEFAULT_BOOTSTRAP_TOKEN)
 
@@ -585,7 +617,7 @@ def delete_branch(owner: str, name: str, branch: str):
 # --- commits -------------------------------------------------------------
 
 @app.get("/repos/{owner}/{name}/commits")
-def list_commits(owner: str, name: str, sha: str | None = None,
+def list_commits(owner: str, name: str, request: Request, sha: str | None = None,
                  path: str | None = None, per_page: int = 30, page: int = 1):
     repo_key = f"{owner}/{name}"
     if repo_key not in STATE["repos"]:
@@ -593,8 +625,7 @@ def list_commits(owner: str, name: str, sha: str | None = None,
     commits = list(STATE["repos"][repo_key]["commits"])
     if path:
         commits = [c for c in commits if any(f["filename"] == path for f in c.get("files", []))]
-    start = (page - 1) * per_page
-    return commits[start:start + per_page]
+    return _paginated(commits, request, per_page, page)
 
 
 # --- issues --------------------------------------------------------------
@@ -629,7 +660,8 @@ async def create_issue(owner: str, name: str, request: Request):
 
 
 @app.get("/repos/{owner}/{name}/issues")
-def list_issues(owner: str, name: str, state: str = "open", labels: str | None = None):
+def list_issues(owner: str, name: str, request: Request, state: str = "open",
+                labels: str | None = None, per_page: int = 30, page: int = 1):
     repo_key = f"{owner}/{name}"
     out = []
     for key, issue in STATE["issues"].items():
@@ -643,7 +675,7 @@ def list_issues(owner: str, name: str, state: str = "open", labels: str | None =
             if not wanted.issubset(have):
                 continue
         out.append(issue)
-    return out
+    return _paginated(out, request, per_page, page)
 
 
 @app.get("/repos/{owner}/{name}/issues/{number}")
