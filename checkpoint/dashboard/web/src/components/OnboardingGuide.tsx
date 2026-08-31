@@ -222,7 +222,7 @@ function RefCard() {
       <div className="card-title">More help</div>
       <ul className="space-y-2 text-sm">
         <li className="flex items-start gap-2">
-          <Terminal size={14} className="mt-0.5 flex-shrink-0" />
+          <Terminal size={14} className="mt-0.5 shrink-0" />
           <span>
             <code className="font-mono">checkpoint --help</code> — every CLI
             command (run, init, scenario, clone, traces, compare, doctor,
@@ -230,7 +230,7 @@ function RefCard() {
           </span>
         </li>
         <li className="flex items-start gap-2">
-          <FileText size={14} className="mt-0.5 flex-shrink-0" />
+          <FileText size={14} className="mt-0.5 shrink-0" />
           <span>
             <a href="/api/docs" target="_blank" className="font-medium underline">
               OpenAPI / Swagger
@@ -239,14 +239,14 @@ function RefCard() {
           </span>
         </li>
         <li className="flex items-start gap-2">
-          <ExternalLink size={14} className="mt-0.5 flex-shrink-0" />
+          <ExternalLink size={14} className="mt-0.5 shrink-0" />
           <span>
             See <code className="font-mono">SETUP.md</code> in the repo for a
             walk-through of integrating Checkpoint into an existing repo
           </span>
         </li>
         <li className="flex items-start gap-2">
-          <GitBranch size={14} className="mt-0.5 flex-shrink-0" />
+          <GitBranch size={14} className="mt-0.5 shrink-0" />
           <span>
             Four reference agents under{" "}
             <code className="font-mono">examples/agents/</code> (OpenAI tools,
@@ -255,7 +255,7 @@ function RefCard() {
           </span>
         </li>
         <li className="flex items-start gap-2">
-          <Play size={14} className="mt-0.5 flex-shrink-0" />
+          <Play size={14} className="mt-0.5 shrink-0" />
           <span>
             <Link to="/setup?tab=validate" className="font-medium underline">
               Validate

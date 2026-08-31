@@ -8,24 +8,26 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
     "lucide-react": "^1.35.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.27.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "@rolldown/binding-wasm32-wasi": "^1.2.6",
+    "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.10.0",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "autoprefixer": "^10.5.4",
     "postcss": "^8.5.26",
-    "tailwindcss": "^3.4.13",
+    "tailwindcss": "^4.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
   },

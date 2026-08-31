@@ -123,6 +123,15 @@ jobs:
           npm ci
           npm run build
 
+      # 1b. Render smoke test: serve the freshly built bundle headlessly and
+      # assert it mounts, routes, and is styled by Tailwind. This is the
+      # automated stand-in for a manual click-through of UI-framework upgrades.
+      - name: Dashboard render smoke test (Playwright)
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
       # 2. Install Python deps + run the full pytest suite.
       - name: Install package with dev extras
         run: pip install -e ".[dev]"

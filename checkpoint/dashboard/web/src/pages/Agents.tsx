@@ -89,7 +89,7 @@ export default function Agents() {
           <input
             name="q"
             type="search"
-            className="bg-transparent outline-none flex-1 text-sm"
+            className="bg-transparent outline-hidden flex-1 text-sm"
             placeholder="search by name or description…"
             defaultValue={filter}
           />

@@ -37,3 +37,9 @@ fullsuite.txt
 
 # Built SPA bundle — produced by `npm run build`, packaged in CI. Not committed.
 checkpoint/dashboard/static/
+
+# Playwright (dashboard render smoke test) artifacts
+checkpoint/dashboard/web/test-results/
+checkpoint/dashboard/web/playwright-report/
+checkpoint/dashboard/web/blob-report/
+checkpoint/dashboard/web/playwright/.cache/

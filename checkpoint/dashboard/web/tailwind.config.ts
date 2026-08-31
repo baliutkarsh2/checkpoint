@@ -5,7 +5,7 @@ import type { Config } from "tailwindcss";
 // expressible via Tailwind utility classes — no custom CSS in component files.
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "class",
+  // Dark mode is declared as a custom variant in src/index.css (Tailwind v4).
   theme: {
     extend: {
       colors: {
