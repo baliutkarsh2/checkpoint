@@ -19,10 +19,11 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
 
 app = FastAPI(title="checkpoint google-workspace twin")
 
-DEFAULT_BOOTSTRAP_TOKEN = "ya29.checkpoint_google_workspace_token_aabbccddeeff"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_GOOGLE_WORKSPACE_TOKEN
 INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "google_workspace_seeds"

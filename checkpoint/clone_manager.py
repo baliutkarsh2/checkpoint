@@ -15,7 +15,7 @@ The registry is a JSON object keyed by clone id:
         "started_at": "2026-05-12T05:10:00Z",
         "url": "http://127.0.0.1:18001",
         "mcp_url": "http://127.0.0.1:18001/mcp/",
-        "token": "ghp_AaBbCc..."
+        "token": "ghp_CHECKPOINTFAKE..."
       }
     }
 
@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN, FAKE_SLACK_TOKEN, FAKE_STRIPE_KEY, FAKE_LINEAR_TOKEN, FAKE_SUPABASE_TOKEN, FAKE_DISCORD_TOKEN, FAKE_GOOGLE_WORKSPACE_TOKEN
 
 
 DEFAULT_REGISTRY = Path(".checkpoint/cache/clones.json")
@@ -52,13 +53,13 @@ TWIN_APPS = {
 }
 
 _CLONE_TOKEN = {
-    "github": "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt",
-    "slack": "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx",
-    "stripe": "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789",
-    "linear": "lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011",
-    "supabase": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff",
-    "discord": "Bot checkpoint.discord.twin.token.aabbccddeeff0011",
-    "google-workspace": "ya29.checkpoint_google_workspace_token_aabbccddeeff",
+    "github": FAKE_GITHUB_TOKEN,
+    "slack": FAKE_SLACK_TOKEN,
+    "stripe": FAKE_STRIPE_KEY,
+    "linear": FAKE_LINEAR_TOKEN,
+    "supabase": FAKE_SUPABASE_TOKEN,
+    "discord": FAKE_DISCORD_TOKEN,
+    "google-workspace": FAKE_GOOGLE_WORKSPACE_TOKEN,
 }
 
 

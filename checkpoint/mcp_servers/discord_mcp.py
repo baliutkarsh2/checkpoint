@@ -15,9 +15,10 @@ from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
 from ._shim import make_shim, mount_mcp_on_fastapi
+from checkpoint.fake_credentials import FAKE_DISCORD_TOKEN
 
 
-DISCORD_BOOTSTRAP_TOKEN = "Bot checkpoint.discord.twin.token.aabbccddeeff0011"
+DISCORD_BOOTSTRAP_TOKEN = FAKE_DISCORD_TOKEN
 
 
 def build_mcp(app: FastAPI) -> FastMCP:

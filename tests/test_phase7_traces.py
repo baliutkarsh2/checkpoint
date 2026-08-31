@@ -110,3 +110,37 @@ def test_traces_telemetry_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["chat"]["messages"][0]["content"] == "ok"
     assert data["transcript"]["stdout"] == "full stdout"
+
+
+def test_telemetry_api_call_body_fallback():
+    """B4: twins record payloads under `body`/`response`; the normalizer must
+    surface them as `request_body`/`response_body`."""
+    from checkpoint.telemetry import build_telemetry_report
+
+    rec = _make_record()
+    rec["trace"] = [
+        {  # twin-shaped event
+            "method": "POST",
+            "path": "/repos/a/b/issues",
+            "body": {"title": "bug"},
+            "response": {"number": 7},
+            "status": 201,
+            "ts": "2026-05-12T00:00:01Z",
+        },
+        {  # explicit keys still win over the fallback
+            "method": "GET",
+            "path": "/x",
+            "request_body": {"q": 1},
+            "response_body": {"ok": True},
+            "body": {"shadowed": True},
+            "response": {"shadowed": True},
+            "status": 200,
+        },
+    ]
+    report = build_telemetry_report(rec)
+    calls = report["api_calls"]
+    assert calls[0]["request_body"] == {"title": "bug"}
+    assert calls[0]["response_body"] == {"number": 7}
+    assert calls[0]["timestamp"] == "2026-05-12T00:00:01Z"
+    assert calls[1]["request_body"] == {"q": 1}
+    assert calls[1]["response_body"] == {"ok": True}

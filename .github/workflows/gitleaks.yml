@@ -1,0 +1,23 @@
+name: Secret scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history on push)
+        uses: actions/checkout@v4
+        with:
+          # Scan the whole history on push so a secret buried in an older commit
+          # is still caught; PRs scan just the diff range gitleaks selects.
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml

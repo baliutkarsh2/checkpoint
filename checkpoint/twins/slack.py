@@ -1,6 +1,7 @@
 """Slack twin: stateful in-memory clone of Slack Web API.
 
-Phase 3 plan 01: 8 MCP-tool-equivalent REST endpoints, bootstrap-token auth,
+Phase 3 plan 01 (+F2): 10 MCP-tool-equivalent REST endpoints (incl.
+conversations.create / conversations.info), bootstrap-token auth,
 Slack-shape `{ok: false, error: "..."}` envelope, introspection endpoints.
 
 The Slack Web API uses HTTP 200 even for application errors — clients
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -19,11 +21,12 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from checkpoint.fake_credentials import FAKE_SLACK_TOKEN
 
 app = FastAPI(title="checkpoint slack twin")
 
 # Per SCOPE §3.4 / REQUIREMENTS.md SL-02.
-DEFAULT_BOOTSTRAP_TOKEN = "xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_SLACK_TOKEN
 INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "slack_seeds"
@@ -332,6 +335,67 @@ def conversations_replies(channel: str = "", ts: str = ""):
     replies = [m for m in msgs if m.get("thread_ts") == ts and m.get("ts") != ts]
     out = [parent] + sorted(replies, key=lambda m: m["ts"])
     return slack_ok(messages=out, has_more=False)
+
+
+# --- conversations.create -----------------------------------------------
+
+# Slack: lowercase letters, numbers, hyphens, underscores, periods; max 80 chars.
+_CHANNEL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
+
+
+def _valid_channel_name(name: str) -> bool:
+    return bool(_CHANNEL_NAME_RE.match(name))
+
+
+@app.post("/api/conversations.create")
+async def conversations_create(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        form = await request.form()
+        body = dict(form)
+    name = body.get("name")
+    if not name:
+        return JSONResponse(content={"ok": False, "error": "missing required arguments: name"})
+    name = str(name).lstrip("#").strip().lower()
+    if not _valid_channel_name(name):
+        return JSONResponse(content={"ok": False, "error": "invalid_name"})
+    if any(ch.get("name") == name for ch in STATE["channels"].values()):
+        return JSONResponse(content={"ok": False, "error": "name_taken"})
+
+    is_private = bool(body.get("is_private"))
+    channel_id = _new_channel_id()
+    channel = {
+        "id": channel_id,
+        "name": name,
+        "name_normalized": name,
+        "is_channel": not is_private,
+        "is_group": is_private,
+        "is_private": is_private,
+        "is_im": False,
+        "is_archived": False,
+        "is_general": False,
+        "created": int(time.time()),
+        "creator": body.get("user") or "U00000001",
+        "num_members": 1,
+        "topic": {"value": "", "creator": "", "last_set": 0},
+        "purpose": {"value": "", "creator": "", "last_set": 0},
+    }
+    STATE["channels"][channel_id] = channel
+    STATE["messages"].setdefault(channel_id, [])
+    return slack_ok(channel=channel)
+
+
+# --- conversations.info -------------------------------------------------
+
+@app.get("/api/conversations.info")
+def conversations_info(channel: str = ""):
+    if not channel:
+        return JSONResponse(content={"ok": False, "error": "missing required arguments: channel"})
+    ch = _find_channel(channel)
+    if ch is None:
+        return JSONResponse(content={"ok": False, "error": "channel_not_found"})
+    return slack_ok(channel=ch)
 
 
 # --- conversations.list -------------------------------------------------

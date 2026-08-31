@@ -26,10 +26,11 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from checkpoint.fake_credentials import FAKE_STRIPE_KEY
 
 app = FastAPI(title="checkpoint stripe twin")
 
-DEFAULT_BOOTSTRAP_TOKEN = "sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789"
+DEFAULT_BOOTSTRAP_TOKEN = FAKE_STRIPE_KEY
 INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "stripe_seeds"

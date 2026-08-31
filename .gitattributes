@@ -1,0 +1,21 @@
+# Normalize line endings so the repo behaves identically on Windows, macOS, and
+# Linux. Shell scripts and Dockerfiles MUST stay LF or they break inside Linux
+# containers; the committed SPA bundle is treated as binary so it is never munged.
+* text=auto
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+Dockerfile      text eol=lf
+entrypoint.sh   text eol=lf
+
+# Built artifacts / binaries — leave bytes untouched.
+checkpoint/dashboard/static/**  -text
+*.png   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary

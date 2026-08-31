@@ -147,6 +147,11 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
 }
 
 function TraceDetail({ event }: { event: TraceEvent }) {
+  // Twins record payloads under `body` / `response`; older records and other
+  // harnesses use `request_body` / `response_body`. Accept both.
+  const raw = event as { body?: unknown; response?: unknown };
+  const requestBody = event.request_body ?? raw.body;
+  const responseBody = event.response_body ?? raw.response;
   return (
     <div className="bg-paper dark:bg-ink-2 px-3 py-3 border-t border-paper-3 dark:border-ink-3">
       <div className="grid md:grid-cols-2 gap-4">
@@ -155,8 +160,8 @@ function TraceDetail({ event }: { event: TraceEvent }) {
             <span className="card-title !mb-0">Request</span>
             <CopyBtn text={eventToCurl(event)} label="Copy as curl" />
           </div>
-          {event.request_body !== undefined && event.request_body !== null ? (
-            <pre className="json">{stableStringify(event.request_body)}</pre>
+          {requestBody !== undefined && requestBody !== null ? (
+            <pre className="json">{stableStringify(requestBody)}</pre>
           ) : (
             <div className="text-xs text-ink-4 dark:text-paper-3 italic">
               No request body
@@ -172,8 +177,8 @@ function TraceDetail({ event }: { event: TraceEvent }) {
               </span>
             )}
           </div>
-          {event.response_body !== undefined && event.response_body !== null ? (
-            <pre className="json">{stableStringify(event.response_body)}</pre>
+          {responseBody !== undefined && responseBody !== null ? (
+            <pre className="json">{stableStringify(responseBody)}</pre>
           ) : (
             <div className="text-xs text-ink-4 dark:text-paper-3 italic">
               No response body captured

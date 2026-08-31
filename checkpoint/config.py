@@ -4,7 +4,7 @@
 {
   "clones": ["github", "slack"],          # default clones if scenario omits
   "harness": {
-    "path": "./example/harness.py",       # default harness command (file)
+    "path": "./harness.py",               # default harness command (file)
     "promptFiles": ["./prompts/**.md"]    # globs (unused by core; for skills)
   },
   "evaluator": {"model": "gpt-4o-mini"},

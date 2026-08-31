@@ -10,6 +10,7 @@ from click.testing import CliRunner
 
 from checkpoint import clone_manager
 from checkpoint.cli import main
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
 def test_start_inspect_stop_github(tmp_path):
@@ -73,7 +74,7 @@ def test_inspect_purges_stale_pid(tmp_path):
             "started_at": "2020-01-01T00:00:00Z",
             "url": "http://127.0.0.1:9999",
             "mcp_url": "http://127.0.0.1:9999/mcp/",
-            "token": "ghp_test",
+            "token": FAKE_GITHUB_TOKEN,
         }
     }))
     info = clone_manager.inspect("github", registry_path=reg)

@@ -55,37 +55,24 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Run scenarios
+      - name: Run scenario against a bundled example agent (Docker mode)
         if: steps.api_key_check.outputs.skip != 'true'
         run: |
+          # GitHub-hosted ubuntu runners ship a working Docker daemon, so this
+          # exercises the real out-of-the-box path: the TLS sidecar image
+          # auto-builds, the example agent runs unmodified against the twins,
+          # and checkpoint injects the per-clone bootstrap tokens itself (no
+          # manual token env needed). A single cheap scenario keeps CI fast.
           SCENARIO="${{ github.event.inputs.scenario }}"
-          CLONE_OVERRIDE="${{ github.event.inputs.clone }}"
-
-          ARGS=""
-          if [ -n "$SCENARIO" ]; then
-            ARGS="$SCENARIO"
-          else
-            ARGS="scenarios/"
+          if [ -z "$SCENARIO" ]; then
+            SCENARIO="scenarios/github-happy-path.md"
           fi
-
-          if [ -n "$CLONE_OVERRIDE" ]; then
-            ARGS="$ARGS --clone $CLONE_OVERRIDE"
-          fi
-
-          checkpoint run $ARGS \
-            --harness "$HARNESS_CMD" \
+          checkpoint run "$SCENARIO" \
+            --harness-dir examples/agents/openai-tools \
+            --docker-logs \
             --trace-out ci-traces.json
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          HARNESS_CMD: ${{ vars.CHECKPOINT_HARNESS_CMD || 'python example/harness.py' }}
-          # Per-clone bootstrap tokens (match twin defaults; safe for CI)
-          GITHUB_TOKEN: ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt
-          SLACK_TOKEN: xoxb-123456789012-234567890123-AbCdEfGhIjKlMnOpQrStUvWx
-          STRIPE_API_KEY: sk_live_51Abc123DefGhiJklMnoPqrStUvWxYz0123456789
-          LINEAR_BOOTSTRAP_TOKEN: lin_api_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt0011
-          SUPABASE_BOOTSTRAP_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_key_aabbccddeeff
-          DISCORD_BOOTSTRAP_TOKEN: Bot checkpoint.discord.twin.token.aabbccddeeff0011
-          GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN: ya29.checkpoint_google_workspace_token_aabbccddeeff
 
       - name: Upload trace artifact
         if: always() && steps.api_key_check.outputs.skip != 'true'

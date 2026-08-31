@@ -14,6 +14,7 @@ from checkpoint.sdk import (
     TwinHandle,
 )
 from checkpoint.runner import RunResult, CriterionResult
+from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +209,7 @@ def _make_clone_entry(clone_id: str, port: int = 9999) -> dict:
         "started_at": "2026-05-13T00:00:00Z",
         "url": f"http://127.0.0.1:{port}",
         "mcp_url": f"http://127.0.0.1:{port}/mcp/",
-        "token": "ghp_AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTt",
+        "token": FAKE_GITHUB_TOKEN,
     }
 
 

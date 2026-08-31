@@ -23,13 +23,13 @@ pip install -e ".[dev]"
 
 | Twin | Module | Domain | Bootstrap Token |
 |------|--------|--------|-----------------|
-| GitHub | `checkpoint.twins.github` | `api.github.com` | `ghp_AaBbCc...` |
-| Slack | `checkpoint.twins.slack` | `slack.com` | `xoxb-123456789012...` |
-| Stripe | `checkpoint.twins.stripe` | `api.stripe.com` | `sk_live_51Abc123...` |
-| Linear | `checkpoint.twins.linear` | `api.linear.app` | `lin_api_AaBbCc...` |
-| Supabase | `checkpoint.twins.supabase` | `supabase.co` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
-| Discord | `checkpoint.twins.discord` | `discord.com` | `Bot checkpoint.discord.twin...` |
-| Google Workspace | `checkpoint.twins.google_workspace` | `gmail.googleapis.com`, `www.googleapis.com` | `ya29.checkpoint_google_workspace...` |
+| GitHub | `checkpoint.twins.github` | `api.github.com` | `ghp_CHECKPOINTFAKE...` |
+| Slack | `checkpoint.twins.slack` | `slack.com` | `xoxb-000000000000-000000000000-CHECKPOINTFAKE...` |
+| Stripe | `checkpoint.twins.stripe` | `api.stripe.com` | `sk_live_CHECKPOINTFAKE...` |
+| Linear | `checkpoint.twins.linear` | `api.linear.app` | `lin_api_CHECKPOINTFAKE...` |
+| Supabase | `checkpoint.twins.supabase` | `supabase.co` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_CHECKPOINTFAKE...` |
+| Discord | `checkpoint.twins.discord` | `discord.com` | `Bot CHECKPOINTFAKE.discord.twin...` |
+| Google Workspace | `checkpoint.twins.google_workspace` | `gmail.googleapis.com`, `www.googleapis.com` | `ya29.CHECKPOINTFAKE_google_workspace...` |
 
 ---
 
@@ -204,9 +204,9 @@ CHECKPOINT_GOOGLE_WORKSPACE_URL=http://127.0.0.1:<port>
 
 Bootstrap tokens are also available:
 ```bash
-CHECKPOINT_GITHUB_TOKEN=ghp_AaBbCc...
-CHECKPOINT_LINEAR_TOKEN=lin_api_AaBbCc...
-CHECKPOINT_DISCORD_TOKEN=Bot checkpoint.discord.twin...
+CHECKPOINT_GITHUB_TOKEN=ghp_CHECKPOINTFAKE...
+CHECKPOINT_LINEAR_TOKEN=lin_api_CHECKPOINTFAKE...
+CHECKPOINT_DISCORD_TOKEN=Bot CHECKPOINTFAKE.discord.twin...
 # etc.
 ```
 

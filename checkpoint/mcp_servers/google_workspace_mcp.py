@@ -15,9 +15,10 @@ from fastapi import FastAPI
 from mcp.server.fastmcp import FastMCP
 
 from ._shim import make_shim, mount_mcp_on_fastapi
+from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
 
 
-GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN = "ya29.checkpoint_google_workspace_token_aabbccddeeff"
+GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN = FAKE_GOOGLE_WORKSPACE_TOKEN
 
 
 def build_mcp(app: FastAPI) -> FastMCP:
