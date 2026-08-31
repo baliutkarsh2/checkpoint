@@ -105,13 +105,13 @@ def parse_assertion(
     """
     try:
         if _client_factory is None:
-            from openai import OpenAI
+            from .llm import get_client
 
-            client = OpenAI()
+            client = get_client(model)
         else:
             client = _client_factory()
     except Exception as e:  # pragma: no cover — defensive
-        return ParseOutcome(None, f"openai client init failed: {e}")
+        return ParseOutcome(None, f"llm client init failed: {e}")
 
     user_msg = {
         "criterion": criterion,
