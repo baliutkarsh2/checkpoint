@@ -132,10 +132,12 @@ class FilesystemWatcher:
             except Exception as e:  # noqa: BLE001
                 log.warning("fs watcher tick failed: %s", e)
 
-            try:
+            # A timeout here is the normal path, not an error: it means the poll
+            # interval elapsed without a stop signal, so we loop and tick again.
+            # If the stop event is set instead, wait_for returns and the while
+            # condition ends the loop.
+            with suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval)
-            except TimeoutError:
-                pass
 
     def _snapshot_runs(self) -> dict[str, float]:
         if not self.runs_dir.exists():
