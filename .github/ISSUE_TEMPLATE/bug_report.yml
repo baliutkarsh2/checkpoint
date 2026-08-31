@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in Checkpoint doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing! The fastest fix comes from a reproducible report.
+        **Never paste API keys, tokens, or `.env` contents** — redact them first.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected versus what actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran. A scenario file helps enormously.
+      placeholder: |
+        1. checkpoint init --command "python my_agent.py"
+        2. checkpoint gate scenarios/ --harness "python my_agent.py" -n 5
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The relevant terminal output or run record (redact secrets).
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Checkpoint version
+      description: Output of `checkpoint --version`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Run mode
+      options:
+        - "checkpoint demo"
+        - "subprocess (--no-docker)"
+        - "Docker (TLS sidecar)"
+        - "gate"
+        - "dashboard (serve)"
+        - other
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and Python version
+      placeholder: "macOS 15.3, Python 3.11.9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`checkpoint doctor` output"
+      description: Optional, but it resolves most environment issues immediately.
+      render: shell

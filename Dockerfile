@@ -27,7 +27,7 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.title="checkpoint"
 LABEL org.opencontainers.image.description="Local + cloud agent-eval dashboard. Tests AI agents against stateful synthetic SaaS twins."
 LABEL org.opencontainers.image.source="https://github.com/Aaditya2605/checkpoint"
-LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # System deps. tini reaps zombies (uvicorn workers) cleanly. curl powers HEALTHCHECK.
 RUN apt-get update \
