@@ -41,10 +41,27 @@ def _tracked_files() -> list[str]:
 # synthetic twin tokens, which use an underscore prefix (sk_live_) or the
 # CHECKPOINTFAKE marker.
 _REAL_KEY_PATTERNS = [
-    re.compile(r"sk-proj-[A-Za-z0-9_\-]{20,}"),   # OpenAI project keys
-    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),     # Anthropic keys
+    re.compile(r"sk-proj-[A-Za-z0-9_\-]{20,}"),     # OpenAI project keys
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),      # Anthropic keys
     re.compile(r"AIza[A-Za-z0-9_\-]{30,}"),         # Google API keys
+    # OpenAI legacy/user keys (sk- followed by a long base62 run). The hyphen
+    # forms above are matched separately; `sk_live_` synthetic tokens use an
+    # underscore and are deliberately not matched here.
+    re.compile(r"\bsk-[A-Za-z0-9]{32,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),            # AWS access key id
+    re.compile(r"\bASIA[0-9A-Z]{16}\b"),            # AWS temporary access key id
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}"),    # GitHub PAT / OAuth / refresh
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,}"),  # GitHub fine-grained PAT
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}"),  # Slack tokens
+    re.compile(r"\bsk_live_[A-Za-z0-9]{20,}"),      # Stripe live secret key
+    re.compile(r"\brk_live_[A-Za-z0-9]{20,}"),      # Stripe live restricted key
+    re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}"),     # GitLab PAT
+    re.compile(r"\bhf_[A-Za-z0-9]{30,}"),           # Hugging Face token
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"),
 ]
+
+# The marker every deliberately-synthetic token must carry.
+_FAKE_MARKER = "CHECKPOINTFAKE"
 
 # Synthetic-token prefixes we deliberately ship. Every occurrence must be fake.
 _SYNTHETIC_PREFIXES = re.compile(r"(sk_live_[A-Za-z0-9]+|ghp_[A-Za-z0-9]+|xoxb-[A-Za-z0-9-]+)")
@@ -82,9 +99,18 @@ def test_no_real_provider_keys_in_tree():
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for pat in _REAL_KEY_PATTERNS:
-            if pat.search(text):
-                offenders.append(f"{path.relative_to(REPO_ROOT)} matched {pat.pattern}")
+        for line_no, line in enumerate(text.splitlines(), 1):
+            # The twins ship deliberately synthetic tokens that are shaped like
+            # the real thing on purpose. Every one carries the CHECKPOINTFAKE
+            # marker (enforced by test_synthetic_tokens_are_marked_fake), so a
+            # marked line is exempt — anything else matching is a real leak.
+            if _FAKE_MARKER in line:
+                continue
+            for pat in _REAL_KEY_PATTERNS:
+                if pat.search(line):
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}:{line_no} matched {pat.pattern}"
+                    )
     assert not offenders, "real-shaped provider key(s) found in tracked files:\n" + "\n".join(offenders)
 
 
