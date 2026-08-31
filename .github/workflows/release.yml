@@ -99,6 +99,11 @@ jobs:
           if len(seeds) < 20:
               sys.exit(f"FAIL: {whl} ships only {len(seeds)} twin seed files")
           print(f"OK: {len(seeds)} twin seed fixtures")
+
+          bad = [n for n in names if "__pycache__" in n or n.endswith((".pyc", ".pyo"))]
+          if bad:
+              sys.exit(f"FAIL: {whl} ships bytecode: {bad[:5]}")
+          print("OK: no bytecode in the wheel")
           print("release wheel verified:", whl)
           PY
 
