@@ -1922,6 +1922,61 @@ def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
     sys.exit(exit_code)
 
 
+@main.group("db")
+def db_group():
+    """The local run store (SQLite) — migrate JSON records in, then query."""
+
+
+@db_group.command("path")
+def db_path_cmd():
+    """Print the store's database path."""
+    from .store import default_db_path
+    click.echo(str(default_db_path()))
+
+
+@db_group.command("migrate")
+def db_migrate_cmd():
+    """Import the legacy JSON run-record cache into SQLite (idempotent)."""
+    from .run_record import RUNS_DIR
+    from .store import SqliteRunStore, migrate_json_runs
+    store = SqliteRunStore()
+    try:
+        n = migrate_json_runs(RUNS_DIR, store)
+        console.print(f"[green]Imported {n} run record(s) into {store.db_path}[/green]")
+    finally:
+        store.close()
+
+
+@db_group.command("list")
+@click.option("--scenario", default=None, help="Filter by scenario name.")
+@click.option("--limit", "-n", type=int, default=20, show_default=True)
+@click.option("--json", "as_json", is_flag=True, default=False)
+def db_list_cmd(scenario, limit, as_json):
+    """List recent runs from the store."""
+    import json as _json
+    from .store import SqliteRunStore
+    store = SqliteRunStore()
+    try:
+        rows = store.list_runs(scenario=scenario, limit=limit)
+    finally:
+        store.close()
+    if as_json:
+        console.print_json(_json.dumps(rows))
+        return
+    if not rows:
+        console.print("[dim]No runs in the store. Run `checkpoint db migrate` to import JSON records.[/dim]")
+        return
+    table = Table(box=box.SIMPLE, show_edge=False)
+    table.add_column("Run")
+    table.add_column("Scenario")
+    table.add_column("Score", justify="right")
+    table.add_column("When")
+    for r in rows:
+        score = f"{r['score']:.0f}" if r["score"] is not None else "-"
+        table.add_row(r["run_id"], r["scenario"] or "-", score, r["timestamp"] or "-")
+    console.print(table)
+
+
 @main.command("compliance")
 @click.option("--certificate", "cert_path", required=True,
               type=click.Path(exists=True, dir_okay=False),

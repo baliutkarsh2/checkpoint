@@ -160,6 +160,7 @@ Run `checkpoint <command> --help` for full options.
 | `checkpoint validate <scenario.md>` | Lint a scenario |
 | `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
 | `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
+| `checkpoint db migrate` / `checkpoint db list` | Import run records into the SQLite store and query them |
 | `checkpoint doctor` | Verify environment (Python, Docker, sidecar image, API key) |
 
 ## Roadmap
