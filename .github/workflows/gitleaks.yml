@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   gitleaks:
@@ -28,3 +29,5 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
+          # Required for PR scans: the action diffs the PR via the API.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
