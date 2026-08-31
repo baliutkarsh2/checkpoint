@@ -119,7 +119,9 @@ checkpoint gate scenarios/ --harness "python my_agent.py" -n 20
 
 Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regression`, and the run gets one verdict: **SHIP** (every scenario confidently passes), **BLOCK** (any confident failure/regression — exit 1), or **CONDITIONAL** (something's flaky; exit 0, or 1 with `--strict`). Tune with `--ship-min` / `--block-max` / `--pass-threshold`. Pass rates are remembered per scenario, so a build that *used* to pass and now fails reads as a **regression**, not just a failure (`--no-baseline` to disable).
 
-Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered. Attach it to a release or hand it to a reviewer.
+Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered.
+
+`checkpoint compliance --certificate cert.json --redteam redteam.json --out report.md` rolls the gate certificate and red-team results into an **Agent Assurance Report** — a graded APPROVED / CONDITIONAL / REJECTED verdict with the statistical evidence and OWASP Agentic / NIST AI RMF / EU AI Act cross-references — the document a compliance reviewer or a customer's vendor-review team actually asks for.
 
 ## Red-teaming
 
