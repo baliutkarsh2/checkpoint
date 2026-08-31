@@ -5,40 +5,29 @@ project. Steps are ordered; several need repository-admin or account access.
 
 ---
 
-## 1. Rotate the leaked key — **do this first**
+## 1. Rotate the previously-leaked key — **do this first**
 
-A `.env` containing a live-format OpenAI key (`sk-proj-…`) was committed early in
-this repo's history. It is still reachable from old commits.
+This repository's history is already clean (see step 2), but a live-format
+OpenAI key was readable in the predecessor repo's history, so it must be treated
+as compromised. **Revoke it** in the OpenAI dashboard → *API keys* and issue a
+replacement that lives only in a git-ignored `.env`. A history rewrite cannot
+un-share a secret that was already published. See [SECURITY.md](../SECURITY.md).
 
-**Revoke it** in the OpenAI dashboard → *API keys*, and issue a replacement that
-lives only in a git-ignored `.env`. Revocation is the step that actually contains
-the leak — the purge below is hygiene, and cannot un-share a key that was already
-readable. See [SECURITY.md](../SECURITY.md).
+## 2. Confirm the history is secret-free — **done, but verify before publishing**
 
-> Do not make the repository public before this is done. Public repositories are
-> scraped by credential bots within seconds.
-
-## 2. Purge the secret from history
-
-Rewrites every commit SHA, so everyone must re-clone afterwards. Decide first
-whether to keep or delete the stale branches — they get rewritten too.
+This repo was created from a predecessor whose history was rewritten with
+`git filter-repo --invert-paths --path .env`, so no key material exists in any
+commit here. Re-verify before flipping visibility:
 
 ```bash
-pip install git-filter-repo
-git clone --mirror https://github.com/Aaditya2605/checkpoint.git ckpt-mirror
-cd ckpt-mirror
-git filter-repo --invert-paths --path .env --force
-git push --force --all && git push --force --tags
+git log --all --oneline -- .env                  # expect no output
+git rev-list --all --objects | grep -E '\s\.env$'  # expect no output
+git log --all --oneline -S'sk-proj-'             # only docs + test regex patterns
 ```
 
-Old blobs can remain reachable by direct SHA URL; GitHub Support can purge the
-cached views.
-
-Verify:
-
-```bash
-git rev-list --all --objects | grep -E '\s\.env$'   # expect no output
-```
+The last command legitimately matches `SECURITY.md`, this file, and
+`tests/test_no_tracked_secrets.py`, which contain the *pattern* `sk-proj-…`
+rather than a key.
 
 ## 3. Make the repository public
 
@@ -72,7 +61,7 @@ The release pipeline (`.github/workflows/release.yml`) uses **trusted publishing
 
 1. Create/own the `checkpoint-agents` project on https://pypi.org.
 2. Project → *Publishing* → add a trusted publisher:
-   owner `Aaditya2605`, repo `checkpoint`, workflow `release.yml`,
+   owner `baliutkarsh2`, repo `checkpoint`, workflow `release.yml`,
    environment `pypi`. (Use a *pending publisher* for the very first release.)
 
 Then tag:
@@ -89,7 +78,7 @@ assets, sidecar Dockerfile, init templates, twin seed fixtures), and publishes.
 
 Until the release lands, the README installs from git on purpose. Afterwards:
 
-- `README.md` — replace both `pip install git+https://github.com/Aaditya2605/checkpoint`
+- `README.md` — replace both `pip install git+https://github.com/baliutkarsh2/checkpoint`
   lines with `pip install checkpoint-agents`, and drop the "Not on PyPI yet"
   paragraph.
 - The GitHub Action already prefers the published distribution and falls back to

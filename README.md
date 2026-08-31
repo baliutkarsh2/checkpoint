@@ -5,7 +5,7 @@
 Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. In Docker mode your agent calls its real APIs unmodified — Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**. (`checkpoint gate` runs scenarios in subprocess mode today, where your agent reads twin URLs from env; TLS-intercept for the gate is on the roadmap.)
 
 ```bash
-pip install git+https://github.com/Aaditya2605/checkpoint   # PyPI release pending
+pip install git+https://github.com/baliutkarsh2/checkpoint   # PyPI release pending
 checkpoint demo          # deterministic, offline, no API key — see it score in ~5s
 ```
 
@@ -14,7 +14,7 @@ checkpoint demo          # deterministic, offline, no API key — see it score i
 ## Install
 
 ```bash
-pip install git+https://github.com/Aaditya2605/checkpoint   # installs the `checkpoint` CLI
+pip install git+https://github.com/baliutkarsh2/checkpoint   # installs the `checkpoint` CLI
 export OPENAI_API_KEY=sk-...        # only needed for [P] LLM-judged criteria
 ```
 
@@ -152,7 +152,7 @@ A single prompt tests a single exchange; real users push back, clarify, and get 
 Drop the GitHub Action into your workflow:
 
 ```yaml
-- uses: Aaditya2605/checkpoint@main
+- uses: baliutkarsh2/checkpoint@main
   with:
     target: scenarios/
     harness: "python my_agent.py"

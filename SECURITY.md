@@ -14,31 +14,21 @@ that is in scope and we want to hear about it.
 
 ## ⚠️ Action required: rotate the previously-committed OpenAI key
 
-A `.env` file containing a live-format OpenAI key (`sk-proj-…`) was tracked in git
-history. `.env` is now untracked and git-ignored, but **the key remains in the
-existing history and is considered compromised.** A maintainer must:
+**This repository's history is clean.** It was created from a predecessor repo
+whose history was rewritten with `git filter-repo --invert-paths --path .env`
+before publishing, so no `.env` blob and no key material exists in any commit
+here — verified: `git log --all -- .env` returns nothing.
 
-### 1. Rotate the key (do this first — it is the only step that actually contains the leak)
-- Revoke the key in the OpenAI dashboard → *API keys*. The key is burned regardless
-  of any history rewrite, so revocation is what protects you; the purge below is
-  hygiene.
+**The key itself must still be rotated.** It was readable in the predecessor
+repo's history, so treat it as compromised regardless of the rewrite: a purge
+cannot un-share a secret that was already published.
+
+### 1. Rotate the key (the only step that actually contains the leak)
+- Revoke the key in the OpenAI dashboard → *API keys*.
 - Issue a replacement and put it only in a local, git-ignored `.env` (see
   `.env.example`).
 
-### 2. Purge it from history (hygiene, after rotation)
-```bash
-# Work on a fresh mirror so a mistake can't corrupt anyone's checkout.
-git clone --mirror https://github.com/<org>/checkpoint checkpoint-purge.git
-cd checkpoint-purge.git
-pip install git-filter-repo
-git filter-repo --invert-paths --path .env --force
-git push --force --all
-git push --force --tags
-```
-- Ask GitHub Support to expire cached views / dangling commits of the old blob.
-- Every collaborator must re-clone (a rebased history diverges from old clones).
-
-### 3. Turn on the guardrails so it can't recur
+### 2. Turn on the guardrails so it can't recur
 - Enable **Secret scanning** + **Push protection** in the repo's
   *Settings → Code security and analysis*.
 - The CI runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push/PR (see

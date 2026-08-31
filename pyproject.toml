@@ -43,9 +43,9 @@ anthropic = ["anthropic>=0.40"]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"
-Repository = "https://github.com/Aaditya2605/checkpoint"
+Repository = "https://github.com/baliutkarsh2/checkpoint"
 Documentation = "https://usecheckpoint.dev/docs"
-Issues = "https://github.com/Aaditya2605/checkpoint/issues"
+Issues = "https://github.com/baliutkarsh2/checkpoint/issues"
 
 [project.scripts]
 checkpoint = "checkpoint.cli:main"

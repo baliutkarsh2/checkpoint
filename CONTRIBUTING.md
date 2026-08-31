@@ -7,7 +7,7 @@ are all welcome.
 ## Dev setup
 
 ```bash
-git clone https://github.com/Aaditya2605/checkpoint
+git clone https://github.com/baliutkarsh2/checkpoint
 cd checkpoint
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
