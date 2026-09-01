@@ -102,10 +102,11 @@ def gw_twin():
 @pytest.mark.asyncio
 async def test_gw_mcp_lists_expected_tools(gw_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{gw_twin}/mcp/"
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -118,12 +119,13 @@ async def test_gw_mcp_lists_expected_tools(gw_twin):
 @pytest.mark.asyncio
 async def test_gw_mcp_gmail_tools(gw_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{gw_twin}/mcp/"
     state_url = f"http://127.0.0.1:{gw_twin}/_state"
 
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -181,12 +183,13 @@ async def test_gw_mcp_gmail_tools(gw_twin):
 @pytest.mark.asyncio
 async def test_gw_mcp_drive_tools(gw_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{gw_twin}/mcp/"
     state_url = f"http://127.0.0.1:{gw_twin}/_state"
 
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 

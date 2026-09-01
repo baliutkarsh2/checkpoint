@@ -103,8 +103,8 @@ async def test_three_twins_mcp_one_transport_two_doors(three_twins):
          share a single STATE dict (one twin, two doors).
     """
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
 
+    from checkpoint.mcp_compat import client_streams
     from checkpoint.runner import twin_mcp_url
 
     gh_port, sl_port, st_port = (
@@ -112,7 +112,7 @@ async def test_three_twins_mcp_one_transport_two_doors(three_twins):
     )
 
     # --- GitHub ---------------------------------------------------------
-    async with streamablehttp_client(twin_mcp_url(gh_port)) as (r, w, _):
+    async with client_streams(twin_mcp_url(gh_port)) as (r, w, _):
         async with ClientSession(r, w) as session:
             await session.initialize()
             await session.call_tool(
@@ -137,7 +137,7 @@ async def test_three_twins_mcp_one_transport_two_doors(three_twins):
         }}}},
     ).raise_for_status()
 
-    async with streamablehttp_client(twin_mcp_url(sl_port)) as (r, w, _):
+    async with client_streams(twin_mcp_url(sl_port)) as (r, w, _):
         async with ClientSession(r, w) as session:
             await session.initialize()
             await session.call_tool(
@@ -155,7 +155,7 @@ async def test_three_twins_mcp_one_transport_two_doors(three_twins):
     assert "hi from REST" in texts
 
     # --- Stripe ---------------------------------------------------------
-    async with streamablehttp_client(twin_mcp_url(st_port)) as (r, w, _):
+    async with client_streams(twin_mcp_url(st_port)) as (r, w, _):
         async with ClientSession(r, w) as session:
             await session.initialize()
             await session.call_tool(

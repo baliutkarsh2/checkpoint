@@ -12,9 +12,9 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
 from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from ._shim import make_shim, mount_mcp_on_fastapi
 
@@ -26,11 +26,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
     token = os.environ.get("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN)
     shim = make_shim(app, token, auth_scheme="Bearer")
 
-    mcp = FastMCP(
+    mcp = make_server(
         name="checkpoint-google-workspace",
         instructions="Stateful synthetic Google Workspace (Gmail + Drive). Tool names mirror the official Google Workspace MCP server.",
-        stateless_http=True,
-        streamable_http_path="/",
     )
 
     # ===== Gmail =============================================================

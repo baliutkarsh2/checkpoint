@@ -41,15 +41,41 @@ def test_py_typed_marker_ships():
     assert "Typing :: Typed" in PYPROJECT["project"]["classifiers"]
 
 
-def test_runtime_dependencies_are_bounded():
-    """An unbounded dep lets a breaking major install cleanly and break users."""
-    unbounded = [
-        d for d in PYPROJECT["project"]["dependencies"]
-        if ">=" in d and "<" not in d and d.split(">=")[0].strip('"') in {
-            "openai", "pydantic", "mitmproxy", "docker", "mcp",
-        }
-    ]
-    assert not unbounded, f"volatile dependencies need an upper bound: {unbounded}"
+def test_no_upper_bounds_on_dependencies():
+    """A published library must not cap its dependencies.
+
+    An upper bound propagates into every downstream resolver and can make this
+    package uninstallable beside a newer release of a shared dependency, so the
+    cost of a guess lands on users. Compatibility is proven by testing instead:
+    CI resolves the latest of everything across the supported Python versions
+    and builds both container images. When a new major genuinely breaks us, the
+    fix is to support it (see checkpoint/mcp_compat.py for mcp 1.x/2.x), not to
+    pin around it.
+    """
+    capped = [d for d in PYPROJECT["project"]["dependencies"] if "<" in d]
+    assert not capped, (
+        f"support the new major instead of capping it: {capped}"
+    )
+
+
+def test_dependency_floors_are_modern():
+    """Stale floors make pip backtrack through hundreds of releases.
+
+    A clean install of this graph with year-old floors failed outright with
+    pip's `resolution-too-deep`. pip's own guidance for that error is to add
+    lower bounds, so these floors are part of the install actually working.
+    """
+    floors = {
+        d.split(">=")[0].split("[")[0]: d.split(">=")[1]
+        for d in PYPROJECT["project"]["dependencies"] if ">=" in d
+    }
+    minimums = {"openai": (2, 0), "pydantic": (2, 9), "httpx": (0, 28), "fastapi": (0, 115)}
+    stale = []
+    for pkg, want in minimums.items():
+        got = tuple(int(x) for x in floors[pkg].split(".")[:2])
+        if got < want:
+            stale.append(f"{pkg}>={floors[pkg]} (want >={'.'.join(map(str, want))})")
+    assert not stale, f"these floors are stale enough to slow resolution: {stale}"
 
 
 def test_no_empty_optional_dependency_groups():
@@ -79,3 +105,19 @@ def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
             f"{heavy} is imported at module scope; it would be imported on every "
             "pytest run in any project that installs checkpoint-agents"
         )
+
+
+def test_mitmproxy_is_not_a_core_dependency():
+    """The TLS sidecar's dependency must not be forced on every install.
+
+    checkpoint/proxy/addon.py is loaded by mitmdump inside the sidecar
+    container, so the host process never imports mitmproxy. Shipping it as a
+    core dependency put its large transitive tree (cryptography, tornado,
+    urwid, ldap3, passlib, ...) into every environment and made a clean install
+    slow enough that pip gave up with `resolution-too-deep`.
+    """
+    core = " ".join(PYPROJECT["project"]["dependencies"])
+    assert "mitmproxy" not in core, "mitmproxy belongs in the `proxy` extra"
+    assert "mitmproxy" in " ".join(
+        PYPROJECT["project"]["optional-dependencies"]["proxy"]
+    )

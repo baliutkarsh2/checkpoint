@@ -23,18 +23,35 @@ classifiers = [
     "Typing :: Typed",
     "Operating System :: OS Independent",
 ]
+# No speculative upper bounds. An upper bound in a published library propagates
+# into every downstream resolver and can make this package uninstallable
+# alongside a newer release of a shared dependency — the cost lands on users,
+# not on us. Compatibility is proven by testing instead: CI resolves the latest
+# of everything on Python 3.11/3.12/3.13 and builds both container images, so a
+# genuinely breaking major fails the build rather than silently reaching anyone.
+# Floors are real requirements, not guesses (uvicorn matches mcp's own floor).
 dependencies = [
-    "fastapi>=0.110",
-    "uvicorn[standard]>=0.27",
-    "httpx>=0.27",
-    "click>=8.1",
+    # Floors are deliberately modern. pip explores every version the graph
+    # allows, so stale floors (pydantic>=2.0, openai>=1.30) make it backtrack
+    # through hundreds of releases — a clean install hit `resolution-too-deep`
+    # and failed outright. pip's own advice for that error is to add LOWER
+    # bounds; these reflect versions we actually run and keep installs fast.
+    #
+    # There are deliberately NO upper bounds. A cap in a published library
+    # propagates into every downstream resolver and can make this package
+    # uninstallable beside a newer shared dependency — the cost of a guess
+    # lands on users. Compatibility is proven by testing: CI resolves the
+    # latest of everything on Python 3.11/3.12/3.13 and builds both images.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.31.1",
+    "httpx>=0.28",
+    "click>=8.1.7",
     "rich>=13.7",
-    "openai>=1.30,<3",
-    "pydantic>=2.0,<3",
+    "openai>=2.0",
+    "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "mitmproxy>=10.0,<14",
-    "docker>=7.0,<8",
-    "mcp>=1.27,<2",
+    "docker>=7.1",
+    "mcp>=1.27",
     "sse-starlette>=2.1",
 ]
 
@@ -45,10 +62,20 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "ruff>=0.6",
+    # The suite covers the sidecar addon (tests/proxy/test_addon.py), so the dev
+    # environment needs the proxy stack even though users' installs do not.
+    "mitmproxy>=11.0",
 ]
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
 anthropic = ["anthropic>=0.40"]
+# The TLS-intercept sidecar. checkpoint/proxy/addon.py is loaded by mitmdump
+# INSIDE the sidecar container (see checkpoint/proxy/entrypoint.sh), so the host
+# process never imports mitmproxy — only the sidecar image and `checkpoint
+# doctor`'s optional check do. Keeping it out of the default install removes its
+# large transitive tree (cryptography, tornado, urwid, ldap3, passlib, ...) from
+# every user's environment.
+proxy = ["mitmproxy>=11.0"]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"

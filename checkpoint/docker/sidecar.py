@@ -76,9 +76,13 @@ def _runtime_requirements() -> list[str]:
             continue
         out: list[str] = []
         for r in reqs:
-            # Drop optional/extra deps (they carry an `; extra == "..."` marker).
+            # Core deps carry no marker. Of the optional ones, keep exactly the
+            # `proxy` extra: mitmproxy is not installed on the host (the addon
+            # runs inside this image), but the sidecar itself cannot work
+            # without it, so it must land in the generated pyproject.
             if "extra ==" in r:
-                continue
+                if 'extra == "proxy"' not in r.replace("'", '"'):
+                    continue
             out.append(r.split(";", 1)[0].strip())
         if out:
             return out

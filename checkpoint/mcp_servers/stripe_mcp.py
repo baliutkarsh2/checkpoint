@@ -19,9 +19,9 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
 from checkpoint.fake_credentials import FAKE_STRIPE_KEY
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from ._shim import make_shim, mount_mcp_on_fastapi
 
@@ -33,11 +33,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
     token = os.environ.get("STRIPE_BOOTSTRAP_TOKEN", STRIPE_BOOTSTRAP_TOKEN)
     shim = make_shim(app, token, auth_scheme="Bearer")
 
-    mcp = FastMCP(
+    mcp = make_server(
         name="checkpoint-stripe",
         instructions="Stateful synthetic Stripe (strict mode). Tool names match Archal §3.5.",
-        stateless_http=True,
-        streamable_http_path="/",
     )
 
     # ----- Customers ----------------------------------------------------

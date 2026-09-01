@@ -76,10 +76,11 @@ def slack_twin():
 @pytest.mark.asyncio
 async def test_slack_mcp_lists_archal_tool_set(slack_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{slack_twin}/mcp/"
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -93,12 +94,13 @@ async def test_slack_mcp_lists_archal_tool_set(slack_twin):
 @pytest.mark.asyncio
 async def test_slack_mcp_all_eight_tools_callable(slack_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{slack_twin}/mcp/"
     state_url = f"http://127.0.0.1:{slack_twin}/_state"
 
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 

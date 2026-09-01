@@ -150,7 +150,7 @@ def _check_mitmproxy() -> Check:
             name="mitmproxy importable",
             ok=False,
             detail=f"import failed: {e}",
-            fix="pip install mitmproxy",
+            fix='pip install "checkpoint-agents[proxy]"',
         )
 
 

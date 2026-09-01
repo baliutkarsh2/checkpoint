@@ -12,9 +12,9 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
 
 from checkpoint.fake_credentials import FAKE_DISCORD_TOKEN
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from ._shim import make_shim, mount_mcp_on_fastapi
 
@@ -28,11 +28,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
     token = raw[4:] if raw.startswith("Bot ") else raw
     shim = make_shim(app, token, auth_scheme="Bot")
 
-    mcp = FastMCP(
+    mcp = make_server(
         name="checkpoint-discord",
         instructions="Stateful synthetic Discord. Tool names mirror the official Discord MCP server.",
-        stateless_http=True,
-        streamable_http_path="/",
     )
 
     # ----- Bot / User -------------------------------------------------------
