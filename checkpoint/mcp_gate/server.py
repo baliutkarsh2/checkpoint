@@ -1,13 +1,13 @@
 """FastMCP server exposing Checkpoint's testing tools over stdio."""
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from checkpoint.mcp_compat import FastMCP, make_server
 
 from .tools import gate_tool, list_scenarios_tool, run_scenario_tool
 
 
 def build_server() -> FastMCP:
-    mcp = FastMCP("checkpoint")
+    mcp = make_server("checkpoint")
 
     @mcp.tool()
     def list_scenarios(scenarios_dir: str = "scenarios") -> list[dict]:

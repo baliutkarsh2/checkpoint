@@ -89,10 +89,11 @@ def supabase_twin():
 @pytest.mark.asyncio
 async def test_supabase_mcp_lists_expected_tools(supabase_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{supabase_twin}/mcp/"
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -105,12 +106,13 @@ async def test_supabase_mcp_lists_expected_tools(supabase_twin):
 @pytest.mark.asyncio
 async def test_supabase_mcp_key_tools(supabase_twin):
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+
+    from checkpoint.mcp_compat import client_streams
 
     url = f"http://127.0.0.1:{supabase_twin}/mcp/"
     state_url = f"http://127.0.0.1:{supabase_twin}/_state"
 
-    async with streamablehttp_client(url) as (read, write, _):
+    async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
