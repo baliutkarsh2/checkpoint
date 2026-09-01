@@ -24,7 +24,7 @@ export OPENAI_API_KEY=sk-...        # only needed for [P] LLM-judged criteria
 
 **Not on PyPI yet.** The distribution will be `checkpoint-agents` once the first release is tagged; until then use the source install above. Note that the bare name `checkpoint` on PyPI is an unrelated project — always install `checkpoint-agents`, never the bare name.
 
-Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). The source install ships **without the dashboard bundle** (it's built in CI), so `checkpoint serve` needs a one-time `cd checkpoint/dashboard/web && npm ci && npm run build` (Node 22+) first. The CLI, including `checkpoint demo`, works without it.
+Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). Nothing else to build: the dashboard bundle ships with the package, so `checkpoint serve` works straight after install.
 
 **Vendor-neutral.** The judge works with any model — pass `--model` (or set `defaults.judge_model`) to a `gpt-*`, `claude-*`, or `gemini-*` name, or point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint (local, vLLM, OpenRouter). Claude needs `pip install checkpoint-agents[anthropic]`; Gemini and compatible endpoints need nothing extra.
 

@@ -59,8 +59,10 @@ docker client, so a running daemon is not required to run the suite.
 ## Changing the dashboard
 
 The SPA source lives in `checkpoint/dashboard/web`. The built bundle
-(`checkpoint/dashboard/static/`) is **not** committed — it is gitignored and built
-fresh in CI, then packaged into the wheel. Build it locally to preview your changes:
+(`checkpoint/dashboard/static/`) **is committed**, so a plain `pip install` from
+git gives users a working dashboard with no Node required. If you change the SPA
+you must rebuild and commit the bundle — CI rebuilds it and fails if the
+committed copy is stale:
 
 ```bash
 cd checkpoint/dashboard/web && npm ci && npm run build   # outputs ../static

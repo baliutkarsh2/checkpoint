@@ -25,3 +25,8 @@ entrypoint.sh   text eol=lf
 *.woff  binary
 *.woff2 binary
 *.ttf   binary
+
+# The committed SPA bundle is a build artifact compared byte-for-byte against a
+# fresh `npm run build` in CI. Mark it binary so no platform rewrites its line
+# endings and makes an identical build look stale.
+checkpoint/dashboard/static/** -text

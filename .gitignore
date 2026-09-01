@@ -35,8 +35,6 @@ dash2.txt
 sse-test.txt
 fullsuite.txt
 
-# Built SPA bundle — produced by `npm run build`, packaged in CI. Not committed.
-checkpoint/dashboard/static/
 
 # Playwright (dashboard render smoke test) artifacts
 checkpoint/dashboard/web/test-results/
