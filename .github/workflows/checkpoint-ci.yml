@@ -203,6 +203,20 @@ jobs:
           npm ci
           npm run build
 
+      # The built bundle is committed so `pip install` from git (and any source
+      # checkout) has a working dashboard without needing Node. That only stays
+      # true if it matches the source, so rebuild and compare byte-for-byte.
+      - name: Verify the committed SPA bundle is current
+        run: |
+          if ! git diff --quiet -- checkpoint/dashboard/static/; then
+            echo "::error::checkpoint/dashboard/static/ is stale."
+            echo "Rebuild and commit it:"
+            echo "  cd checkpoint/dashboard/web && npm ci && npm run build"
+            git diff --stat -- checkpoint/dashboard/static/
+            exit 1
+          fi
+          echo "OK: committed bundle matches a fresh build"
+
       # 1b. Render smoke test: serve the freshly built bundle headlessly and
       # assert it mounts, routes, and is styled by Tailwind. This is the
       # automated stand-in for a manual click-through of UI-framework upgrades.
