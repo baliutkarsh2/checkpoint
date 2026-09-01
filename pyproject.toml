@@ -31,22 +31,27 @@ classifiers = [
 # genuinely breaking major fails the build rather than silently reaching anyone.
 # Floors are real requirements, not guesses (uvicorn matches mcp's own floor).
 dependencies = [
-    "fastapi>=0.110",
+    # Floors are deliberately modern. pip explores every version the graph
+    # allows, so stale floors (pydantic>=2.0, openai>=1.30) make it backtrack
+    # through hundreds of releases — a clean install hit `resolution-too-deep`
+    # and failed outright. pip's own advice for that error is to add LOWER
+    # bounds; these reflect versions we actually run and keep installs fast.
+    #
+    # There are deliberately NO upper bounds. A cap in a published library
+    # propagates into every downstream resolver and can make this package
+    # uninstallable beside a newer shared dependency — the cost of a guess
+    # lands on users. Compatibility is proven by testing: CI resolves the
+    # latest of everything on Python 3.11/3.12/3.13 and builds both images.
+    "fastapi>=0.115",
     "uvicorn[standard]>=0.31.1",
-    "httpx>=0.27",
-    "click>=8.1",
+    "httpx>=0.28",
+    "click>=8.1.7",
     "rich>=13.7",
-    # EVIDENCE-BASED bound, not a guess: openai 3.x migrated to the `httpx2`
-    # package, while this stack (fastapi/starlette/mcp/mitmproxy) is built on
-    # httpx + anyio. With openai unbounded, pip explores 3.x, cannot reconcile
-    # the two HTTP stacks and fails the container build with
-    # ResolutionImpossible. Revisit when the ecosystem lands on httpx2; our own
-    # usage is only OpenAI(...).chat.completions.create, which is unchanged.
-    "openai>=1.30,<3",
-    "pydantic>=2.0",
+    "openai>=2.0",
+    "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "mitmproxy>=10.0",
-    "docker>=7.0",
+    "mitmproxy>=11.0",
+    "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
 ]

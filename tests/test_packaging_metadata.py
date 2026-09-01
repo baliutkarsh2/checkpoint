@@ -41,27 +41,41 @@ def test_py_typed_marker_ships():
     assert "Typing :: Typed" in PYPROJECT["project"]["classifiers"]
 
 
-def test_no_speculative_upper_bounds_on_dependencies():
-    """A published library must not cap its dependencies speculatively.
+def test_no_upper_bounds_on_dependencies():
+    """A published library must not cap its dependencies.
 
     An upper bound propagates into every downstream resolver and can make this
-    package uninstallable alongside a newer release of a shared dependency, so
-    the cost of a guess lands on users. Compatibility is proven by testing
-    instead: CI resolves the latest of everything across the supported Python
-    versions. A cap may only be added with evidence of a real incompatibility,
-    and then it belongs in a comment next to the pin.
+    package uninstallable beside a newer release of a shared dependency, so the
+    cost of a guess lands on users. Compatibility is proven by testing instead:
+    CI resolves the latest of everything across the supported Python versions
+    and builds both container images. When a new major genuinely breaks us, the
+    fix is to support it (see checkpoint/mcp_compat.py for mcp 1.x/2.x), not to
+    pin around it.
     """
-    # Bounds that ARE justified carry a comment in pyproject explaining the
-    # observed incompatibility; those are listed here so adding a new one is a
-    # deliberate edit to this test rather than a silent pin.
-    justified = {"openai"}
     capped = [d for d in PYPROJECT["project"]["dependencies"] if "<" in d]
-    unjustified = [d for d in capped if d.split(">=")[0].split("[")[0] not in justified]
-    assert not unjustified, (
-        "these dependencies carry a speculative upper bound; support the new "
-        "major instead (see checkpoint/mcp_compat.py for how mcp 1.x/2.x is "
-        f"handled), or document the incompatibility: {unjustified}"
+    assert not capped, (
+        f"support the new major instead of capping it: {capped}"
     )
+
+
+def test_dependency_floors_are_modern():
+    """Stale floors make pip backtrack through hundreds of releases.
+
+    A clean install of this graph with year-old floors failed outright with
+    pip's `resolution-too-deep`. pip's own guidance for that error is to add
+    lower bounds, so these floors are part of the install actually working.
+    """
+    floors = {
+        d.split(">=")[0].split("[")[0]: d.split(">=")[1]
+        for d in PYPROJECT["project"]["dependencies"] if ">=" in d
+    }
+    minimums = {"openai": (2, 0), "pydantic": (2, 9), "httpx": (0, 28), "fastapi": (0, 115)}
+    stale = []
+    for pkg, want in minimums.items():
+        got = tuple(int(x) for x in floors[pkg].split(".")[:2])
+        if got < want:
+            stale.append(f"{pkg}>={floors[pkg]} (want >={'.'.join(map(str, want))})")
+    assert not stale, f"these floors are stale enough to slow resolution: {stale}"
 
 
 def test_no_empty_optional_dependency_groups():
