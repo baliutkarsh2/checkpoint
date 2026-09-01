@@ -15,7 +15,7 @@ WORKDIR /opt/checkpoint
 # Install checkpoint package (which has mitmproxy + docker + cryptography as deps).
 COPY pyproject.toml ./
 COPY checkpoint ./checkpoint
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[proxy]"
 
 # Entrypoint mints CA then starts mitmdump.
 COPY checkpoint/proxy/entrypoint.sh /opt/checkpoint/entrypoint.sh

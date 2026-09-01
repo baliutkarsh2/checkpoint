@@ -50,7 +50,6 @@ dependencies = [
     "openai>=2.0",
     "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "mitmproxy>=11.0",
     "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
@@ -67,6 +66,13 @@ dev = [
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
 anthropic = ["anthropic>=0.40"]
+# The TLS-intercept sidecar. checkpoint/proxy/addon.py is loaded by mitmdump
+# INSIDE the sidecar container (see checkpoint/proxy/entrypoint.sh), so the host
+# process never imports mitmproxy — only the sidecar image and `checkpoint
+# doctor`'s optional check do. Keeping it out of the default install removes its
+# large transitive tree (cryptography, tornado, urwid, ldap3, passlib, ...) from
+# every user's environment.
+proxy = ["mitmproxy>=11.0"]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"

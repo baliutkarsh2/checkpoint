@@ -105,3 +105,19 @@ def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
             f"{heavy} is imported at module scope; it would be imported on every "
             "pytest run in any project that installs checkpoint-agents"
         )
+
+
+def test_mitmproxy_is_not_a_core_dependency():
+    """The TLS sidecar's dependency must not be forced on every install.
+
+    checkpoint/proxy/addon.py is loaded by mitmdump inside the sidecar
+    container, so the host process never imports mitmproxy. Shipping it as a
+    core dependency put its large transitive tree (cryptography, tornado,
+    urwid, ldap3, passlib, ...) into every environment and made a clean install
+    slow enough that pip gave up with `resolution-too-deep`.
+    """
+    core = " ".join(PYPROJECT["project"]["dependencies"])
+    assert "mitmproxy" not in core, "mitmproxy belongs in the `proxy` extra"
+    assert "mitmproxy" in " ".join(
+        PYPROJECT["project"]["optional-dependencies"]["proxy"]
+    )
