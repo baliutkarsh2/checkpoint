@@ -62,6 +62,9 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "ruff>=0.6",
+    # The suite covers the sidecar addon (tests/proxy/test_addon.py), so the dev
+    # environment needs the proxy stack even though users' installs do not.
+    "mitmproxy>=11.0",
 ]
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
