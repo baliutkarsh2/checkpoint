@@ -1,9 +1,9 @@
 """FastMCP server exposing Checkpoint's testing tools over stdio."""
 from __future__ import annotations
 
+from checkpoint.llm import DEFAULT_MODEL
 from checkpoint.mcp_compat import FastMCP, make_server
 
-from ..llm import DEFAULT_MODEL
 from .tools import gate_tool, list_scenarios_tool, run_scenario_tool
 
 

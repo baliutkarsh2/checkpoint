@@ -182,6 +182,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
         seed_views=result.seed_views,
         final_views=result.views,
         trace=result.trace,
+        task=scenario.prompt,
         answer=result.final_answer,
         egress=result.egress,
         exit_code=result.exit_code,
