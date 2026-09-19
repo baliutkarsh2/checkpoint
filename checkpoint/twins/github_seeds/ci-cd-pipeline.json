@@ -5,21 +5,31 @@
         "id": 1, "name": "webapp", "full_name": "acme/webapp",
         "owner": {"login": "acme", "id": 1, "type": "Organization"},
         "default_branch": "main", "private": false,
+        "description": "Customer-facing web application",
         "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
-        "html_url": "http://localhost/acme/webapp",
         "branches": {"main": {"name": "main", "sha": "abc1230000000000000000000000000000000000", "protected": false}},
         "commits": [
-          {"sha": "abc1230000000000000000000000000000000000", "commit": {"message": "ci: tighten lint", "author": {"name": "ci-bot", "date": "2026-05-12T00:00:00Z"}}, "files": []}
+          {"sha": "abc1230000000000000000000000000000000000",
+           "parents": [],
+           "commit": {"message": "ci: tighten lint",
+                      "author": {"name": "ci-bot", "email": "ci@acme.test", "date": "2026-05-12T00:00:00Z"}},
+           "files": [{"filename": ".github/workflows/ci.yml", "status": "modified"}]}
         ],
-        "files": {".github/workflows/ci.yml": {"content": "name: ci\non: [push]\n", "sha": "ci-yml"}}
+        "files": {
+          ".github/workflows/ci.yml": {"content": "name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pytest\n"},
+          ".github/workflows/deploy.yml": {"content": "name: deploy\non:\n  workflow_dispatch:\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh\n"}
+        }
       }
     },
     "workflow_runs": {
-      "acme/webapp#100": {"id": 100, "name": "ci", "status": "completed", "conclusion": "success", "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "html_url": "http://localhost/acme/webapp/actions/runs/100", "created_at": "2026-05-12T10:00:00Z", "updated_at": "2026-05-12T10:05:00Z"},
-      "acme/webapp#101": {"id": 101, "name": "ci", "status": "completed", "conclusion": "failure", "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "html_url": "http://localhost/acme/webapp/actions/runs/101", "created_at": "2026-05-12T11:00:00Z", "updated_at": "2026-05-12T11:04:00Z"},
-      "acme/webapp#102": {"id": 102, "name": "deploy", "status": "in_progress", "conclusion": null, "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "html_url": "http://localhost/acme/webapp/actions/runs/102", "created_at": "2026-05-12T12:00:00Z", "updated_at": "2026-05-12T12:00:00Z"}
+      "acme/webapp#100": {"id": 100, "name": "ci", "status": "completed", "conclusion": "success", "event": "push", "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "run_number": 100, "created_at": "2026-05-12T10:00:00Z", "updated_at": "2026-05-12T10:05:00Z"},
+      "acme/webapp#101": {"id": 101, "name": "ci", "status": "completed", "conclusion": "failure", "event": "push", "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "run_number": 101, "created_at": "2026-05-12T11:00:00Z", "updated_at": "2026-05-12T11:04:00Z"},
+      "acme/webapp#102": {"id": 102, "name": "deploy", "status": "in_progress", "conclusion": null, "event": "workflow_dispatch", "head_sha": "abc1230000000000000000000000000000000000", "head_branch": "main", "run_number": 102, "created_at": "2026-05-12T12:00:00Z", "updated_at": "2026-05-12T12:00:00Z"}
     },
-    "_counters": {"issue_number_per_repo": {}, "pull_number_per_repo": {}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 102, "sha_seq_per_repo": {}, "requests": 0}
+    "users": {
+      "acme": {"login": "acme", "id": 1, "type": "Organization"},
+      "ci-bot": {"login": "ci-bot", "id": 2, "type": "Bot"}
+    }
   },
   "config": {"rate_limit": null, "permissions_denied": false}
 }

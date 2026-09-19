@@ -31,6 +31,7 @@ GOOGLE_WORKSPACE_TOOL_NAMES = {
     "gmail_send_message",
     "gmail_modify_message",
     "gmail_trash_message",
+    "gmail_untrash_message",
     "gmail_delete_message",
     "gmail_list_drafts",
     "gmail_get_draft",
@@ -51,6 +52,13 @@ GOOGLE_WORKSPACE_TOOL_NAMES = {
     "drive_add_permission",
     "drive_update_permission",
     "drive_remove_permission",
+    "drive_download_file",
+    # Calendar
+    "calendar_list_calendars",
+    "calendar_list_events",
+    "calendar_create_event",
+    "calendar_delete_event",
+    "calendar_free_busy",
 }
 
 
@@ -170,7 +178,7 @@ async def test_gw_mcp_gmail_tools(gw_twin):
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "threads" in text or "resultSizeEstimate" in text
 
-            # 6. create_draft
+            # 6. create_draft, update it, then send it
             result = await session.call_tool("gmail_create_draft", {
                 "to": "carol@acme.test",
                 "subject": "Draft Test",
@@ -178,6 +186,24 @@ async def test_gw_mcp_gmail_tools(gw_twin):
             })
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "id" in text
+
+            state = httpx.get(state_url).json()
+            draft_id = next(iter(state["gmail_drafts"]))
+            result = await session.call_tool("gmail_update_draft", {
+                "draft_id": draft_id, "subject": "Draft Test v2"})
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "id" in text and "_status" not in text
+
+            result = await session.call_tool("gmail_send_draft", {"draft_id": draft_id})
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "SENT" in text
+
+            state = httpx.get(state_url).json()
+            assert not state["gmail_drafts"]
+            sent = [m for m in state["gmail_messages"].values()
+                    if any(h["name"] == "Subject" and h["value"] == "Draft Test v2"
+                           for h in m["payload"]["headers"])]
+            assert sent and "SENT" in sent[0]["labelIds"]
 
 
 @pytest.mark.asyncio
@@ -244,3 +270,43 @@ async def test_gw_mcp_drive_tools(gw_twin):
             result = await session.call_tool("drive_delete_file", {"file_id": file_id})
             state = httpx.get(state_url).json()
             assert file_id not in state["drive_files"]
+
+
+@pytest.mark.asyncio
+async def test_gw_mcp_calendar_tools(gw_twin):
+    from mcp import ClientSession
+
+    from checkpoint.mcp_compat import client_streams
+
+    url = f"http://127.0.0.1:{gw_twin}/mcp/"
+    state_url = f"http://127.0.0.1:{gw_twin}/_state"
+
+    async with client_streams(url) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            result = await session.call_tool("calendar_list_calendars", {})
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "alice@acme.test" in text
+
+            result = await session.call_tool("calendar_create_event", {
+                "summary": "Design review",
+                "start": "2026-03-02T15:00:00Z",
+                "end": "2026-03-02T16:00:00Z",
+                "attendees": ["bob@acme.test"],
+            })
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "Design review" in text
+
+            state = httpx.get(state_url).json()
+            event_id = next(eid for eid, e in state["calendar_events"].items()
+                            if e["summary"] == "Design review")
+
+            result = await session.call_tool("calendar_list_events", {
+                "time_min": "2026-03-01T00:00:00Z", "time_max": "2026-03-03T00:00:00Z"})
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert event_id in text
+
+            await session.call_tool("calendar_delete_event", {"event_id": event_id})
+            state = httpx.get(state_url).json()
+            assert state["calendar_events"][event_id]["status"] == "cancelled"

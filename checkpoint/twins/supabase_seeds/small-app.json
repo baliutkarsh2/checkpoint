@@ -3,6 +3,8 @@
     "tables": {
       "profiles": {
         "columns": ["id", "username", "full_name", "avatar_url", "website", "created_at", "updated_at"],
+        "primary_key": "id",
+        "unique": [["username"]],
         "rows": [
           {
             "id": "user-alice-uuid",
@@ -26,6 +28,8 @@
       },
       "posts": {
         "columns": ["id", "title", "body", "author_id", "published", "created_at", "updated_at"],
+        "primary_key": "id",
+        "foreign_keys": {"author_id": "profiles.id"},
         "rows": [
           {
             "id": "post-1",
@@ -58,6 +62,8 @@
       },
       "comments": {
         "columns": ["id", "post_id", "author_id", "body", "created_at"],
+        "primary_key": "id",
+        "foreign_keys": {"post_id": "posts.id", "author_id": "profiles.id"},
         "rows": [
           {
             "id": "comment-1",
@@ -72,6 +78,7 @@
     "auth_users": {
       "user-alice-uuid": {
         "id": "user-alice-uuid",
+        "aud": "authenticated",
         "email": "alice@acme.test",
         "role": "authenticated",
         "created_at": "2025-01-01T00:00:00+00:00",
@@ -79,10 +86,11 @@
         "last_sign_in_at": "2025-01-20T08:00:00+00:00",
         "email_confirmed_at": "2025-01-01T00:01:00+00:00",
         "user_metadata": {"full_name": "Alice Chen"},
-        "app_metadata": {"provider": "email"}
+        "app_metadata": {"provider": "email", "providers": ["email"]}
       },
       "user-bob-uuid": {
         "id": "user-bob-uuid",
+        "aud": "authenticated",
         "email": "bob@acme.test",
         "role": "authenticated",
         "created_at": "2025-01-02T00:00:00+00:00",
@@ -90,7 +98,7 @@
         "last_sign_in_at": "2025-01-18T12:00:00+00:00",
         "email_confirmed_at": "2025-01-02T00:01:00+00:00",
         "user_metadata": {"full_name": "Bob Smith"},
-        "app_metadata": {"provider": "email"}
+        "app_metadata": {"provider": "email", "providers": ["email"]}
       }
     },
     "storage": {
@@ -98,15 +106,19 @@
         "avatars": {
           "id": "avatars",
           "name": "avatars",
+          "owner": "",
           "public": true,
+          "file_size_limit": null,
+          "allowed_mime_types": null,
           "created_at": "2025-01-01T00:00:00+00:00",
           "updated_at": "2025-01-01T00:00:00+00:00",
-          "object_count": 0
+          "type": "STANDARD"
         }
       },
       "objects": {}
     },
     "rpc_stubs": {},
+    "edge_functions": {},
     "_counters": {
       "requests": 0
     }
