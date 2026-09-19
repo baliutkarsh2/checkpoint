@@ -38,6 +38,7 @@ from pathlib import Path
 import docker
 from docker.errors import APIError, NotFound
 
+from ..llm import DEFAULT_MODEL
 from ..proxy.routes import all_domains, lookup, register
 from ..runner import (
     RunResult,
@@ -243,7 +244,7 @@ def docker_run_once(
     harness_cmd: list,
     harness_dir: Path,
     cwd: str | None = None,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     verbose: bool = False,
 ) -> DockerRunResult:
     clones = scenario.clones or ["github"]

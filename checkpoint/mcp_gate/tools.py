@@ -5,6 +5,8 @@ import os
 import shlex
 from pathlib import Path
 
+from ..llm import DEFAULT_MODEL
+
 
 def _split(harness: str) -> list[str]:
     return shlex.split(harness, posix=(os.name != "nt"))
@@ -33,7 +35,7 @@ def list_scenarios_tool(scenarios_dir: str = "scenarios") -> list[dict]:
 
 
 def run_scenario_tool(scenario_path: str, harness: str,
-                      judge_model: str = "gpt-4o-mini") -> dict:
+                      judge_model: str = DEFAULT_MODEL) -> dict:
     """Run one scenario against the harness command; return score + criteria."""
     from ..runner import run_once
     from ..scenario import parse_file
@@ -54,7 +56,7 @@ def run_scenario_tool(scenario_path: str, harness: str,
 
 
 def gate_tool(target: str, harness: str, runs: int = 10,
-              pass_threshold: float = 80.0, judge_model: str = "gpt-4o-mini") -> dict:
+              pass_threshold: float = 80.0, judge_model: str = DEFAULT_MODEL) -> dict:
     """Gate a scenario or directory N times; return the SHIP/CONDITIONAL/BLOCK verdict."""
     from ..gate import GatePolicy, run_gate
 

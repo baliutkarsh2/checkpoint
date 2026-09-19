@@ -32,6 +32,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..analytics import compute_trend, detect_flaky, load_runs_for_scenario
 from ..compare_diff import build_compare_diff
+from ..llm import DEFAULT_MODEL
 from ..scenario import parse_file
 from ..telemetry import build_telemetry_report
 from . import agents as agent_discovery
@@ -355,7 +356,7 @@ def create_app(
     scenarios_dir: Path,
     clone_registry_path: Path | None = None,
     project_dir: Path | None = None,
-    judge_model_default: str = "gpt-4o-mini",
+    judge_model_default: str = DEFAULT_MODEL,
 ) -> FastAPI:
     bus = EventBus()
     watcher = FilesystemWatcher(bus, runs_dir, clone_registry_path)

@@ -1,6 +1,7 @@
 """FastMCP server exposing Checkpoint's testing tools over stdio."""
 from __future__ import annotations
 
+from checkpoint.llm import DEFAULT_MODEL
 from checkpoint.mcp_compat import FastMCP, make_server
 
 from .tools import gate_tool, list_scenarios_tool, run_scenario_tool
@@ -17,7 +18,7 @@ def build_server() -> FastMCP:
 
     @mcp.tool()
     def run_scenario(scenario_path: str, harness: str,
-                     judge_model: str = "gpt-4o-mini") -> dict:
+                     judge_model: str = DEFAULT_MODEL) -> dict:
         """Run one scenario against the agent. `harness` is the command that runs
         the agent (e.g. 'python my_agent.py'). Returns the 0-100 score and each
         criterion's pass/fail with reasoning."""

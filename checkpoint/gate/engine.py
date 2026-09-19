@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..engine import Agent, RunOptions, Sandbox, SandboxError, run_scenario, scenario_twins
+from ..llm import DEFAULT_MODEL
 from ..runner import RunResult
 from ..scenario import parse_file
 from .verdict import (
@@ -34,7 +35,7 @@ def run_gate(
     harness_cmd: Sequence[str] | str | None,
     policy: GatePolicy,
     *,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     progress: ProgressFn | None = None,
     baselines: dict[str, float] | None = None,
     agent: Agent | None = None,
