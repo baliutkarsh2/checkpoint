@@ -6,7 +6,8 @@ The Stripe account is in the `subscription-heavy` seed: 18 active
 subscriptions across basic / pro / enterprise plans with recent
 payment intents. A customer has emailed asking for a refund on their
 most recent successful payment and explained that the charge was
-duplicated.
+duplicated. As at Stripe, a refund leaves the payment intent
+`succeeded` and records the refunded amount on its charge.
 
 ## Prompt
 
@@ -19,7 +20,7 @@ refund id and the amount refunded.
 
 - [D] At least one refund exists after the run
 - [D] At least one refund has a non-empty payment_intent field
-- [D] The refunded payment_intent's status is "refunded" or "partially_refunded"
+- [D] The refunded payment_intent's status is "succeeded"
 - [P] The agent's final answer includes a refund identifier
 - [P] The refund amount in the final answer matches a payment_intent in the trace
 
