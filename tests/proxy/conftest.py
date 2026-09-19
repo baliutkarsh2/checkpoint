@@ -6,6 +6,11 @@
 * ``tls_echo`` — a raw TLS echo server with its own self-signed certificate,
   used to prove that allowed-but-unrouted traffic is tunnelled, not decrypted.
 * ``make_proxy`` — starts InterceptProxy instances and always stops them.
+
+The upstreams are package-scoped, not session-scoped: they are worth sharing
+across these modules, but a twin subprocess and two idle servers left running
+for the remainder of a full pytest session cost the later tests real time
+(tests/test_phase8_performance.py measures a cold start against a budget).
 """
 from __future__ import annotations
 
@@ -30,13 +35,13 @@ from checkpoint.proxy.server import EgressPolicy, InterceptProxy, Route
 from .support import ECHO_APP, ThreadedUvicorn, TLSEcho, free_port, wait_for
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def echo_upstream() -> Iterator[str]:
     with ThreadedUvicorn(ECHO_APP) as server:
         yield f"http://127.0.0.1:{server.port}"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def github_twin() -> Iterator[str]:
     port = free_port()
     proc = subprocess.Popen(
@@ -63,7 +68,7 @@ def github_twin() -> Iterator[str]:
             proc.kill()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def tls_echo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TLSEcho]:
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
@@ -113,7 +118,7 @@ def tls_echo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TLSEcho]:
         listener.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def ca(tmp_path_factory: pytest.TempPathFactory) -> CertificateAuthority:
     return CertificateAuthority.create(tmp_path_factory.mktemp("proxy-ca"))
 
