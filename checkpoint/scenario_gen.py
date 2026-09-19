@@ -1,6 +1,8 @@
 """LLM-backed scenario generator for `checkpoint scenario generate`."""
 from __future__ import annotations
 
+from .llm import DEFAULT_MODEL, complete_text
+
 # ---------------------------------------------------------------------------
 # Per-twin capability map (F2).
 #
@@ -135,16 +137,11 @@ Config example:
 SYSTEM = _build_system(None)
 
 
-def _default_factory(model: str = "gpt-4o-mini"):
-    from .llm import get_client
-    return get_client(model)
-
-
 def generate(
     description: str,
     *,
     clone: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     _client_factory=None,
 ) -> str:
     """Return raw Markdown for a new scenario given a prose description."""
@@ -152,13 +149,10 @@ def generate(
     if clone:
         user_msg += f"\n\nUse clone(s): {clone}"
 
-    client = _client_factory() if _client_factory else _default_factory(model)
-    resp = client.chat.completions.create(
+    # Markdown, not JSON: the output is a scenario file the user edits.
+    return complete_text(
+        system=_build_system(clone),
+        user=user_msg,
         model=model,
-        messages=[
-            {"role": "system", "content": _build_system(clone)},
-            {"role": "user",   "content": user_msg},
-        ],
-        temperature=0.7,
+        client=_client_factory() if _client_factory else None,
     )
-    return (resp.choices[0].message.content or "").strip()

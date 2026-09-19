@@ -23,6 +23,7 @@ from pathlib import Path
 from . import __version__
 from .clone_manager import DEFAULT_REGISTRY
 from .config import load_checkpoint_config
+from .llm import DEFAULT_MODEL
 from .run_record import RUNS_DIR
 from .user_config import UserConfig, config_path, home_dir
 
@@ -82,7 +83,7 @@ def _resolve_judge_model(cfg: UserConfig) -> tuple[str, str]:
     env = os.environ.get("CHECKPOINT_JUDGE_MODEL")
     if env:
         return env, "env"
-    return "gpt-4o-mini", "default"
+    return DEFAULT_MODEL, "default"
 
 
 def _scenarios_default() -> Path:

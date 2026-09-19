@@ -10,11 +10,10 @@ This is the "we did it better" wedge vs Checkpoint's chatty stage 2:
     no further LLM call.
 
 The runner wires this between stage-1 regex (``checker.check``) and the
-stage-3 `[P]` judge (``judge.judge``).
+stage-3 `[P]` judge (:func:`checkpoint.eval.judge.judge`).
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -29,6 +28,7 @@ from .checker import (
     _matches_state,
     _resource_lookup,
 )
+from .llm import DEFAULT_MODEL, LLMError, LLMResponseError, complete_json
 
 log = logging.getLogger("checkpoint.checker_llm")
 
@@ -94,53 +94,32 @@ def parse_assertion(
     criterion: str,
     resources: list[str] | None = None,
     *,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     _client_factory=None,
 ) -> ParseOutcome:
     """Call the LLM and validate. Returns ``ParseOutcome``.
 
     ``_client_factory`` is a test seam: when set, the returned object must
     expose a ``.chat.completions.create(...)`` method matching the OpenAI
-    SDK (the real factory just instantiates ``OpenAI()``).
+    SDK (the real factory just instantiates the provider's client).
     """
+    # No schema is sent: the point of this stage is to find out whether the
+    # model can produce the shape unaided, and constraining it would make the
+    # fall-through to the judge unreachable — which is the safety net.
     try:
-        if _client_factory is None:
-            from .llm import get_client
-
-            client = get_client(model)
-        else:
-            client = _client_factory()
-    except Exception as e:  # pragma: no cover — defensive
-        return ParseOutcome(None, f"llm client init failed: {e}")
-
-    user_msg = {
-        "criterion": criterion,
-        "known_resources": resources or [],
-    }
-
-    try:
-        resp = client.chat.completions.create(
+        obj = complete_json(
+            system=SYSTEM_PROMPT,
+            user={"criterion": criterion, "known_resources": resources or []},
             model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(user_msg)},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
+            client=_client_factory() if _client_factory else None,
         )
-    except Exception as e:
-        return ParseOutcome(None, f"openai call failed: {e}")
-
-    raw = (resp.choices[0].message.content or "").strip()
-    if not raw:
-        return ParseOutcome(None, "empty response")
-
-    # Reject anything that isn't a single JSON object (markdown fences, prose,
-    # multi-object output, etc.). pydantic itself will reject extra keys.
-    try:
-        obj = json.loads(raw)
-    except json.JSONDecodeError as e:
+    except LLMResponseError as e:
+        # Markdown fences, prose, an empty answer: all "not the JSON object we
+        # asked for", all reasons to hand the original text to the judge.
         return ParseOutcome(None, f"not valid JSON: {e}")
+    except LLMError as e:
+        return ParseOutcome(None, f"llm call failed: {e}")
+
     if not isinstance(obj, dict):
         return ParseOutcome(None, f"JSON is {type(obj).__name__}, not object")
 
@@ -253,7 +232,7 @@ def try_stage2(
     state: dict,
     trace: list | None = None,
     *,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     _client_factory=None,
 ) -> tuple[CheckResult | None, str]:
     """Returns ``(result_or_none, reason)``.

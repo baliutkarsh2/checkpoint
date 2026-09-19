@@ -29,6 +29,7 @@ from .config import (
 )
 from .engine import Agent, RunOptions, split_command
 from .failure_analyzer import analyze as analyze_failures
+from .llm import DEFAULT_MODEL
 from .run_record import RUNS_DIR, build_record, load_last_run, write_record
 from .runner import RunResult, run_once
 from .scenario import Scenario, parse_file
@@ -934,7 +935,7 @@ def _suggest_reword(text: str) -> str | None:
 @click.option("--output", "-o", type=click.Path(dir_okay=False), default=None,
               help="Write to file instead of stdout.")
 @click.option("--clone", default=None, help="Twin clone(s) to use (comma-sep).")
-@click.option("--model", default="gpt-4o-mini", show_default=True,
+@click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="LLM model to use for generation.")
 def scenario_generate(description, output, clone, model):
     """Generate a scenario .md from a prose description (uses LLM)."""
@@ -1678,7 +1679,7 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         strict=strict,
     )
     harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
-    jm = judge_model or "gpt-4o-mini"
+    jm = judge_model or DEFAULT_MODEL
 
     quiet_progress = output_format == "json"
 
@@ -1877,7 +1878,7 @@ def redteam(harness, pack_dir, runs, pass_threshold, judge_model, output_format)
 
     policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
     harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
-    jm = judge_model or "gpt-4o-mini"
+    jm = judge_model or DEFAULT_MODEL
 
     quiet = output_format == "json"
 
@@ -1972,7 +1973,7 @@ def simulate_cmd(scenario_path, harness, goal, persona_name, tone, patience,
         adversarial=adversarial or base.adversarial,
     )
     harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
-    jm = judge_model or "gpt-4o-mini"
+    jm = judge_model or DEFAULT_MODEL
 
     res = run_sim(scenario, harness_cmd, persona, max_turns=max_turns, judge_model=jm)
 
@@ -2205,7 +2206,7 @@ def gen_attacks(base_scenario, out_dir, count, model):
     from .redteam.generate import generate_attacks
 
     scenario = parse_file(base_scenario)
-    jm = model or "gpt-4o-mini"
+    jm = model or DEFAULT_MODEL
     try:
         attacks = generate_attacks(
             scenario.prompt, scenario.clones, setup=scenario.setup, count=count, model=jm,
@@ -2417,7 +2418,7 @@ def replay(run_id, clone, limit, as_json):
 )
 @click.option("--open/--no-open", "auto_open", default=False,
               help="Open the dashboard in the default browser.")
-@click.option("--judge-model", default="gpt-4o-mini", show_default=True,
+@click.option("--judge-model", default=DEFAULT_MODEL, show_default=True,
               help="Default judge model surfaced in the dashboard meta + new runs.")
 def serve(port, host, scenarios_dir, auto_open, judge_model):
     """Start the checkpoint web dashboard."""
@@ -2571,7 +2572,7 @@ def config_init(force):
         console.print(f"[yellow]Config already exists at {p}. Use --force to overwrite.[/yellow]")
         sys.exit(1)
     cfg = UserConfig(data={}, path=p)
-    cfg.set("defaults.judge_model", "gpt-4o-mini")
+    cfg.set("defaults.judge_model", DEFAULT_MODEL)
     cfg.set("defaults.pass_threshold", 100)
     cfg.set("dashboard.port", 4001)
     cfg.set("dashboard.host", "127.0.0.1")

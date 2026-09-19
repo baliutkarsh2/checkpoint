@@ -7,7 +7,7 @@
     "path": "./harness.py",               # default harness command (file)
     "promptFiles": ["./prompts/**.md"]    # globs (unused by core; for skills)
   },
-  "evaluator": {"model": "gpt-4o-mini"},
+  "evaluator": {"model": "gpt-5.6-luna"},
   "seeds": {"github": "small-project"}    # default named seeds
 }
 
@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .llm import DEFAULT_MODEL
 
 CHECKPOINT_CONFIG = ".checkpoint.json"
 HARNESS_CONFIG = "harness.json"
@@ -144,13 +146,13 @@ def resolve_evaluator_model(
     scenario_value: str | None,
     config_value: str | None,
     env_value: str | None,
-    default: str = "gpt-4o-mini",
+    default: str = DEFAULT_MODEL,
 ) -> EvaluatorResolution:
     """Precedence: flag > scenario > config > env > default.
 
-    A value of None/"" is treated as "not specified". The CLI default for
-    --model is `None` in Phase 4 (was `gpt-4o-mini` in v0) so the precedence
-    chain can actually see whether the user passed it.
+    A value of None/"" is treated as "not specified". The CLI passes `None`
+    rather than a model name, so the precedence chain can see whether the user
+    actually passed one; the default comes from :mod:`checkpoint.llm`.
     """
     if flag_value:
         return EvaluatorResolution(flag_value, "flag")
