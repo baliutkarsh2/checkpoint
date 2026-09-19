@@ -63,6 +63,10 @@ def build_certificate(
                            for k in (1, 2, 5, 10) if k <= s.n},
             "classification": s.classification,
             "mean_score": round(s.mean_score, 2),
+            # Sealed alongside the numbers: how many runs this verdict would have
+            # needed to reach SHIP, and how many produced no evidence at all.
+            "runs_needed_to_ship": s.min_runs,
+            "error_runs": s.error_runs,
         }
         for s in gate_result.scenarios
     ]
@@ -86,6 +90,9 @@ def build_certificate(
         "evidence": {
             "scenario_count": len(scenarios),
             "scenarios": scenarios,
+            # Files under the target that were not scenarios. Recorded so a
+            # reviewer can see what the gate chose not to run.
+            "skipped": [{"path": s.path, "reason": s.reason} for s in gate_result.skipped],
         },
         "issued_at": now.isoformat(),
         "expires_at": (now + datetime.timedelta(days=valid_days)).isoformat(),

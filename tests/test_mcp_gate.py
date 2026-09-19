@@ -50,5 +50,9 @@ def test_run_scenario_tool_end_to_end(monkeypatch):
 def test_gate_tool_end_to_end(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     out = gate_tool(str(SMOKE), f"{sys.executable} {FAKE_HARNESS}", runs=5)
-    assert out["verdict"] in ("SHIP", "CONDITIONAL")
+    # Five flawless runs cannot clear ship_min: the tool says so (and how many
+    # runs would) instead of handing the calling agent a soft pass.
+    assert out["verdict"] == "INCONCLUSIVE"
+    assert out["runs_needed_to_ship"] == 16
     assert out["scenarios"][0]["pass_rate"] == 1.0
+    assert "SHIP needs >= 16 clean runs" in out["scenarios"][0]["evidence"]

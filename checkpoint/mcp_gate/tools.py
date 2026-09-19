@@ -55,19 +55,33 @@ def run_scenario_tool(scenario_path: str, harness: str,
 
 def gate_tool(target: str, harness: str, runs: int = 10,
               pass_threshold: float = 80.0, judge_model: str = "gpt-4o-mini") -> dict:
-    """Gate a scenario or directory N times; return the SHIP/CONDITIONAL/BLOCK verdict."""
+    """Gate a scenario or directory N times; return the verdict.
+
+    SHIP / CONDITIONAL / INCONCLUSIVE / BLOCK / ERROR — only SHIP means the
+    evidence supports a release. ``evidence`` spells out what each scenario's
+    runs actually showed, including how many runs a SHIP would need.
+    """
     from ..gate import GatePolicy, run_gate
 
-    policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
+    try:
+        policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
+    except ValueError as e:
+        # An MCP client passes arguments a model chose; answer with the problem
+        # rather than a stack trace it cannot act on.
+        return {"verdict": "ERROR", "exit_code": 4, "scenarios": [], "skipped": [],
+                "errors": [f"invalid gate policy: {e}"]}
     result = run_gate(Path(target), _split(harness), policy, judge_model=judge_model)
     return {
         "verdict": result.verdict,
         "exit_code": result.exit_code,
+        "runs_needed_to_ship": policy.min_runs_to_ship,
         "scenarios": [
             {"scenario": s.scenario, "pass_rate": round(s.pass_rate, 4),
              "ci_low": round(s.ci.low, 4), "ci_high": round(s.ci.high, 4),
-             "classification": s.classification}
+             "classification": s.classification, "error_runs": s.error_runs,
+             "evidence": s.evidence()}
             for s in result.scenarios
         ],
+        "skipped": [{"path": s.path, "reason": s.reason} for s in result.skipped],
         "errors": result.errors,
     }

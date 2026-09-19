@@ -346,13 +346,16 @@ jobs:
         with:
           target: checkpoint/demo/smoke-scenario.md
           harness: python -m checkpoint.demo.harness_fake
-          runs: "3"
+          # SHIP needs ceil(ship_min*z^2/(1-ship_min)) = 16 clean runs at the
+          # default ship_min 0.80; fewer is INCONCLUSIVE and fails the step, so
+          # a smaller number here would test nothing but the gate's refusal.
+          runs: "16"
           pass-threshold: "80"
 
       - name: Assert the action reported a verdict
         run: |
           echo "verdict=${{ steps.gate.outputs.verdict }}"
           case "${{ steps.gate.outputs.verdict }}" in
-            SHIP|CONDITIONAL|BLOCK) echo "OK: action produced a valid verdict" ;;
+            SHIP|CONDITIONAL|INCONCLUSIVE|BLOCK|ERROR) echo "OK: action produced a valid verdict" ;;
             *) echo "FAIL: action did not report a verdict"; exit 1 ;;
           esac
