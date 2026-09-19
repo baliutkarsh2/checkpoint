@@ -13,12 +13,19 @@ def test_run_checks_returns_stable_order(tmp_path):
     checks = diagnostics.run_checks(ports=(8000,), cwd=tmp_path)
     names = [c.name for c in checks]
     assert names[0] == "Python >= 3.11"
-    # docker check, ports, openai, mitmproxy, .checkpoint.json
+    # docker check, ports, openai, intercept proxy, .checkpoint.json
     assert "Docker daemon reachable" in names or "docker SDK importable" in names
     assert "Port 8000 free" in names
     assert "OPENAI_API_KEY set" in names
-    assert "mitmproxy importable" in names
+    assert "Intercept proxy self-test" in names
     assert ".checkpoint.json present" in names
+
+
+def test_intercept_proxy_self_test_passes(tmp_path):
+    check = next(c for c in diagnostics.run_checks(cwd=tmp_path)
+                 if c.name == "Intercept proxy self-test")
+    assert check.ok, check.detail
+    assert "listener bound" in check.detail
 
 
 def test_port_check_detects_occupied_port(tmp_path):

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,7 +99,7 @@ def _check_sidecar_image() -> Check:
     return Check(
         name=name,
         ok=True,
-        detail="absent — builds automatically on the first `checkpoint run` "
+        detail="absent or outdated — builds automatically on the next `checkpoint run` "
                "(or run `checkpoint docker build-sidecar`)",
     )
 
@@ -137,21 +138,32 @@ def _check_openai_key() -> Check:
     )
 
 
-def _check_mitmproxy() -> Check:
+def _check_intercept_proxy() -> Check:
+    """Self-test the intercept proxy: mint a CA and bind/unbind a loopback listener.
+
+    This is what routes a real SDK's traffic to the twins, and the two things
+    that break it on a user's machine are a broken cryptography/OpenSSL install
+    and a sandbox that forbids binding loopback ports — both show up here.
+    """
+    name = "Intercept proxy self-test"
     try:
-        import mitmproxy  # type: ignore  # noqa: F401
-        return Check(
-            name="mitmproxy importable",
-            ok=True,
-            detail="OK",
-        )
+        from .proxy.ca import CertificateAuthority
+        from .proxy.server import EgressPolicy, InterceptProxy
+
+        with tempfile.TemporaryDirectory(prefix="checkpoint-doctor-") as tmp:
+            ca = CertificateAuthority.create(tmp)
+            ca.server_context("api.github.com")
+            with InterceptProxy([], EgressPolicy.open(), ca) as proxy:
+                port = proxy.port
     except Exception as e:
         return Check(
-            name="mitmproxy importable",
+            name=name,
             ok=False,
-            detail=f"import failed: {e}",
-            fix='pip install "checkpoint-agents[proxy]"',
+            detail=f"{type(e).__name__}: {e}"[:160],
+            fix="Reinstall the TLS dependencies: "
+                'pip install --force-reinstall "cryptography>=44.0" "h11>=0.16"',
         )
+    return Check(name=name, ok=True, detail=f"CA minted, listener bound on 127.0.0.1:{port}")
 
 
 def _check_checkpoint_config(cwd: Path | None = None) -> Check:
@@ -189,7 +201,7 @@ def run_checks(
     for p in ports:
         checks.append(_check_port_free(p))
     checks.append(_check_openai_key())
-    checks.append(_check_mitmproxy())
+    checks.append(_check_intercept_proxy())
     checks.append(_check_checkpoint_config(cwd))
     return checks
 
