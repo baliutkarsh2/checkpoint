@@ -20,7 +20,6 @@ HARNESS_ECHO = textwrap.dedent(
     """
     import json, os, sys
     out = {
-        "base": os.environ.get("CHECKPOINT_BASE_URL"),
         "github": os.environ.get("CHECKPOINT_GITHUB_URL"),
         "slack": os.environ.get("CHECKPOINT_SLACK_URL"),
         "stripe": os.environ.get("CHECKPOINT_STRIPE_URL"),
@@ -67,7 +66,6 @@ def test_single_clone_back_compat(echo_harness):
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     payload = json.loads(r.final_answer)
     assert payload["github"], "CHECKPOINT_GITHUB_URL not set"
-    assert payload["base"] == payload["github"], "BASE should match first clone"
     assert payload["slack"] is None
     # Single-clone state stays flat: top-level should have github twin keys.
     assert "repos" in r.state or "issues" in r.state
@@ -85,7 +83,6 @@ def test_multi_clone_three_twins(echo_harness):
     urls = {payload["github"], payload["slack"], payload["stripe"]}
     assert len(urls) == 3, f"expected 3 distinct twin URLs, got {urls}"
     # BASE_URL == first clone.
-    assert payload["base"] == payload["github"]
     # Multi-clone state shape is nested {clone: state}.
     assert set(r.state.keys()) >= {"github", "slack", "stripe"}
 

@@ -1,31 +1,26 @@
-"""Orchestrate a single scenario run."""
+"""Run results, scoring, and the ``run_once`` entry point.
+
+``run_once`` executes one scenario against one agent command. It is a thin
+wrapper over :func:`checkpoint.engine.run_scenario`, which owns the sandbox and
+the agent process; this module keeps the result types and criterion scoring.
+"""
 from __future__ import annotations
 
-import json
-import os
-import socket
-import subprocess
-import sys
-import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import httpx
-
-from checkpoint.fake_credentials import (
-    FAKE_DISCORD_TOKEN,
-    FAKE_GITHUB_TOKEN,
-    FAKE_GOOGLE_WORKSPACE_TOKEN,
-    FAKE_LINEAR_TOKEN,
-    FAKE_SLACK_TOKEN,
-    FAKE_STRIPE_KEY,
-    FAKE_SUPABASE_TOKEN,
-)
+from checkpoint.fake_credentials import FAKE_TOKENS
 
 from .checker import check
 from .checker_llm import try_stage2
+from .engine.agent import extract_answer
 from .judge import judge
 from .scenario import Criterion, Scenario
 from .twins import registry as twin_registry
+
+if TYPE_CHECKING:
+    from .engine import Agent, RunOptions
 
 
 @dataclass
@@ -34,7 +29,7 @@ class CriterionResult:
     kind: str
     passed: bool
     reasoning: str
-    evaluator: str  # "deterministic" or "llm"
+    evaluator: str  # "deterministic", "llm-json", "trajectory", "llm", ...
 
 
 @dataclass
@@ -47,7 +42,20 @@ class RunResult:
     stdout: str = ""
     criteria: list[CriterionResult] = field(default_factory=list)
     error: str | None = None
-    failure_analysis: dict[str, str] | None = None
+    run_id: str = ""
+    agent: str = ""
+    twins: list[str] = field(default_factory=list)
+    seed_views: dict = field(default_factory=dict)
+    """Each twin's collections before the agent ran (``{twin: {collection: view}}``)."""
+    views: dict = field(default_factory=dict)
+    """Each twin's collections after the agent ran."""
+    egress: list[dict] = field(default_factory=list)
+    """Connections to hosts outside the sandbox (allowed or blocked)."""
+    duration_s: float = 0.0
+    timed_out: bool = False
+    setup_error: bool = False
+    """True when the sandbox (not the agent) failed; such runs carry no verdict."""
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def score(self) -> float:
@@ -60,103 +68,36 @@ class RunResult:
         return self.error is None and self.exit_code == 0
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-TWIN_APPS = {spec.name: spec.app for spec in twin_registry.all_specs()}
-
-
-def _start_twin(clone: str, port: int) -> subprocess.Popen:
-    app = TWIN_APPS.get(clone)
-    if app is None:
-        raise ValueError(f"unsupported clone={clone!r}; known: {sorted(TWIN_APPS)}")
-    return subprocess.Popen(
-        [
-            sys.executable, "-m", "uvicorn",
-            app,
-            "--host", "127.0.0.1",
-            "--port", str(port),
-            "--log-level", "warning",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
 def twin_mcp_url(port: int | str, host: str = "127.0.0.1") -> str:
-    """Return the MCP endpoint URL for a twin started on `port`.
-
-    Every twin's FastAPI app mounts a FastMCP streamable-HTTP server at
-    `/mcp` (Phase 6). This helper exists so the CLI and run records can
-    surface the URL without each caller hard-coding the suffix.
-    """
+    """The MCP endpoint every twin mounts next to its REST API."""
     return f"http://{host}:{port}/mcp/"
 
 
-def _wait_healthy(port: int, timeout: float = 15.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            r = httpx.get(f"http://127.0.0.1:{port}/_health", timeout=1.0)
-            if r.status_code == 200:
-                return True
-        except Exception:
-            pass
-        time.sleep(0.15)
-    return False
-
-
-def _extract_final_answer(stdout: str) -> str:
-    stdout = stdout.strip()
-    if not stdout:
-        return ""
-    try:
-        obj = json.loads(stdout)
-        if isinstance(obj, dict):
-            if "text" in obj:
-                return str(obj["text"])
-            if isinstance(obj.get("payloads"), list):
-                return "\n".join(str(p) for p in obj["payloads"])
-    except json.JSONDecodeError:
-        pass
-    for line in reversed(stdout.splitlines()):
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                obj = json.loads(line)
-                if isinstance(obj, dict) and "text" in obj:
-                    return str(obj["text"])
-            except json.JSONDecodeError:
-                continue
-    return "\n".join(l for l in stdout.splitlines() if l.strip())
-
-
-def _fetch_trace(port: int) -> list:
-    try:
-        return httpx.get(f"http://127.0.0.1:{port}/_trace", timeout=5).json()
-    except Exception:
-        return []
-
-
-def _fetch_state(port: int) -> dict:
-    try:
-        return httpx.get(f"http://127.0.0.1:{port}/_state", timeout=5).json()
-    except Exception:
-        return {}
-
-
+# Kept for the Docker runner, which exports each twin's credential under this name.
 _CLONE_BOOTSTRAP_TOKEN_ENV = {
-    "github": ("GITHUB_TOKEN", FAKE_GITHUB_TOKEN),
-    "slack": ("SLACK_TOKEN", FAKE_SLACK_TOKEN),
-    "stripe": ("STRIPE_API_KEY", FAKE_STRIPE_KEY),
-    "linear": ("LINEAR_BOOTSTRAP_TOKEN", FAKE_LINEAR_TOKEN),
-    "supabase": ("SUPABASE_BOOTSTRAP_TOKEN", FAKE_SUPABASE_TOKEN),
-    "discord": ("DISCORD_BOOTSTRAP_TOKEN", FAKE_DISCORD_TOKEN),
-    "google-workspace": ("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", FAKE_GOOGLE_WORKSPACE_TOKEN),
+    spec.name: (spec.token_env[0], FAKE_TOKENS[spec.name])
+    for spec in twin_registry.all_specs() if spec.token_env
 }
+
+_extract_final_answer = extract_answer
+
+
+def run_once(
+    scenario: Scenario,
+    harness_cmd: Sequence[str] | str,
+    cwd: str | None = None,
+    judge_model: str = "gpt-4o-mini",
+    *,
+    agent: Agent | None = None,
+    options: RunOptions | None = None,
+) -> RunResult:
+    """Run ``scenario`` once against the agent started by ``harness_cmd``."""
+    from .engine import Agent, RunOptions, run_scenario
+
+    agent = agent or Agent(command=harness_cmd if isinstance(harness_cmd, str) else list(harness_cmd),
+                           cwd=cwd)
+    opts = options or RunOptions(judge_model=judge_model)
+    return run_scenario(scenario, agent, options=opts)
 
 
 def _merge_state_for_clones(per_clone_state: dict[str, dict]) -> dict:
@@ -186,193 +127,6 @@ def _merge_trace_for_clones(per_clone_trace: dict[str, list]) -> list:
     return out
 
 
-def run_once(
-    scenario: Scenario,
-    harness_cmd: list[str],
-    cwd: str | None = None,
-    judge_model: str = "gpt-4o-mini",
-) -> RunResult:
-    clones = scenario.clones or ["github"]
-    unknown = [c for c in clones if c not in TWIN_APPS]
-    if unknown:
-        return RunResult("", "", -1, [], {}, error=f"Unknown clones: {unknown}")
-
-    # Phase-4: start one twin per clone, on its own free port.
-    twins: list[tuple[str, int, subprocess.Popen]] = []
-    try:
-        for clone in clones:
-            port = _free_port()
-            proc = _start_twin(clone, port)
-            twins.append((clone, port, proc))
-
-        for clone, port, _ in twins:
-            if not _wait_healthy(port):
-                return RunResult("", "", -1, [], {}, error=f"Twin {clone!r} failed to start on :{port}")
-
-        # Apply seeds. Format options:
-        #   seed: small-project                  -> applies to first clone only (legacy)
-        #   seed: github=small-project, slack=engineering-team
-        #   seed-file: ./seed.json               -> applies to first clone (raw state)
-        #   seed-file: github=./gh.json, slack=./sl.json
-        # `seed:` and `seed-file:` may both be present; seed-file wins per-clone.
-        seed_map = _parse_seed_spec(scenario.config.get("seed") or scenario.config.get("seed_name"), clones)
-        seed_file_map = _parse_seed_spec(scenario.config.get("seed-file") or scenario.config.get("seed_file"), clones)
-
-        for clone, port, _ in twins:
-            sf = seed_file_map.get(clone)
-            sn = seed_map.get(clone)
-            if sf:
-                err = _apply_seed_file(port, sf, scenario.source_path)
-                if err:
-                    return RunResult("", "", -1, [], {}, error=err)
-            elif sn:
-                err = _apply_named_seed(port, sn)
-                if err:
-                    return RunResult("", "", -1, [], {}, error=err)
-            elif _setup_seed_enabled(scenario) and scenario.setup and scenario.setup.strip():
-                # SCN-08: derive a JSON seed from the `## Setup` prose. Soft-fail
-                # if OPENAI_API_KEY is missing — twin keeps its default fresh state.
-                # Opt-in via `setup-seed: true` in the scenario config (or
-                # `setup-seed: auto`) so existing Phase 1-3 scenarios with
-                # descriptive ## Setup prose don't suddenly get LLM-generated state.
-                err = _apply_setup_derived_seed(port, clone, scenario.setup)
-                if err:
-                    # Log but don't abort: a missing key is the most common case.
-                    print(f"[checkpoint] seed-from-setup skipped for {clone}: {err}", flush=True)
-
-        # Runtime knobs: --rate-limit / --read-only from `checkpoint run`.
-        # Surfaced via env vars so we don't add new positional args to run_once.
-        rate_limit_env = os.environ.get("CHECKPOINT_RUNTIME_RATE_LIMIT")
-        read_only_env = os.environ.get("CHECKPOINT_RUNTIME_READ_ONLY") == "1"
-        if rate_limit_env or read_only_env:
-            cfg_body: dict = {}
-            if rate_limit_env:
-                try:
-                    cfg_body["rate_limit"] = int(rate_limit_env)
-                except ValueError:
-                    pass
-            if read_only_env:
-                cfg_body["read_only"] = True
-            for _clone, port, _ in twins:
-                try:
-                    httpx.post(f"http://127.0.0.1:{port}/_config", json=cfg_body, timeout=2.0)
-                except Exception:
-                    pass  # Twins that don't expose /_config silently no-op.
-
-        # --read-only: snapshot pre-harness state so we can detect any writes.
-        read_only_snapshot: dict[str, dict] = {}
-        if read_only_env:
-            for clone, port, _ in twins:
-                read_only_snapshot[clone] = _fetch_state(port)
-
-        env = dict(os.environ)
-        env["CHECKPOINT_TASK"] = scenario.prompt
-        env["ARCHAL_ENGINE_TASK"] = scenario.prompt
-        env["ARCHAL_ENGINE_MODE"] = "local"
-        # Honor a custom task-env-var name set via --task-env on the CLI.
-        custom_task_env = os.environ.get("CHECKPOINT_TASK_ENV")
-        if custom_task_env and custom_task_env != "CHECKPOINT_TASK":
-            env[custom_task_env] = scenario.prompt
-        first_clone, first_port, _ = twins[0]
-        env["CHECKPOINT_BASE_URL"] = f"http://127.0.0.1:{first_port}"
-        for clone, port, _ in twins:
-            env[f"CHECKPOINT_{clone.upper()}_URL"] = f"http://127.0.0.1:{port}"
-            tok = _CLONE_BOOTSTRAP_TOKEN_ENV.get(clone)
-            if tok:
-                env[tok[0]] = tok[1]
-
-        # Zero-code path: support --task-via=arg|stdin set via the CLI
-        # via the CHECKPOINT_TASK_VIA / CHECKPOINT_TASK_ARG sentinel env vars.
-        # The cli.py `run` handler sets these when --command is used so the
-        # runner doesn't need a richer signature.
-        task_via = os.environ.get("CHECKPOINT_TASK_VIA", "env")
-        stdin_payload: str | None = None
-        cmd = list(harness_cmd)
-        if task_via == "arg":
-            task_arg = os.environ.get("CHECKPOINT_TASK_ARG")
-            if task_arg:
-                cmd.extend([task_arg, scenario.prompt])
-            else:
-                cmd.append(scenario.prompt)
-        elif task_via == "stdin":
-            stdin_payload = scenario.prompt
-        # "none" → caller has wired the task into the env via spec.env
-
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=cwd,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=scenario.timeout,
-                input=stdin_payload,
-            )
-        except FileNotFoundError as e:
-            per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
-            per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
-            return RunResult(
-                final_answer="",
-                stderr=str(e),
-                exit_code=-1,
-                trace=_merge_trace_for_clones(per_trace),
-                state=_merge_state_for_clones(per_state),
-                error=f"Harness executable not found: {e}",
-            )
-        except subprocess.TimeoutExpired as e:
-            per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
-            per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
-            return RunResult(
-                final_answer="",
-                stderr=(e.stderr or "")[-4000:] if isinstance(e.stderr, (bytes, str)) else "",
-                exit_code=-1,
-                trace=_merge_trace_for_clones(per_trace),
-                state=_merge_state_for_clones(per_state),
-                error=f"Harness exceeded timeout of {scenario.timeout}s",
-            )
-
-        per_state = {clone: _fetch_state(port) for clone, port, _ in twins}
-        per_trace = {clone: _fetch_trace(port) for clone, port, _ in twins}
-        result = RunResult(
-            final_answer=_extract_final_answer(proc.stdout),
-            stderr=(proc.stderr or "")[-4000:],
-            exit_code=proc.returncode,
-            trace=_merge_trace_for_clones(per_trace),
-            state=_merge_state_for_clones(per_state),
-            stdout=proc.stdout or "",
-        )
-
-        if proc.returncode != 0:
-            result.error = f"Harness exited {proc.returncode}"
-            return result
-
-        # --read-only post-run snapshot diff: if state changed, prepend a
-        # synthetic failed criterion and short-circuit evaluation.
-        if read_only_snapshot:
-            post_state = {clone: _fetch_state(port) for clone, port, _ in twins}
-            modified = [c for c in read_only_snapshot if read_only_snapshot[c] != post_state.get(c)]
-            if modified:
-                result.criteria.append(CriterionResult(
-                    text=f"--read-only: no twin writes (modified: {', '.join(modified)})",
-                    kind="D",
-                    passed=False,
-                    reasoning=f"Twin state changed in clone(s): {', '.join(modified)}",
-                    evaluator="read-only-guard",
-                ))
-                # Continue evaluating the rest so the user still sees criterion
-                # results — but the read-only failure will pull the score down.
-        _evaluate(scenario, result, judge_model)
-        return result
-    finally:
-        for _, _, proc in twins:
-            proc.terminate()
-        for _, _, proc in twins:
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-
-
 def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
     """Parse `seed:` / `seed-file:` config into a {clone: value} map.
 
@@ -397,84 +151,6 @@ def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
         if k and v:
             out[k] = v
     return out
-
-
-def _apply_named_seed(port: int, name: str) -> str | None:
-    try:
-        r = httpx.post(f"http://127.0.0.1:{port}/_seed/{name}", timeout=5)
-    except Exception as e:
-        return f"Seed {name!r} request failed on :{port}: {e}"
-    if r.status_code != 200:
-        return f"Seed {name!r} failed on :{port}: {r.status_code} {r.text[:200]}"
-    return None
-
-
-_SETUP_SEED_TRUTHY = {"true", "1", "yes", "auto", "on"}
-
-
-def _setup_seed_enabled(scenario: Scenario) -> bool:
-    """SCN-08 opt-in flag: `setup-seed: true` in `## Config`."""
-    val = (scenario.config.get("setup-seed") or scenario.config.get("setup_seed") or "").strip().lower()
-    return val in _SETUP_SEED_TRUTHY
-
-
-def _apply_setup_derived_seed(port: int, clone: str, setup_text: str) -> str | None:
-    """SCN-08: generate a seed from `## Setup` prose and POST to /_seed-file.
-
-    Returns an error string on failure (caller decides whether to abort or
-    soft-skip). Cache hits avoid any LLM call.
-    """
-    try:
-        # Fetch twin's current state so the LLM has a schema sample.
-        twin_state = _fetch_state(port)
-        from .scenario_seed_gen import generate_seed
-
-        seed = generate_seed(clone, setup_text, twin_state)
-    except RuntimeError as e:
-        return str(e)
-    except Exception as e:
-        return f"seed-from-setup failed for {clone}: {e}"
-    try:
-        r = httpx.post(f"http://127.0.0.1:{port}/_seed-file", json=seed, timeout=5)
-    except Exception as e:
-        return f"seed-from-setup POST failed on :{port}: {e}"
-    if r.status_code != 200:
-        return f"seed-from-setup POST rejected on :{port}: {r.status_code} {r.text[:200]}"
-    return None
-
-
-def _apply_seed_file(port: int, file_path: str, scenario_source: str | None) -> str | None:
-    """Load a JSON file and POST it to the twin.
-
-    File format options:
-      1. `{"state": {...}}` — same shape `/_seed/<name>` JSON files use.
-      2. `{...}` — treated as a raw state replacement.
-
-    Relative paths resolve against the scenario file's directory if known,
-    else against cwd.
-    """
-    from pathlib import Path
-
-    p = Path(file_path)
-    if not p.is_absolute() and scenario_source:
-        base = Path(scenario_source).parent
-        candidate = (base / p).resolve()
-        if candidate.exists():
-            p = candidate
-    if not p.exists():
-        return f"seed-file not found: {file_path}"
-    try:
-        data = json.loads(p.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        return f"seed-file {file_path}: {e}"
-    payload = data if "state" in data else {"state": data}
-    try:
-        r = httpx.post(f"http://127.0.0.1:{port}/_seed-file", json=payload, timeout=5)
-    except Exception as e:
-        return f"seed-file POST failed on :{port}: {e}"
-    if r.status_code != 200:
-        return f"seed-file POST failed on :{port}: {r.status_code} {r.text[:200]}"
-    return None
 
 
 def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:

@@ -8,9 +8,28 @@ signature.
 from __future__ import annotations
 
 from checkpoint.compliance.report import APPROVED, CONDITIONAL, REJECTED, _overall
+from checkpoint.gate import engine as gate_engine
 from checkpoint.gate.certificate import verify
 
 # --- assurance report must not approve unverifiable evidence ---------------
+
+
+class _NullSandbox:
+    """Stands in for a real sandbox when the per-run function is stubbed."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+def _stub_runs(monkeypatch, fn):
+    monkeypatch.setattr(gate_engine, "Sandbox", _NullSandbox)
+    monkeypatch.setattr(gate_engine, "run_scenario", fn)
 
 def test_invalid_signature_can_never_be_approved():
     # Even a clean SHIP verdict with no vulnerabilities must be rejected when
@@ -54,7 +73,6 @@ def test_verify_rejects_non_string_key_material():
 # --- the gate must never report a pass/fail for an agent that never ran ----
 
 def test_gate_blocks_when_harness_never_executes(tmp_path, monkeypatch):
-    from checkpoint.gate import engine as gate_engine
 
     scenario = tmp_path / "s.md"
     scenario.write_text(
@@ -68,7 +86,7 @@ def test_gate_blocks_when_harness_never_executes(tmp_path, monkeypatch):
         error = "Harness executable not found"
         score = 0.0
 
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _Failed())
+    _stub_runs(monkeypatch, lambda *a, **k: _Failed())
 
     policy = gate_engine.GatePolicy(runs=3, pass_threshold=80)
     result = gate_engine.run_gate(tmp_path, ["nonexistent-binary"], policy)

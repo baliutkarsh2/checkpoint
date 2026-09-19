@@ -11,6 +11,23 @@ from checkpoint.gate import engine as gate_engine
 from checkpoint.gate.verdict import GatePolicy, summarize_scenario
 
 
+class _NullSandbox:
+    """Stands in for a real sandbox when the per-run function is stubbed."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+def _stub_runs(monkeypatch, fn):
+    monkeypatch.setattr(gate_engine, "Sandbox", _NullSandbox)
+    monkeypatch.setattr(gate_engine, "run_scenario", fn)
+
 class _FakeResult:
     def __init__(self, score):
         self._score = score
@@ -45,7 +62,7 @@ def test_run_gate_flags_regression_with_baseline(tmp_path, monkeypatch):
     scn = tmp_path / "a.md"
     scn.write_text(_SCN)
     # Now the agent fails everything; baseline says it used to pass ~95%.
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
     result = run_gate(scn, ["python", "x"], GatePolicy(runs=20), baselines={"a.md": 0.95})
     assert result.scenarios[0].classification == "regression"
     assert result.verdict == "BLOCK"
@@ -57,7 +74,7 @@ def test_gate_cli_writes_baseline(tmp_path, monkeypatch):
     scn_dir = tmp_path / "scenarios"
     scn_dir.mkdir()
     (scn_dir / "a.md").write_text(_SCN)
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
 
     r = CliRunner().invoke(main, [
         "gate", str(scn_dir), "--harness", "python agent.py", "-n", "20", "-o", "json",
@@ -75,7 +92,7 @@ def test_gate_cli_no_baseline_flag_skips_file(tmp_path, monkeypatch):
     scn_dir = tmp_path / "scenarios"
     scn_dir.mkdir()
     (scn_dir / "a.md").write_text(_SCN)
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
 
     r = CliRunner().invoke(main, [
         "gate", str(scn_dir), "--harness", "python agent.py", "-n", "5",

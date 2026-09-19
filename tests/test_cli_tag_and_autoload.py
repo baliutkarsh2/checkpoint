@@ -19,7 +19,6 @@ ECHO_HARNESS = textwrap.dedent(
     """
     import json, os, sys
     out = {
-        "base": os.environ.get("CHECKPOINT_BASE_URL"),
         "github": os.environ.get("CHECKPOINT_GITHUB_URL"),
         "slack": os.environ.get("CHECKPOINT_SLACK_URL"),
     }
