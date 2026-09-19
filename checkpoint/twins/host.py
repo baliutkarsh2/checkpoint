@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import sys
@@ -65,10 +66,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--log-level", default="warning")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
-    try:
+    # Ctrl-C is the normal way to stop an interactive host; exit quietly.
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_serve(_parse_bindings(args.bindings), args.host, args.log_level))
-    except KeyboardInterrupt:
-        pass
 
 
 if __name__ == "__main__":
