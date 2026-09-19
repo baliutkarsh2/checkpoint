@@ -869,6 +869,7 @@ def _message_body(args: dict) -> tuple[dict, JSONResponse | None]:
 
 
 def _new_message(channel: dict, fields: dict) -> dict:
+    """A message posted by the app: the bot user's, with the bot's identity on it."""
     message = {
         "type": "message",
         "user": BOT_USER_ID,
@@ -876,6 +877,8 @@ def _new_message(channel: dict, fields: dict) -> dict:
         "app_id": APP_ID,
         "team": STATE["team"]["id"],
         "ts": _ts(),
+        # Messages are stored per channel; carrying the id keeps a message
+        # self-describing wherever state is read (seeds do the same).
         "channel": channel["id"],
     }
     message.update(fields)
