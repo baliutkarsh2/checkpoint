@@ -158,7 +158,9 @@ _BUILTINS: tuple[TwinSpec, ...] = (
         name="google-workspace",
         title="Google Workspace",
         app="checkpoint.twins.google_workspace:app",
-        domains=("gmail.googleapis.com", "www.googleapis.com"),
+        # oauth2.googleapis.com is where every google-auth credential refreshes
+        # its access token; without it a service account reaches real Google.
+        domains=("gmail.googleapis.com", "www.googleapis.com", "oauth2.googleapis.com"),
         token=FAKE_GOOGLE_WORKSPACE_TOKEN,
         token_env=("GOOGLE_OAUTH_ACCESS_TOKEN",),
         docs="https://developers.google.com/workspace",
