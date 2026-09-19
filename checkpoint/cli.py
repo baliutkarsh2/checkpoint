@@ -162,9 +162,18 @@ def demo(ctx, dashboard):
 @click.option("-q", "--quiet", is_flag=True, default=False,
               help="Suppress per-run banners and panels; print only final summary (and JSON if -o json).")
 @click.option("--rate-limit", type=int, default=None,
-              help="Cap requests per twin (clones that support it return 429 after the limit; only github currently enforces).")
+              help="Refuse each twin's calls after this many requests, as the real API's rate limit would.")
 @click.option("--read-only", is_flag=True, default=False,
-              help="Snapshot twin state pre-run, fail the run if state changed (no agent writes allowed).")
+              help="Refuse every write and fail the run if the agent attempted one.")
+@click.option("--intercept/--no-intercept", default=True, show_default=True,
+              help="Route the agent's calls to production hostnames (https://api.github.com) into "
+                   "the twins, so you test the code path you ship. Turn it off for agents that read "
+                   "the CHECKPOINT_<TWIN>_URL variables instead.")
+@click.option("--egress", type=click.Choice(["open", "llm", "none"]), default="llm", show_default=True,
+              help="What the agent may reach beyond the twins: anything, LLM providers only, or "
+                   "nothing. Blocked hosts are reported.")
+@click.option("--allow-host", "allow_hosts", multiple=True, metavar="HOST",
+              help="Also allow this host through (repeatable). Accepts *.example.com.")
 @click.option("--no-failure-analysis", is_flag=True, default=False,
               help="Skip the LLM-driven failure_analysis step (saves an LLM call per failed run).")
 @click.option("--seed-file", type=click.Path(exists=True, dir_okay=False), default=None,
@@ -178,7 +187,8 @@ def demo(ctx, dashboard):
 def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
         task, clone, runs, model, timeout, cwd, trace_out, tag, reuse_session,
         docker, harness_dir, docker_logs, pass_threshold, output_format, quiet, rate_limit,
-        read_only, no_failure_analysis, seed_file, setup_file, keep_state, fresh_seed):
+        read_only, intercept, egress, allow_hosts, no_failure_analysis, seed_file, setup_file,
+        keep_state, fresh_seed):
     """Run scenario(s) against the agent harness.
 
     SCENARIO_PATH may be a single .md file or a directory of scenarios.
@@ -403,6 +413,9 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
             judge_model=resolution.model,
             faults={"*": {"rate_limit": rate_limit}} if rate_limit is not None else {},
             read_only=read_only,
+            intercept=intercept,
+            egress=egress,
+            allow_hosts=tuple(allow_hosts),
         )
 
         # Snapshot harness identity so it lands in every run record. Without
