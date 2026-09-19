@@ -42,7 +42,7 @@ class Schema:
         out: list[Collection] = []
         for twin, colls in views.items():
             for name, view in colls.items():
-                fields: set[str] = set()
+                fields: set[str] = set(view.get("fields") or ())
                 for item in view.get("items", [])[:200]:
                     if isinstance(item, dict):
                         fields.update(item)
@@ -149,17 +149,17 @@ def _exists_count(match: re.Match, schema: Schema) -> str | None:
     return _count(match, schema, "")
 
 
-@pattern(rf"(?:there (?:is|are)\s+)?{_CMP}{_N}\s+(?:new\s+)?{_NOUN}\s+(?:were|was|have been|has been)\s+created")
+@pattern(rf"(?:there (?:is|are)\s+)?{_CMP}{_N}\s+(?:new\s+)?{_NOUN}\s+(?:were|was|are|is|have been|has been|get|got)\s+created")
 def _created_count(match: re.Match, schema: Schema) -> str | None:
     return _count(match, schema, "created.")
 
 
-@pattern(rf"{_CMP}{_N}\s+(?:new\s+)?{_NOUN}\s+(?:were|was|have been|has been)\s+(?:deleted|removed)")
+@pattern(rf"{_CMP}{_N}\s+(?:new\s+)?{_NOUN}\s+(?:were|was|are|is|have been|has been|get|got)\s+(?:deleted|removed)")
 def _deleted_count(match: re.Match, schema: Schema) -> str | None:
     return _count(match, schema, "deleted.")
 
 
-@pattern(rf"{_CMP}{_N}\s+{_NOUN}\s+(?:were|was|have been|has been)\s+(?:modified|changed|updated)")
+@pattern(rf"{_CMP}{_N}\s+{_NOUN}\s+(?:were|was|are|is|have been|has been|get|got)\s+(?:modified|changed|updated)")
 def _changed_count(match: re.Match, schema: Schema) -> str | None:
     return _count(match, schema, "changed.")
 
@@ -167,7 +167,7 @@ def _changed_count(match: re.Match, schema: Schema) -> str | None:
 @pattern(rf"(?:an?|one|the)\s+{_NOUN}\s+titled\s+{_QUOTED}\s+(?:exists|was created|is present)")
 def _titled_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
-    if coll is None or "title" not in coll.fields:
+    if coll is None or (coll.fields and "title" not in coll.fields):
         return None
     return f'exists({coll.path}[title == "{_escape(match.group("value"))}"])'
 
@@ -175,7 +175,7 @@ def _titled_exists(match: re.Match, schema: Schema) -> str | None:
 @pattern(rf"(?:an?|one|the)\s+{_NOUN}\s+named\s+{_QUOTED}\s+(?:exists|was created|is present)")
 def _named_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
-    if coll is None or "name" not in coll.fields:
+    if coll is None or (coll.fields and "name" not in coll.fields):
         return None
     return f'exists({coll.path}[name == "{_escape(match.group("value"))}"])'
 
@@ -183,7 +183,7 @@ def _named_exists(match: re.Match, schema: Schema) -> str | None:
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+is\s+{_STATE}")
 def _numbered_state(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
-    if coll is None or "number" not in coll.fields or "state" not in coll.fields:
+    if coll is None or (coll.fields and not {"number", "state"} <= coll.fields):
         return None
     return f'{coll.path}[number == {match.group("number")}].state == "{match.group("state").lower()}"'
 
@@ -191,7 +191,7 @@ def _numbered_state(match: re.Match, schema: Schema) -> str | None:
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+(?:still\s+)?exists")
 def _numbered_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
-    if coll is None or "number" not in coll.fields:
+    if coll is None or (coll.fields and "number" not in coll.fields):
         return None
     return f'exists({coll.path}[number == {match.group("number")}])'
 
@@ -229,10 +229,14 @@ def _no_deletes(match: re.Match, schema: Schema) -> str:
     return 'count(trace[op == "delete"]) == 0'
 
 
-@pattern(r"(?:the agent\s+)?(?:never|did not|didn't)\s+(?:call(?:ed)?\s+)?(?P<method>GET|POST|PUT|PATCH|DELETE)\s+[`\"']?(?P<path>/\S+?)[`\"']?")
+@pattern(r"(?:the agent\s+)?(?:never|did not|didn't)\s+(?:call(?:ed)?\s+)?(?P<method>GET|POST|PUT|PATCH|DELETE)"
+         r"(?:\s+(?:on\s+)?[`\"']?(?P<path>/\S+?)[`\"']?)?")
 def _no_call_to(match: re.Match, schema: Schema) -> str:
-    path = match.group("path").rstrip(".`'\"")
-    return f'count(trace[method == "{match.group("method").upper()}" && path == "{path}"]) == 0'
+    method = match.group("method").upper()
+    path = (match.group("path") or "").rstrip(".`'\"")
+    if not path:
+        return f'count(trace[method == "{method}"]) == 0'
+    return f'count(trace[method == "{method}" && path == "{path}"]) == 0'
 
 
 @pattern(r"(?:the agent\s+)?(?:made\s+)?no (?:calls|requests) (?:to|outside) (?:hosts outside )?the sandbox")

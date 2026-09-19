@@ -53,6 +53,8 @@ dependencies = [
     "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
+    # Scenario front matter and settings are YAML.
+    "pyyaml>=6.0.2",
 ]
 
 [project.optional-dependencies]

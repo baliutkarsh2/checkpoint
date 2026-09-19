@@ -47,7 +47,17 @@ class ExprSyntaxError(ValueError):
 
 
 class ExprError(ValueError):
-    """The assertion parsed but cannot be evaluated against this world."""
+    """The assertion parsed but cannot be evaluated against this world.
+
+    ``kind`` separates a *schema* mistake — a name, collection, field or function
+    that does not exist, which is wrong no matter what the agent did — from a
+    *data* outcome such as a selection that matched nothing this time. The
+    compiler rejects schema mistakes; both are reported to the user as errors.
+    """
+
+    def __init__(self, message: str, kind: str = "data") -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 # --------------------------------------------------------------------------
@@ -351,6 +361,7 @@ class World:
 class Outcome:
     status: str          # "pass" | "fail" | "error"
     detail: str          # human-readable why
+    kind: str = ""       # for errors: "schema" (a wrong name) or "data"
 
     @property
     def passed(self) -> bool:
@@ -391,19 +402,19 @@ class _Evaluator:
             return self._tail(Items(w.egress, "egress"), parts[1:])
         if head in _ROOT_SCALARS:
             if len(parts) > 1:
-                raise ExprError(f"{head} has no fields")
+                raise ExprError(f"{head} has no fields", kind="schema")
             return {"answer": w.answer, "exit_code": w.exit_code, "duration": w.duration}[head]
         if head in _DELTA_ROOTS:
             if len(parts) < 3:
-                raise ExprError(f"{head} needs a twin and collection, e.g. {head}.github.issues")
+                raise ExprError(f"{head} needs a twin and collection, e.g. {head}.github.issues", kind="schema")
             twin, coll = parts[1], parts[2]
             items = self._delta(head, twin, coll)
             return self._tail(items, parts[3:])
         twin = head
         if twin not in w.final and twin not in w.seed:
-            raise ExprError(f"unknown name {head!r}; twins in this run: {', '.join(w.twins()) or 'none'}")
+            raise ExprError(f"unknown name {head!r}; twins in this run: {', '.join(w.twins()) or 'none'}", kind="schema")
         if len(parts) < 2:
-            raise ExprError(f"{twin} needs a collection, e.g. {twin}.{self._first_collection(twin)}")
+            raise ExprError(f"{twin} needs a collection, e.g. {twin}.{self._first_collection(twin)}", kind="schema")
         return self._tail(self._collection(twin, parts[1], "final"), parts[2:])
 
     def _first_collection(self, twin: str) -> str:
@@ -415,7 +426,7 @@ class _Evaluator:
         other = (self.world.seed if which == "final" else self.world.final).get(twin, {})
         if coll not in state and coll not in other:
             available = ", ".join(sorted(set(state) | set(other))) or "none"
-            raise ExprError(f"{twin} has no collection {coll!r}; available: {available}")
+            raise ExprError(f"{twin} has no collection {coll!r}; available: {available}", kind="schema")
         items = list(state.get(coll, []))
         return Items(items, f"{twin}.{coll}", self._fields(twin, coll))
 
@@ -484,7 +495,7 @@ class _Evaluator:
             return self.binary(node, item)
         if isinstance(node, Call):
             return self.call(node, item)
-        raise ExprError(f"cannot evaluate {type(node).__name__}")
+        raise ExprError(f"cannot evaluate {type(node).__name__}", kind="schema")
 
     def _is_root(self, name: str, item: Any) -> bool:
         """Whether a bare name means a world root rather than a field of ``item``.
@@ -515,7 +526,7 @@ class _Evaluator:
                 raise ExprError(
                     f"{_source(base)} items have no field {node.name!r}; "
                     f"fields: {', '.join(sorted(known)[:25])}"
-                )
+                , kind="schema")
 
     def field(self, item: Any, name: str) -> Any:
         if not isinstance(item, dict):
@@ -526,7 +537,7 @@ class _Evaluator:
         if isinstance(value, Items):
             if value.fields is not None and value and name not in value.fields:
                 known = ", ".join(sorted(value.fields)[:25])
-                raise ExprError(f"{value.source} items have no field {name!r}; fields: {known}")
+                raise ExprError(f"{value.source} items have no field {name!r}; fields: {known}", kind="schema")
             if len(value) != 1:
                 what = "no items" if not value else f"{len(value)} items"
                 raise ExprError(
@@ -581,7 +592,7 @@ class _Evaluator:
             if not isinstance(value, str):
                 raise ExprError(f"{fn}() needs a string, got {_type(value)}")
             return value.lower() if fn == "lower" else value.upper()
-        raise ExprError(f"unknown function {fn}(); available: count, exists, any, all, lower, upper, len")
+        raise ExprError(f"unknown function {fn}(); available: count, exists, any, all, lower, upper, len", kind="schema")
 
 
 def compare(op: str, left: Any, right: Any) -> bool:
@@ -678,7 +689,7 @@ def _hashable(v: Any) -> Any:
 
 def _arity(fn: str, args: Sequence[Node], n: int) -> None:
     if len(args) != n:
-        raise ExprError(f"{fn}() takes {n} argument{'s' if n != 1 else ''}, got {len(args)}")
+        raise ExprError(f"{fn}() takes {n} argument{'s' if n != 1 else ''}, got {len(args)}", kind="schema")
 
 
 def _as_bool(v: Any) -> bool:
@@ -723,16 +734,20 @@ def evaluate(text: str, world: World) -> Outcome:
     try:
         tree = parse(text)
     except ExprSyntaxError as e:
-        return Outcome("error", f"syntax error: {e}")
+        return Outcome("error", f"syntax error: {e}", kind="schema")
     ev = _Evaluator(world)
     try:
         value = ev.eval(tree)
     except ExprError as e:
-        return Outcome("error", str(e))
+        return Outcome("error", str(e), kind=e.kind)
     except re.error as e:
-        return Outcome("error", f"invalid regex: {e}")
+        return Outcome("error", f"invalid regex: {e}", kind="schema")
     if not isinstance(value, bool):
-        return Outcome("error", f"assertion must be true/false, but evaluates to {_type(value)} ({_short(value)})")
+        return Outcome(
+            "error",
+            f"assertion must be true/false, but evaluates to {_type(value)} ({_short(value)})",
+            kind="schema",
+        )
     return Outcome("pass" if value else "fail", explain(tree, ev))
 
 

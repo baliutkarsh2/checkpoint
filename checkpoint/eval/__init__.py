@@ -9,7 +9,7 @@ cannot be evaluated is an error rather than a quiet failure.
 """
 from .expr import Outcome, World, evaluate
 from .nl import Collection, Compiled, Schema, compile_criterion
-from .world import build_world
+from .world import build_world, schema_for
 
 __all__ = [
     "Collection",
@@ -20,4 +20,5 @@ __all__ = [
     "build_world",
     "compile_criterion",
     "evaluate",
+    "schema_for",
 ]

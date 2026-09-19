@@ -42,17 +42,17 @@ def test_validate_json_output():
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert data["valid"] is True
-    assert "criteria_count" in data
-    assert data["criteria_count"] > 0
+    assert len(data["criteria"]) > 0
+    assert all("assertion" in c and "source" in c for c in data["criteria"])
     assert "errors" in data
     assert "warnings" in data
 
 
-def test_validate_json_reports_clones():
+def test_validate_json_reports_twins():
     scn = SCENARIOS_DIR / "archal-verbatim-github.md"
     result = _run("validate", str(scn), "--json")
     data = json.loads(result.stdout)
-    assert data["clones"] == ["github"]
+    assert data["twins"] == ["github"]
 
 
 def test_validate_multi_clone_scenario():
@@ -60,8 +60,8 @@ def test_validate_multi_clone_scenario():
     result = _run("validate", str(scn), "--json")
     assert result.returncode == 0
     data = json.loads(result.stdout)
-    assert "slack" in data["clones"]
-    assert "stripe" in data["clones"]
+    assert "slack" in data["twins"]
+    assert "stripe" in data["twins"]
 
 
 @pytest.fixture

@@ -98,10 +98,15 @@ class View:
     tombstone: str | None = None
     nouns: tuple[str, ...] = ()
     """How people refer to a record ("issue", "pull request"), for plain-English criteria."""
+    fields: tuple[str, ...] = ()
+    """Field names a record can have. Declaring them lets criteria compile against
+    an empty collection, where the items alone reveal nothing."""
 
     def to_json(self) -> dict:
+        fields = sorted(set(self.fields) | {k for item in self.items[:200] if isinstance(item, dict)
+                                            for k in item})
         return {"key": self.key, "tombstone": self.tombstone, "nouns": list(self.nouns),
-                "items": self.items}
+                "fields": fields, "items": self.items}
 
 
 ViewBuilder = Callable[[dict], "dict[str, View]"]

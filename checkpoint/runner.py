@@ -12,11 +12,8 @@ from typing import TYPE_CHECKING
 
 from checkpoint.fake_credentials import FAKE_TOKENS
 
-from .checker import check
-from .checker_llm import try_stage2
 from .engine.agent import extract_answer
-from .judge import judge
-from .scenario import Criterion, Scenario
+from .scenario import Scenario
 from .twins import registry as twin_registry
 
 if TYPE_CHECKING:
@@ -29,7 +26,17 @@ class CriterionResult:
     kind: str
     passed: bool
     reasoning: str
-    evaluator: str  # "deterministic", "llm-json", "trajectory", "llm", ...
+    evaluator: str  # "assertion:pattern" | "assertion:llm" | "assertion:pinned" | "judge" | ...
+    status: str = ""
+    """"pass", "fail", or "error" — an error means the criterion could not be decided."""
+    assertion: str | None = None
+    """The assertion that decided it, when it was decided deterministically."""
+    must_pass: bool = False
+    uncertain: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            self.status = "pass" if self.passed else "fail"
 
 
 @dataclass
@@ -56,6 +63,8 @@ class RunResult:
     setup_error: bool = False
     """True when the sandbox (not the agent) failed; such runs carry no verdict."""
     warnings: list[str] = field(default_factory=list)
+    eval_errors: list[str] = field(default_factory=list)
+    """Scoring problems (a judge outage, an assertion that cannot be evaluated)."""
 
     @property
     def score(self) -> float:
@@ -66,6 +75,16 @@ class RunResult:
     @property
     def complete(self) -> bool:
         return self.error is None and self.exit_code == 0
+
+    @property
+    def scored(self) -> bool:
+        """Whether this run produced a usable verdict (no scoring errors)."""
+        return (self.complete and not self.eval_errors
+                and all(c.status != "error" for c in self.criteria))
+
+    @property
+    def failed_must_pass(self) -> list[CriterionResult]:
+        return [c for c in self.criteria if c.must_pass and not c.passed]
 
 
 def twin_mcp_url(port: int | str, host: str = "127.0.0.1") -> str:
@@ -154,78 +173,27 @@ def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
 
 
 def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
-    deferred: list[Criterion] = []
-    for c in scenario.criteria:
-        if c.kind == "D":
-            # Stage 1: regex catalog.
-            cr = check(c.text, result.state, result.trace)
-            if cr.handled:
-                result.criteria.append(CriterionResult(
-                    text=c.text, kind="D", passed=cr.passed,
-                    reasoning=cr.reasoning, evaluator="deterministic",
-                ))
-                continue
+    """Score ``result`` against ``scenario``'s criteria (see :mod:`checkpoint.eval`)."""
+    from .eval import Schema, build_world
+    from .eval.evaluate import evaluate_criteria
 
-            # Stage 2: schema-validated LLM-JSON parser (the wedge).
-            # On any fall-through (invalid JSON, schema fail, unknown noun,
-            # missing API key) we defer to the `[P]` judge with the ORIGINAL
-            # text — no silent failure. Reason is recorded for debugging.
-            try:
-                stage2_result, stage2_reason = try_stage2(
-                    c.text, result.state, result.trace, model=judge_model,
-                )
-            except Exception as e:
-                stage2_result, stage2_reason = None, f"stage2 raised: {e}"
-            if stage2_result is not None:
-                result.criteria.append(CriterionResult(
-                    text=c.text, kind="D", passed=stage2_result.passed,
-                    reasoning=stage2_result.reasoning, evaluator="llm-json",
-                ))
-                continue
-            # Tag the criterion with the fall-through reason so the run record
-            # tells us *why* stage 2 didn't carry it.
-            c = Criterion(text=c.text, kind=c.kind)
-            c._stage2_fallthrough = stage2_reason
-            deferred.append(c)
-        elif c.kind == "T":
-            # Trajectory criteria: evaluate the agent's call path deterministically.
-            from .trajectory import Trajectory, compute_metrics
-            from .trajectory.checker import check as _check_traj
-
-            traj = Trajectory.from_trace(result.trace)
-            passed, reasoning = _check_traj(c.text, traj, compute_metrics(traj))
-            if passed is not None:
-                result.criteria.append(CriterionResult(
-                    text=c.text, kind="T", passed=passed,
-                    reasoning=reasoning, evaluator="trajectory",
-                ))
-                continue
-            deferred.append(c)  # unrecognized phrasing -> judge
-        else:
-            deferred.append(c)
-
-    if not deferred:
-        return
-
-    try:
-        verdicts = judge(
-            task=scenario.prompt,
-            final_answer=result.final_answer,
-            trace=result.trace,
-            state=result.state,
-            criteria=[c.text for c in deferred],
-            model=judge_model,
+    world = build_world(
+        seed_views=result.seed_views,
+        final_views=result.views,
+        trace=result.trace,
+        answer=result.final_answer,
+        egress=result.egress,
+        exit_code=result.exit_code,
+        duration=result.duration_s,
+    )
+    schema = Schema.from_views(result.views or result.seed_views)
+    evaluation = evaluate_criteria(scenario, world, schema, model=judge_model)
+    result.criteria = [
+        CriterionResult(
+            text=o.text, kind=o.kind, passed=o.passed, reasoning=o.reasoning,
+            evaluator=o.evaluator, status=o.status, assertion=o.assertion,
+            must_pass=o.must_pass, uncertain=o.uncertain,
         )
-    except Exception as e:
-        for c in deferred:
-            result.criteria.append(CriterionResult(
-                text=c.text, kind=c.kind, passed=False,
-                reasoning=f"Judge failed: {e}", evaluator="llm",
-            ))
-        return
-
-    for c, v in zip(deferred, verdicts, strict=False):
-        result.criteria.append(CriterionResult(
-            text=c.text, kind=c.kind, passed=v.passed,
-            reasoning=v.reasoning, evaluator="llm",
-        ))
+        for o in evaluation.outcomes
+    ]
+    result.eval_errors.extend(evaluation.errors)
