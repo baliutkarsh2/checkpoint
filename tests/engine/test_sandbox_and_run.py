@@ -162,3 +162,71 @@ def test_read_only_fails_a_writing_agent(agent_path):
     result = run_scenario(parse(SCENARIO), Agent(command=[PY, str(agent_path)]),
                           options=RunOptions(intercept=False, read_only=True))
     assert any(c.evaluator == "read-only-guard" and not c.passed for c in result.criteria)
+
+
+# -- interception ------------------------------------------------------------------
+
+INTERCEPT_AGENT = textwrap.dedent('''
+    import json, urllib.request
+    req = urllib.request.Request(
+        "https://api.github.com/repos/acme/webapp/issues", method="POST",
+        data=json.dumps({"title": "Login broken"}).encode(),
+        headers={"Authorization": "token whatever-the-agent-has",
+                 "Content-Type": "application/json"})
+    issue = json.load(urllib.request.urlopen(req))
+    print(json.dumps({"text": f"Opened issue #{issue['number']}"}))
+''')
+
+
+@pytest.fixture
+def production_agent(tmp_path: Path) -> Path:
+    path = tmp_path / "production_agent.py"
+    path.write_text(INTERCEPT_AGENT, encoding="utf-8")
+    return path
+
+
+def test_calls_to_production_urls_reach_the_twin(production_agent):
+    # The claim the product rests on: the agent's own code, its own URLs, no edits.
+    result = run_scenario(parse(SCENARIO), Agent(command=[PY, str(production_agent)]),
+                          options=RunOptions(intercept=True))
+    assert result.error is None, result.stderr
+    assert result.score == 100.0
+    assert [(c["method"], c["path"]) for c in result.trace] == [
+        ("POST", "/repos/acme/webapp/issues")]
+    assert not result.warnings
+
+
+def test_without_interception_the_agent_gets_no_proxy():
+    # With interception off the agent is on its own: no proxy, no rerouting, and
+    # calls to production hostnames go wherever DNS says. The twin URLs are still
+    # exported for agents that read them.
+    with Sandbox(["github"], intercept=False) as box:
+        env = box.agent_env({"PATH": ""})
+    assert "HTTPS_PROXY" not in env and "SSL_CERT_FILE" not in env
+    assert env["CHECKPOINT_GITHUB_URL"].startswith("http://127.0.0.1:")
+    assert env["GITHUB_API_URL"] == env["CHECKPOINT_GITHUB_URL"]
+
+
+def test_egress_outside_the_sandbox_is_blocked_and_reported(tmp_path):
+    reacher = tmp_path / "reacher.py"
+    reacher.write_text(textwrap.dedent('''
+        import json, urllib.request
+        try:
+            urllib.request.urlopen("https://api.tavily.com/search", timeout=10)
+            note = "reached it"
+        except Exception as e:
+            note = f"blocked: {type(e).__name__}"
+        print(json.dumps({"text": note}))
+    '''), encoding="utf-8")
+    result = run_scenario(parse(SCENARIO), Agent(command=[PY, str(reacher)]),
+                          options=RunOptions(intercept=True, egress="llm"))
+    blocked = [e for e in result.egress if e.get("allowed") is False]
+    assert [e["host"] for e in blocked] == ["api.tavily.com"]
+    assert any("api.tavily.com" in w and "--allow-host" in w for w in result.warnings)
+
+
+def test_an_allowed_host_is_let_through(tmp_path):
+    result = run_scenario(parse(SCENARIO), Agent(command=[PY, "-c", "print('{}')"]),
+                          options=RunOptions(intercept=True, egress="llm",
+                                             allow_hosts=("api.tavily.com",)))
+    assert result.error is None

@@ -157,13 +157,14 @@ class Sandbox:
         self._proxy.start()
 
     def _routes(self) -> list:
-        from checkpoint.proxy import Route
+        from checkpoint.proxy import proxy_routes
 
-        routes = []
-        for name in self.twins:
-            for domain in registry.get(name).domains:
-                routes.append(Route(domain, self.twin_url(name)))
-        return routes
+        upstreams = {
+            domain: self.twin_url(name)
+            for name in self.twins
+            for domain in registry.get(name).domains
+        }
+        return proxy_routes(upstreams)
 
     def _policy(self, policy_cls: Any) -> Any:
         from checkpoint.proxy import LLM_PROVIDER_HOSTS

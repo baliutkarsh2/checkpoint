@@ -29,7 +29,10 @@ class RunOptions:
     judge_model: str = DEFAULT_MODEL
     timeout: float | None = None
     """Seconds before the agent is killed; defaults to the scenario's ``timeout``."""
-    intercept: bool = False
+    intercept: bool = True
+    """Route the agent's calls to production hostnames into the twins, so the code
+    path under test is the one that ships. Turn it off for agents that read the
+    twin URLs from the environment instead."""
     egress: Egress = "llm"
     allow_hosts: tuple[str, ...] = ()
     faults: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
