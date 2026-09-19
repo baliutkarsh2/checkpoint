@@ -68,7 +68,7 @@ Three personas, in priority order:
 | Run a scenario, get a 0-100 score | `checkpoint run scenarios/foo.md` → table with each criterion's pass/fail + score |
 | Browse history, compare, see trends | `checkpoint serve` → SPA at `http://127.0.0.1:4001` |
 | CI gate with threshold | `checkpoint run scenarios/ -n 3 --pass-threshold 80 -o json -q` → exit 1 if any avg < 80 |
-| Real-SDK fidelity | `--docker` runs the harness in a container; mitmproxy intercepts production URLs |
+| Real-SDK fidelity | `--docker` runs the harness in a container; Checkpoint's intercept proxy routes production URLs to the twins |
 | Multi-clone cross-system tests | Scenarios with `clones: github, supabase` spin up both, share state across the run |
 | Long-lived twin sessions | `checkpoint clone start github` → keep a twin alive across many manual API calls |
 | MCP tool surface | Every twin mounts `/mcp/` so agents using Model Context Protocol see the same tools as production |
@@ -108,7 +108,7 @@ A **scenario** is a markdown file describing one agent task and how to grade it.
 A **harness** is the user's agent script.  Checkpoint is harness-agnostic: it spawns whatever command you give it via `--harness`, sets a few env vars, reads stdout for the final answer, then evaluates.  Two contracts:
 
 - **Subprocess mode**: the harness reads `CHECKPOINT_<CLONE>_URL` env vars and calls those URLs directly.  Simplest path.
-- **Docker mode**: the harness uses real SDKs against production URLs (`https://api.github.com`); a mitmproxy sidecar intercepts and routes to twins.  Most realistic.
+- **Docker mode**: the harness uses real SDKs against production URLs (`https://api.github.com`); a sidecar running Checkpoint's intercept proxy (`checkpoint/proxy/`) intercepts and routes to twins.  Most realistic.
 
 ### Seed
 A **seed** is the starting state a twin loads before the run.  Three forms:
@@ -213,8 +213,8 @@ In subprocess mode (default):
 - Lifetime = the `run_once` call.  `subprocess.terminate()` on exit (in `finally`).
 
 In Docker mode:
-- **N+2 containers**: 1 harness container + 1 sidecar container (mitmproxy) + N twin containers (which share the sidecar's network namespace via `network_mode=container:<sidecar>`).
-- The harness's `extra_hosts` map every clone domain (`api.github.com`, `checkpoint.supabase.co`, etc.) to the sidecar's IP, so production URLs land at port 443 of the sidecar, which routes by Host header to the right twin port.
+- **N+2 containers**: 1 harness container + 1 sidecar container (the intercept proxy) + N twin containers (which share the sidecar's network namespace via `network_mode=container:<sidecar>`).
+- The harness's `extra_hosts` map every clone domain (`api.github.com`, `checkpoint.supabase.co`, etc.) to the sidecar's IP, so production URLs land at port 443 of the sidecar, which reads the TLS SNI and routes to the right twin port.
 
 The dashboard runs in its own process via `checkpoint serve` and is independent of any run.  It watches the runs directory + clone registry and pushes changes to connected SSE clients.
 
@@ -292,7 +292,7 @@ Each twin enforces a **bootstrap token**:
 - `stripe`: `sk_live_...`
 - `linear`, `supabase`, `discord`, `google-workspace`: each their own format
 
-These are checked-into source code (`checkpoint/proxy/routes.py`) — they are not secrets.  They exist so that real SDKs (which insist on authenticating) get a wire-compatible response.  In Docker mode the sidecar's `addon.py` rewrites whatever `Authorization` header the agent sent to be the bootstrap token, so the agent doesn't need to know it.
+These are checked-into source code (`checkpoint/proxy/routes.py`) — they are not secrets.  They exist so that real SDKs (which insist on authenticating) get a wire-compatible response.  In Docker mode the intercept proxy replaces whatever `Authorization` header the agent sent with the bootstrap token (each route carries it; see `proxy_routes` in `checkpoint/proxy/routes.py`), so the agent doesn't need to know it.
 
 ### Service-shaped errors
 
@@ -401,14 +401,14 @@ This is the **production-fidelity** path and the default since v0.2.  Customers'
 
 The CLI delegates to `checkpoint/docker/runner.py`, which:
 
-1. Builds a sidecar container image that runs `mitmproxy` listening on port 443 in reverse-proxy mode.
+1. Builds a sidecar container image that runs Checkpoint's intercept proxy (`python -m checkpoint.proxy`) with a transparent TLS listener on port 443.
 2. Builds the harness image from `<dir>/Dockerfile` (or auto-generates one).
 3. Creates a Docker network.
-4. Starts the sidecar with `CHECKPOINT_ROUTES` env (JSON map of domain → twin URL).
-5. Waits for the sidecar to mint its CA cert into a shared volume (`/archal-out/ca.crt`).
+4. Starts the sidecar with `CHECKPOINT_ROUTES` env (JSON map of domain → twin URL and the `Authorization` value to stamp).
+5. Waits for the sidecar to mint its CA cert into a shared volume (`/archal-out/ca.crt`, plus `/archal-out/bundle.pem` = public roots + that CA) and to print `ready` once its listeners are bound.
 6. Starts each twin container with `network_mode=container:<sidecar>` so they share the sidecar's network namespace and listen on `127.0.0.1:<port>` inside it.
 7. Starts the harness container on the bridge network with `extra_hosts: { "api.github.com": <sidecar_ip>, ... }`.  The harness's `entrypoint.sh` merges `/etc/ssl/certs/ca-certificates.crt` with `/archal-out/ca.crt` into a combined CA bundle so OpenAI calls trust real CAs *and* sidecar-intercepted calls trust the minted CA.
-8. The harness uses **real SDKs** — PyGithub, supabase-py, etc. — pointed at production URLs.  Outbound HTTPS gets DNS-hijacked to the sidecar; mitmproxy's addon (`checkpoint/proxy/addon.py`) rewrites the request to the right twin and stamps in the bootstrap token.
+8. The harness uses **real SDKs** — PyGithub, supabase-py, etc. — pointed at production URLs.  Outbound HTTPS gets DNS-hijacked to the sidecar; the proxy (`checkpoint/proxy/server.py`) reads the SNI, terminates TLS with a per-host certificate from the run's CA, and forwards each request to the right twin with the bootstrap token stamped in.  Hosts without a route are never decrypted: they are tunnelled or refused per the egress policy.
 9. Harness exits, runner reads `/_state` and `/_trace` from each twin via the sidecar's netns, evaluates, returns.
 
 **When to use:** always, unless you have a specific reason not to.  Docker mode is the only path where the agent's code is identical to what ships to production — same SDKs, same TLS verification, same JSON shapes, same retry behavior, same network round-trip semantics.
@@ -631,7 +631,9 @@ click>=8.1         # CLI
 rich>=13.7         # CLI tables/panels
 openai>=1.30       # judge, checker_llm, scenario_gen
 python-dotenv      # .env loading
-mitmproxy>=10      # Docker mode TLS interception
+h11>=0.16          # intercept proxy: HTTP/1.1 parsing
+cryptography>=44   # intercept proxy: per-run CA + leaf certificates
+certifi            # intercept proxy: public roots in bundle.pem
 docker>=7          # Docker mode container orchestration
 mcp>=1.27          # MCP server framework
 sse-starlette>=2.1 # dashboard SSE
@@ -788,12 +790,13 @@ checkpoint/
 │   ├── _shim.py                 # adapter: MCP tool call -> twin REST handler
 │   └── <clone>_mcp.py × 7
 ├──
-├── proxy/                       # Docker-mode TLS sidecar
+├── proxy/                       # TLS intercept proxy (the Docker sidecar)
 │   ├── Dockerfile
 │   ├── entrypoint.sh
-│   ├── addon.py                 # mitmproxy addon: route by Host header, swap auth
+│   ├── server.py                # InterceptProxy: CONNECT + transparent modes, egress policy
+│   ├── __main__.py              # `python -m checkpoint.proxy` (sidecar entrypoint)
 │   ├── routes.py                # domain -> (twin URL, bootstrap token) registry
-│   └── ca.py                    # mint per-run CA cert
+│   └── ca.py                    # per-run CA + per-host leaf certificates
 ├──
 ├── docker/                      # Docker-mode runner
 │   ├── runner.py                # docker_run_once orchestration
@@ -896,8 +899,8 @@ If it's a subcommand of an existing group, use `@traces.command(...)` instead.
 - **Stage 1/2/3** — the three evaluator stages: regex → LLM-JSON → GPT judge.
 - **Run record** — the JSON file persisted to `.checkpoint/cache/runs/<id>.json` after each run.
 - **Bootstrap token** — fixed token each twin accepts; not a secret.
-- **Sidecar** — the mitmproxy container in Docker mode.
-- **Route mode** — synonym for the sidecar's TLS-interception behavior.
+- **Sidecar** — the intercept-proxy container in Docker mode.
+- **Route mode** — synonym for the proxy's TLS-interception behavior.
 - **MCP** — Model Context Protocol; every twin mounts an MCP server at `/mcp/`.
 - **`.checkpoint.json`** — *project*-level config (in repo, committed).
 - **`~/.checkpoint/config.json`** — *user*-level config (per-machine, not in repo).
@@ -965,7 +968,7 @@ For a scenario `scenarios/github-supabase-product-launch.md` with `clones: githu
 | Scenario hangs forever | `runner._wait_healthy` (twin didn't start) or harness `subprocess.run(timeout=...)` (your agent looped) |
 | Score is 0/100 | `record.criteria` — usually means harness exited non-zero or scenario has no criteria |
 | Wrong twin called | `_CLONE_DOMAINS` in `docker/runner.py` (Docker mode) or `CHECKPOINT_<CLONE>_URL` env (subprocess mode) |
-| 401 from twin in Docker mode | `proxy/addon.py:RouteMode.request` rewrites Authorization; check if it ran |
+| 401 from twin in Docker mode | The proxy stamps each route's `auth_header` (`proxy/routes.py:proxy_routes`); check the sidecar's `CHECKPOINT_ROUTES` env and `docker logs` |
 | Dashboard 503 at `/` | `dashboard/static/` missing — `cd dashboard/web && npm run build` |
 | `--rate-limit` not enforced | Twin doesn't honor it yet; only github does today.  `clone_manager.configure(...)` is the API |
 | MCP `tools/list` returns empty | `mcp_servers/<clone>_mcp.py` not wired, or twin's `app.mount("/mcp", ...)` missing |

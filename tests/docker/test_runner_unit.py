@@ -1,7 +1,25 @@
 import json
+import time
 
-from checkpoint.docker.runner import _build_env, _read_output, _write_hosts_file
+from checkpoint.docker.runner import (
+    _build_env,
+    _read_output,
+    _wait_for_sidecar_listening,
+    _write_hosts_file,
+)
 from checkpoint.scenario import Scenario
+
+
+class _FakeSidecar:
+    def __init__(self, stdout: bytes, status: str = "running"):
+        self._stdout = stdout
+        self.status = status
+
+    def logs(self, stdout=True, stderr=True, tail=None):
+        return self._stdout if stdout else b""
+
+    def reload(self):
+        pass
 
 
 def test_build_env_required_keys():
@@ -56,3 +74,21 @@ def test_write_hosts_file_has_api_github_com(tmp_path):
     text = p.read_text()
     assert "127.0.0.1 api.github.com" in text
     assert "127.0.0.1 localhost" in text
+
+
+def test_sidecar_is_listening_once_it_prints_ready():
+    sidecar = _FakeSidecar(b"ready\n")
+    assert _wait_for_sidecar_listening(sidecar, timeout=1)
+
+
+def test_sidecar_readiness_needs_the_exact_ready_line():
+    # The CA banner mentions paths and routes; only the bare line counts.
+    sidecar = _FakeSidecar(b"[sidecar] not ready yet\n")
+    assert not _wait_for_sidecar_listening(sidecar, timeout=0.3)
+
+
+def test_crashed_sidecar_fails_fast_instead_of_timing_out():
+    sidecar = _FakeSidecar(b"", status="exited")
+    started = time.monotonic()
+    assert not _wait_for_sidecar_listening(sidecar, timeout=10)
+    assert time.monotonic() - started < 1

@@ -39,7 +39,8 @@ import docker
 from docker.errors import APIError, NotFound
 
 from ..llm import DEFAULT_MODEL
-from ..proxy.routes import all_domains, lookup, register
+from ..proxy.routes import all_domains, lookup, proxy_routes, register
+from ..proxy.server import routes_to_json
 from ..runner import (
     RunResult,
     _evaluate,
@@ -60,7 +61,7 @@ _DOCKER_TWIN_APPS = {
 }
 
 # Maps clone name -> the domain(s) the harness's SDK will call.
-# These are registered in CHECKPOINT_ROUTES so the sidecar addon can intercept.
+# These are registered in CHECKPOINT_ROUTES so the sidecar's intercept proxy routes them.
 _CLONE_DOMAINS = {
     "github": ["api.github.com"],
     "slack": ["slack.com"],
@@ -179,25 +180,34 @@ def _fetch_state_in_container(sidecar, twin_port: int) -> dict:
     return {}
 
 
-def _wait_for_sidecar_listening(sidecar, port: int = 443, timeout: float = 15.0) -> bool:
-    """Wait until mitmdump in the sidecar container is actually listening on :port.
+def _wait_for_sidecar_listening(sidecar, timeout: float = 15.0) -> bool:
+    """Wait until the intercept proxy in the sidecar is accepting connections.
 
-    The CA file is minted BEFORE mitmdump starts (see entrypoint.sh), so the
-    presence of ca.crt is not sufficient. We grep the container logs for
-    mitmproxy's "listening at" announcement.
+    The CA is minted before the listeners bind (see checkpoint/proxy/__main__.py),
+    so ca.crt existing is not enough. The proxy prints a single ``ready`` line
+    on stdout only once both of its sockets are bound. A sidecar that exits
+    instead (bad routes, port clash) fails fast rather than timing out.
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            logs = sidecar.logs(stdout=True, stderr=True).decode("utf-8", errors="replace")
-            if "listening at" in logs.lower() or "Proxy listening" in logs:
-                # Give mitmproxy a beat to actually open the socket.
-                time.sleep(0.3)
+            logs = sidecar.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
+            if any(line.strip() == "ready" for line in logs.splitlines()):
                 return True
+            sidecar.reload()
+            if sidecar.status in ("exited", "dead"):
+                return False
         except Exception:
             pass
-        time.sleep(0.2)
+        time.sleep(0.1)
     return False
+
+
+def _sidecar_log_tail(sidecar, lines: int = 20) -> str:
+    try:
+        return sidecar.logs(stdout=True, stderr=True, tail=lines).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
 
 
 def _build_env(scenario: Scenario, judge_model: str) -> dict:
@@ -270,7 +280,7 @@ def docker_run_once(
         clone: _BASE_TWIN_PORT + i for i, clone in enumerate(clones)
     }
 
-    # Build the CHECKPOINT_ROUTES mapping for the sidecar addon.
+    # Build the CHECKPOINT_ROUTES mapping for the sidecar's intercept proxy.
     # Each domain for a clone maps to http://127.0.0.1:<port> in the shared netns.
     routes: dict[str, str] = {}
     for clone, port in clone_ports.items():
@@ -286,9 +296,6 @@ def docker_run_once(
                     token = parent_route.bootstrap_token
                     break
             register(domain, twin_url, bootstrap_token=token)
-
-    # Default reverse-mode upstream = first clone (fallback if addon has no route).
-    first_twin_url = f"http://127.0.0.1:{clone_ports[clones[0]]}"
 
     sidecar = None
     twin_containers: list = []  # list of (clone, port, container)
@@ -320,19 +327,27 @@ def docker_run_once(
             volumes={str(archal_out): {"bind": "/archal-out", "mode": "rw"}},
             environment={
                 "SIDECAR_PORT": "443",
-                "TWIN_UPSTREAM": first_twin_url,
-                "CHECKPOINT_ROUTES": json.dumps(routes),
+                # Routes carry each twin's credential, so the proxy stamps the
+                # right Authorization without knowing anything about the twins.
+                "CHECKPOINT_ROUTES": routes_to_json(proxy_routes(routes)),
             },
         )
 
         if not _wait_for_ca(archal_out):
-            return DockerRunResult("", "", -1, [], {}, error="Sidecar did not mint CA within 10s")
+            return DockerRunResult(
+                "", "", -1, [], {},
+                error=f"Sidecar did not mint CA within 10s\n{_sidecar_log_tail(sidecar)}",
+            )
 
         if not _wait_for_sidecar_listening(sidecar):
-            return DockerRunResult("", "", -1, [], {}, error="Sidecar mitmdump did not start listening within 15s")
+            return DockerRunResult(
+                "", "", -1, [], {},
+                error=f"Sidecar intercept proxy did not start listening within 15s\n"
+                      f"{_sidecar_log_tail(sidecar)}",
+            )
 
         # Start one twin container per clone, all sharing the sidecar's netns so
-        # mitmproxy can reach them at 127.0.0.1:<port> in the shared namespace.
+        # the proxy can reach them at 127.0.0.1:<port> in the shared namespace.
         for clone, port in clone_ports.items():
             twin_app = _DOCKER_TWIN_APPS[clone]
             twin_ctr = client.containers.run(

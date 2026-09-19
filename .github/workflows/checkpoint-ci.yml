@@ -24,8 +24,9 @@ jobs:
   # suite. Deliberately lean: no SPA build, no Playwright, no wheel check —
   # those are Python-version-independent packaging concerns already covered by
   # build-and-test, and conditioning them per-leg would break the wheel step.
-  # Note the dependency graph really does differ: mitmproxy >=11.1.3 requires
-  # Python >=3.12, so 3.11 resolves a different major than 3.12/3.13.
+  # Note the legs really do differ: the intercept proxy (checkpoint/proxy)
+  # drives TLS and sockets through the stdlib's ssl and asyncio directly, and
+  # asyncio's server-shutdown semantics changed in 3.12.
   pytest-matrix:
     name: pytest (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
