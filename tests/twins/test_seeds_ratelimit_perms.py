@@ -1,6 +1,8 @@
 """Phase 2 Plan 04: seeds + rate-limit + permissions-denied."""
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -97,11 +99,24 @@ def test_rate_limited_seed_returns_429_after_n_requests(client):
     body = r.json()
     assert "rate limit" in body["message"].lower()
     assert "documentation_url" in body
-    # Rate-limit headers present.
+    # Rate-limit headers present, and the reset is a real epoch a few seconds
+    # out: an SDK that waits for it (PyGithub does) has to be able to recover.
     assert "X-RateLimit-Limit" in r.headers
     assert r.headers["X-RateLimit-Limit"] == "5"
     assert r.headers["X-RateLimit-Remaining"] == "0"
-    assert "Retry-After" in r.headers
+    assert 0 < int(r.headers["Retry-After"]) <= gh.RATE_LIMIT_RESET_S
+    reset = int(r.headers["X-RateLimit-Reset"])
+    assert time.time() < reset <= time.time() + gh.RATE_LIMIT_RESET_S + 1
+
+
+def test_rate_limit_window_refills(client):
+    """The budget comes back at the advertised reset, so a backing-off agent progresses."""
+    client.post("/_reset")  # the request counter lives on the twin, not in state
+    client.post("/_config", json={"rate_limit": 1})
+    assert client.get("/repos/x/y", headers=H).status_code == 404
+    assert client.get("/repos/x/y", headers=H).status_code == 429
+    time.sleep(gh.RATE_LIMIT_RESET_S + 0.2)
+    assert client.get("/repos/x/y", headers=H).status_code == 404
 
 
 def test_config_endpoint_tweaks_runtime(client):
@@ -128,8 +143,22 @@ def test_reset_clears_state_and_counters(client):
     issues = client.get("/repos/acme/webapp/issues?state=all", headers=H).json()
     assert len(issues) == 2
     client.post("/_reset")
-    issues = client.get("/repos/acme/webapp/issues?state=all", headers=H)
-    # repo no longer exists after reset (small-project seeded it).
-    # Actually issues list returns [] for missing repo by design — verify.
-    assert issues.status_code == 200
-    assert issues.json() == []
+    # The seeded repo is gone, so its issues are a 404 — not an empty list.
+    assert client.get("/repos/acme/webapp/issues?state=all", headers=H).status_code == 404
+    assert gh.STATE["issues"] == {} and gh.STATE["repos"] == {}
+
+
+def test_seeded_numbers_continue_after_the_seed(client):
+    """A new issue must not reuse a seeded number, or the agent overwrites history."""
+    client.post("/_seed/small-project")
+    created = client.post("/repos/acme/webapp/issues", json={"title": "new"}, headers=H)
+    assert created.json()["number"] == 3
+    comment = client.post("/repos/acme/webapp/issues/3/comments", json={"body": "hi"},
+                          headers=H)
+    assert comment.json()["id"] == 2  # the seed already holds comment 1
+
+
+def test_seeded_issue_labels_exist_on_the_repository(client):
+    client.post("/_seed/small-project")
+    names = {lab["name"] for lab in client.get("/repos/acme/webapp/labels", headers=H).json()}
+    assert {"bug", "enhancement", "in-progress"} <= names

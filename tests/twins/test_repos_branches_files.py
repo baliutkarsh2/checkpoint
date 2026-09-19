@@ -38,15 +38,36 @@ def test_create_user_repo(client):
     repo = r.json()
     assert repo["full_name"] == "default-user/webapp"
     assert repo["default_branch"] == "main"
-    assert "main" in repo["branches"]
-    # Initial commit was created.
-    assert len(repo["commits"]) == 1
+    assert repo["owner"]["login"] == "default-user"
+    # Git state lives in the twin, not on the wire (GitHub's repo payload has no
+    # branches or commits in it).
+    stored = gh.STATE["repos"]["default-user/webapp"]
+    assert "main" in stored["branches"]
+    assert len(stored["commits"]) == 1
+
+
+def test_create_repo_with_auto_init_has_a_readme(client):
+    client.post("/user/repos", json={"name": "webapp", "auto_init": True}, headers=H)
+    r = client.get("/repos/default-user/webapp/contents/README.md", headers=H)
+    assert r.status_code == 200
+    assert base64.b64decode(r.json()["content"]).decode() == "# webapp\n"
 
 
 def test_get_repo_404(client):
     r = client.get("/repos/no/such", headers=H)
     assert r.status_code == 404
     assert r.json()["message"] == "Not Found"
+
+
+def test_writes_to_a_missing_repo_404_instead_of_creating_it(client):
+    """The twin used to conjure the repo, which hid a bad repo name from the agent."""
+    assert client.post("/repos/acme/ghost/issues", json={"title": "x"},
+                       headers=H).status_code == 404
+    assert client.get("/repos/acme/ghost/issues", headers=H).status_code == 404
+    assert client.put("/repos/acme/ghost/contents/a.txt",
+                      json={"message": "m", "content": _b64("x")},
+                      headers=H).status_code == 404
+    assert gh.STATE["repos"] == {}
 
 
 def test_search_repositories(client):
@@ -100,6 +121,60 @@ def test_get_file_contents_404(client):
     client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
     r = client.get("/repos/acme/webapp/contents/missing.txt", headers=H)
     assert r.status_code == 404
+
+
+def test_contents_are_per_branch(client):
+    """A commit on a branch must not be visible on the default branch."""
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    main_sha = client.get("/repos/acme/webapp/branches", headers=H).json()[0]["commit"]["sha"]
+    client.post("/repos/acme/webapp/git/refs",
+                json={"ref": "refs/heads/feature", "sha": main_sha}, headers=H)
+    client.put("/repos/acme/webapp/contents/src/app.py",
+               json={"message": "feat", "content": _b64("x = 1\n"), "branch": "feature"},
+               headers=H)
+    assert client.get("/repos/acme/webapp/contents/src/app.py?ref=feature",
+                      headers=H).status_code == 200
+    assert client.get("/repos/acme/webapp/contents/src/app.py", headers=H).status_code == 404
+
+
+def test_update_file_needs_the_current_sha(client):
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    client.put("/repos/acme/webapp/contents/a.txt",
+               json={"message": "add", "content": _b64("one\n")}, headers=H)
+    sha = client.get("/repos/acme/webapp/contents/a.txt", headers=H).json()["sha"]
+    # Overwriting without a sha is rejected, a stale sha conflicts.
+    assert client.put("/repos/acme/webapp/contents/a.txt",
+                      json={"message": "x", "content": _b64("two\n")},
+                      headers=H).status_code == 422
+    assert client.put("/repos/acme/webapp/contents/a.txt",
+                      json={"message": "x", "content": _b64("two\n"), "sha": "0" * 40},
+                      headers=H).status_code == 409
+    r = client.put("/repos/acme/webapp/contents/a.txt",
+                   json={"message": "x", "content": _b64("two\n"), "sha": sha}, headers=H)
+    assert r.status_code == 200
+
+
+def test_delete_file(client):
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    client.put("/repos/acme/webapp/contents/a.txt",
+               json={"message": "add", "content": _b64("one\n")}, headers=H)
+    sha = client.get("/repos/acme/webapp/contents/a.txt", headers=H).json()["sha"]
+    r = client.request("DELETE", "/repos/acme/webapp/contents/a.txt",
+                       json={"message": "drop", "sha": sha}, headers=H)
+    assert r.status_code == 200
+    assert r.json()["content"] is None
+    assert client.get("/repos/acme/webapp/contents/a.txt", headers=H).status_code == 404
+
+
+def test_directory_listing_returns_an_array(client):
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    for path in ("README.md", "src/app.py", "src/util/io.py"):
+        client.put(f"/repos/acme/webapp/contents/{path}",
+                   json={"message": "add", "content": _b64("x\n")}, headers=H)
+    root = client.get("/repos/acme/webapp/contents/", headers=H).json()
+    assert {(e["path"], e["type"]) for e in root} == {("README.md", "file"), ("src", "dir")}
+    src = client.get("/repos/acme/webapp/contents/src", headers=H).json()
+    assert {(e["path"], e["type"]) for e in src} == {("src/app.py", "file"), ("src/util", "dir")}
 
 
 def test_push_files_batch(client):
@@ -169,12 +244,33 @@ def test_delete_default_branch_refused(client):
 
 def test_create_branch_duplicate(client):
     client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    main_sha = client.get(
+        "/repos/acme/webapp/branches", headers=H
+    ).json()[0]["commit"]["sha"]
     r = client.post(
         "/repos/acme/webapp/git/refs",
-        json={"ref": "refs/heads/main"},
+        json={"ref": "refs/heads/main", "sha": main_sha},
         headers=H,
     )
     assert r.status_code == 422
+    assert r.json()["errors"][0]["code"] == "already_exists"
+
+
+def test_get_branch_and_ref(client):
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=H)
+    branch = client.get("/repos/acme/webapp/branches/main", headers=H)
+    assert branch.status_code == 200
+    sha = branch.json()["commit"]["sha"]
+    ref = client.get("/repos/acme/webapp/git/ref/heads/main", headers=H)
+    assert ref.status_code == 200
+    assert ref.json() == {
+        "ref": "refs/heads/main",
+        "node_id": ref.json()["node_id"],
+        "url": ref.json()["url"],
+        "object": {"type": "commit", "sha": sha, "url": ref.json()["object"]["url"]},
+    }
+    assert client.get("/repos/acme/webapp/branches/nope", headers=H).status_code == 404
+    assert client.get("/repos/acme/webapp/git/ref/heads/nope", headers=H).status_code == 404
 
 
 # --- commits -------------------------------------------------------------
