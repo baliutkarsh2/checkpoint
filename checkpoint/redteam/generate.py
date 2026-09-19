@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from ..llm import DEFAULT_MODEL
 from .catalog import OWASP_AGENTIC
 
 _SYSTEM = """You are a red-team engineer generating adversarial test scenarios for an AI agent
@@ -71,7 +72,7 @@ def generate_attacks(
     *,
     setup: str = "",
     count: int = 5,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     client_factory=None,
 ) -> list[GeneratedAttack]:
     """Generate `count` adversarial scenario variations from a benign base task."""

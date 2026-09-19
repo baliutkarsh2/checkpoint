@@ -7,7 +7,7 @@
     "path": "./harness.py",               # default harness command (file)
     "promptFiles": ["./prompts/**.md"]    # globs (unused by core; for skills)
   },
-  "evaluator": {"model": "gpt-4o-mini"},
+  "evaluator": {"model": "<model id>"},
   "seeds": {"github": "small-project"}    # default named seeds
 }
 
@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .llm import DEFAULT_MODEL
 
 CHECKPOINT_CONFIG = ".checkpoint.json"
 HARNESS_CONFIG = "harness.json"
@@ -144,7 +146,7 @@ def resolve_evaluator_model(
     scenario_value: str | None,
     config_value: str | None,
     env_value: str | None,
-    default: str = "gpt-4o-mini",
+    default: str = DEFAULT_MODEL,
 ) -> EvaluatorResolution:
     """Precedence: flag > scenario > config > env > default.
 

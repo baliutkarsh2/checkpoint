@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..gate import GatePolicy, run_gate
+from ..llm import DEFAULT_MODEL
 from ..scenario import parse_file
 from .catalog import category_for
 
@@ -51,7 +52,7 @@ def run_redteam(
     harness_cmd: list[str],
     policy: GatePolicy,
     *,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     progress=None,
 ) -> RedTeamReport:
     report = RedTeamReport()

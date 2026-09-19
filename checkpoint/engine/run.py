@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from checkpoint.llm import DEFAULT_MODEL
 from checkpoint.twins import registry
 
 from .agent import Agent, LineSink
@@ -25,7 +26,7 @@ DEFAULT_TIMEOUT = 180.0
 class RunOptions:
     """Per-run knobs that are not part of the scenario file."""
 
-    judge_model: str = "gpt-4o-mini"
+    judge_model: str = DEFAULT_MODEL
     timeout: float | None = None
     """Seconds before the agent is killed; defaults to the scenario's ``timeout``."""
     intercept: bool = False

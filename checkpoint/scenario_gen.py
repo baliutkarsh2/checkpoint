@@ -1,6 +1,8 @@
 """LLM-backed scenario generator for `checkpoint scenario generate`."""
 from __future__ import annotations
 
+from .llm import DEFAULT_MODEL
+
 # ---------------------------------------------------------------------------
 # Per-twin capability map (F2).
 #
@@ -135,7 +137,7 @@ Config example:
 SYSTEM = _build_system(None)
 
 
-def _default_factory(model: str = "gpt-4o-mini"):
+def _default_factory(model: str = DEFAULT_MODEL):
     from .llm import get_client
     return get_client(model)
 
@@ -144,7 +146,7 @@ def generate(
     description: str,
     *,
     clone: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     _client_factory=None,
 ) -> str:
     """Return raw Markdown for a new scenario given a prose description."""
