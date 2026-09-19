@@ -231,6 +231,7 @@ def test_pull_request_lifecycle(gh, twin):
     merged = repo.get_pull(pull.number)
     assert merged.state == "closed" and merged.merged is True
     assert merged.is_merged() is True
+    assert [f.filename for f in merged.get_files()] == ["src/feature.js"]
     assert repo.get_contents("src/feature.js").decoded_content == b"export const widget = 1;\n"
     ops = [(e["op"], e["resource"]) for e in twin.trace()]
     assert ("create", "pulls") in ops and ("update", "pulls") in ops
