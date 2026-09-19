@@ -77,6 +77,19 @@ anthropic = ["anthropic>=0.40"]
 # every user's environment.
 proxy = ["mitmproxy>=11.0"]
 
+[dependency-groups]
+# Official vendor SDKs, used only by tests/sdk to prove each twin answers the
+# calls real agents make. `pip install --group twin-conformance` (pip >= 25.1).
+twin-conformance = [
+    "PyGithub>=2.5",
+    "stripe>=12.0",
+    "slack-sdk>=3.33",
+    "supabase>=2.15",
+    "google-api-python-client>=2.160",
+    "google-auth>=2.38",
+    "discord.py>=2.5",
+]
+
 [project.urls]
 Homepage = "https://usecheckpoint.dev"
 Repository = "https://github.com/baliutkarsh2/checkpoint"
@@ -154,6 +167,7 @@ markers = [
     "slow: takes more than a second or two",
     "integration: spawns a real twin subprocess or MCP session",
     "docker: requires a working Docker daemon",
+    "sdk: drives a twin through an official vendor SDK (twin-conformance group)",
 ]
 
 [tool.coverage.run]

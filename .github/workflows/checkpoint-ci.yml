@@ -52,6 +52,33 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -q
 
+  # Each twin must answer the calls real agents make through the vendor's own
+  # SDK; a twin bug fails a correct agent and reads as an agent regression.
+  twin-conformance:
+    name: Twin conformance (official SDKs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package and vendor SDKs
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install --group twin-conformance
+
+      - name: Run conformance suite
+        run: pytest tests/sdk -m sdk -q
+
   # The container images back three documented deployment paths and the default
   # run mode, but nothing built them — a broken base image or dependency
   # conflict would ship undetected. Build only; no registry credentials needed.
