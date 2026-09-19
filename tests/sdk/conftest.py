@@ -35,6 +35,9 @@ class LiveTwin:
         self.port = _free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         self._proc: subprocess.Popen[str] | None = None
+        # One pooled client for the whole module: building a throwaway httpx
+        # client per control call costs ~1.5s on Windows and dominated these suites.
+        self._client = httpx.Client(base_url=self.url, timeout=30.0, trust_env=False)
 
     def start(self) -> LiveTwin:
         self._proc = subprocess.Popen(
@@ -48,6 +51,7 @@ class LiveTwin:
         return self
 
     def stop(self) -> None:
+        self._client.close()
         if self._proc is not None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -55,22 +59,22 @@ class LiveTwin:
     # -- control plane --------------------------------------------------------
 
     def reset(self) -> None:
-        httpx.post(f"{self.url}/_reset", timeout=10).raise_for_status()
+        self._client.post("/_reset").raise_for_status()
 
     def seed(self, name: str) -> None:
-        httpx.post(f"{self.url}/_seed/{name}", timeout=10).raise_for_status()
+        self._client.post(f"/_seed/{name}").raise_for_status()
 
     def configure(self, **config: object) -> None:
-        httpx.post(f"{self.url}/_config", json=config, timeout=10).raise_for_status()
+        self._client.post("/_config", json=config).raise_for_status()
 
     def state(self) -> dict:
-        return httpx.get(f"{self.url}/_state", timeout=10).json()
+        return self._client.get("/_state").json()
 
     def views(self) -> dict:
-        return httpx.get(f"{self.url}/_views", timeout=10).json()["collections"]
+        return self._client.get("/_views").json()["collections"]
 
     def trace(self) -> list[dict]:
-        return httpx.get(f"{self.url}/_trace", timeout=10).json()
+        return self._client.get("/_trace").json()
 
     @property
     def token(self) -> str:
@@ -96,5 +100,5 @@ def twin(live_twin: LiveTwin) -> LiveTwin:
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
-        if "tests/sdk/" in item.nodeid.replace("\\", "/") or "tests\sdk\\" in item.nodeid:
+        if "tests/sdk/" in item.nodeid.replace("\\", "/"):
             item.add_marker(pytest.mark.sdk)
