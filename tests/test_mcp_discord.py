@@ -23,6 +23,7 @@ DISCORD_TOOL_NAMES = {
     "discord_modify_channel",
     "discord_delete_channel",
     "discord_get_messages",
+    "discord_get_message",
     "discord_send_message",
     "discord_edit_message",
     "discord_delete_message",
@@ -33,8 +34,17 @@ DISCORD_TOOL_NAMES = {
     "discord_get_pinned_messages",
     "discord_pin_message",
     "discord_unpin_message",
+    "discord_create_thread",
+    "discord_list_active_threads",
+    "discord_create_dm",
     "discord_list_guild_members",
     "discord_get_guild_member",
+    "discord_search_guild_members",
+    "discord_modify_guild_member",
+    "discord_kick_member",
+    "discord_ban_member",
+    "discord_unban_member",
+    "discord_list_bans",
     "discord_assign_role",
     "discord_remove_role",
     "discord_list_roles",
@@ -195,3 +205,21 @@ async def test_discord_mcp_key_tools(discord_twin):
             })
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "Hello from MCP test!" in text
+
+            # 9. create_thread from that message
+            result = await session.call_tool("discord_create_thread", {
+                "channel_id": channel_id,
+                "message_id": msg_id,
+                "name": "mcp-thread",
+            })
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "mcp-thread" in text
+
+            state = httpx.get(state_url).json()
+            assert state["channels"][msg_id]["name"] == "mcp-thread"
+
+            # 10. create_dm with a seeded member
+            user_id = next(uid for uid, u in state["users"].items() if not u.get("bot"))
+            result = await session.call_tool("discord_create_dm", {"user_id": user_id})
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert user_id in text

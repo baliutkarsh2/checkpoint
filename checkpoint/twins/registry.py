@@ -150,7 +150,9 @@ _BUILTINS: tuple[TwinSpec, ...] = (
         title="Discord",
         app="checkpoint.twins.discord:app",
         domains=("discord.com", "discordapp.com"),
-        token=FAKE_DISCORD_TOKEN,
+        # Bot tokens are stored bare: every SDK adds the "Bot " scheme itself,
+        # so a prefixed one reaches the API as "Bot Bot <token>".
+        token=FAKE_DISCORD_TOKEN.removeprefix("Bot "),
         token_env=("DISCORD_TOKEN", "DISCORD_BOT_TOKEN"),
         docs="https://discord.com/developers/docs/reference",
     ),
