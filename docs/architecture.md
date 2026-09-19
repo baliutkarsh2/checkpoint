@@ -33,7 +33,7 @@
 
 **Checkpoint is a black-box harness for testing AI agents against stateful synthetic copies of real SaaS APIs.**
 
-You write a *scenario* (a markdown file with a prompt and success criteria).  Checkpoint spins up *twins* — local FastAPI servers that imitate GitHub, Slack, Stripe, Linear, Supabase, Discord, or Google Workspace — runs your agent against them, captures every API call and the resulting state, and scores the run against the criteria using a three-stage evaluator (deterministic regex → LLM-JSON → GPT judge).
+You write a *scenario* (a markdown file with a prompt and success criteria).  Checkpoint spins up *twins* — local FastAPI servers that imitate GitHub, Slack, Stripe, Linear, Supabase, Discord, or Google Workspace — runs your agent against them, captures every API call and the resulting state, and scores the run against the criteria using a three-stage evaluator (deterministic regex → LLM-JSON → LLM judge).
 
 There is **no real-API spend, no risk to production data, no flakiness from third-party rate limits**, and the entire stack runs locally on a developer's laptop or in CI.
 
@@ -121,7 +121,7 @@ A **seed** is the starting state a twin loads before the run.  Three forms:
 A **criterion** is a single pass/fail check inside `## Success Criteria`.  Two kinds:
 
 - **`[D]` deterministic** — regex/structural lookup against the trace + state.  Free.  Stage 1 of the evaluator.  If stage 1 can't decide, falls through to stage 2 (LLM-JSON).
-- **`[P]` perception** — the GPT judge reads the agent's final answer + final state and returns pass/fail with reasoning.  ~1 LLM call.  Stage 3.
+- **`[P]` perception** — the LLM judge reads the agent's final answer plus what it changed and returns pass / fail / unknown with reasoning and cited evidence.  ~1 LLM call.  Stage 3.
 
 ### Satisfaction score
 A **score** is just `100 * passed_criteria / total_criteria` — no weighting, no half-credit.  Simple by design.  The trade-off is that a single missing criterion can drop a 100 to 80, but it's also unambiguous what to fix.
@@ -179,7 +179,7 @@ A persisted JSON file per run at `.checkpoint/cache/runs/<id>.json`.  Contains e
                   │  3-stage evaluator                            │
                   │  checker.py     [D] regex/struct (Stage 1)    │
                   │  checker_llm.py [D] LLM-JSON (Stage 2)        │
-                  │  judge.py       [P] GPT judge (Stage 3)       │
+                  │  eval/judge.py  [P] LLM judge (Stage 3)       │
                   └──────┬────────────────────────────────────────┘
                          │
                   ┌──────v───────┐
@@ -241,11 +241,11 @@ Stage 1 returns either a **definitive** `(passed, reasoning, "deterministic")` o
 
 > Given this trace and state JSON, did the criterion hold?  Respond with `{"passed": bool, "reasoning": str}`.
 
-Uses OpenAI's structured-output / JSON mode so the response is parseable.  ~1 cheap LLM call (`gpt-4o-mini` by default).  Returns `(passed, reasoning, "llm-json")`.
+Uses OpenAI's structured-output / JSON mode so the response is parseable.  ~1 cheap LLM call (`gpt-5.6-luna` by default).  Returns `(passed, reasoning, "llm-json")`.
 
-### Stage 3 — GPT judge
+### Stage 3 — LLM judge
 
-`checkpoint/judge.py` runs **only on `[P]` (perception) criteria** — those are explicitly marked as needing judgment beyond what state can prove.  The judge sees the final answer + final state and renders a verdict.  ~1 LLM call per `[P]` criterion.
+`checkpoint/eval/judge.py` runs **only on `[P]` (perception) criteria** — those are explicitly marked as needing judgment beyond what state can prove.  The judge sees the task, the agent's answer, the per-collection diff of what it changed, every write call and a sample of reads, and returns one verdict per criterion.  Verdicts are aligned to criteria **by id only** — never by text or position — may be `unknown`, and must cite a trace index or state path.  Agent-controlled content is delimited and the judge is told to treat it as data.  ~1 LLM call per judged run (`samples > 1` takes that many and requires unanimity to pass).
 
 ### Failure analysis (post-evaluation, optional)
 
@@ -253,7 +253,7 @@ Uses OpenAI's structured-output / JSON mode so the response is parseable.  ~1 ch
 
 ### Why staged?
 
-A scenario with 8 deterministic + 2 perception criteria costs ~3 LLM calls (2 judge + maybe 1 failure analysis) instead of 10.  This matters when running scenarios at CI scale.
+A scenario with 8 deterministic + 2 perception criteria costs ~3 LLM calls (1 judge + maybe 1 failure analysis) instead of 10.  This matters when running scenarios at CI scale.
 
 ---
 
@@ -300,13 +300,14 @@ Every twin returns errors in the *real* service's envelope shape:
 - GitHub: `{"message": "...", "documentation_url": "...", "errors": [...]}`
 - Slack: `{"ok": false, "error": "channel_not_found"}`
 - Stripe: `{"error": {"type": "...", "code": "...", "message": "..."}}`
+- Linear: `{"errors": [{"message": "...", "extensions": {"type": "invalid input", "code": "INVALID_INPUT", "userPresentableMessage": "..."}}]}` — GraphQL, so most of these arrive on HTTP 200
 
 This is non-negotiable.  Real SDKs branch on these shapes; a wrong-shape error breaks the test before the agent's logic is even exercised.
 
 ### Runtime knobs (`/_config`)
 
 Each twin's `/_config` accepts a small set of keys:
-- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.
+- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.  The github twin hands the budget back a few seconds later (the epoch it advertises in `X-RateLimit-Reset`), so an agent that honors `Retry-After` recovers instead of retrying against a counter that never resets.
 - `permissions_denied: bool` — return 403 on any mutating method.
 - `read_only: bool` — same as permissions_denied but with a Checkpoint-flavored message; also enforced by the runner's pre/post state-snapshot diff so other twins are covered even if their middleware hasn't been updated.
 
@@ -658,7 +659,7 @@ Dev extras: `pytest>=8.0`, `pytest-asyncio>=0.23`.
 | Twin tests | `test_supabase_twin.py`, `test_routes.py`, etc. | REST surface fidelity, error envelopes, seeds |
 | MCP tests | `test_mcp_*.py` (7 files) | every twin's MCP tool surface — list_tools, call_tool, transport |
 | CLI tests | `test_cli_*.py`, `test_cli_new_commands.py` | command parsing, exit codes, output formats |
-| Evaluator | `test_checker_*.py`, `test_judge.py`, `test_failure_analyzer.py` | regex catalog, LLM-JSON, judge logic |
+| Evaluator | `test_checker_*.py`, `tests/eval/test_judge.py`, `test_failure_analyzer.py` | regex catalog, LLM-JSON, judge alignment/injection/bounding |
 | Runner | `test_runs_analytics.py`, `test_run_runtime_flags.py` | analytics, --rate-limit/--read-only/--keep-state |
 | Dashboard | `test_dashboard.py` | every JSON route, SPA fallback, rate limit, request IDs, jobs lifecycle, SSE bus |
 | Sandbox/Docker | `tests/docker/` | harness image build, runner unit tests |
@@ -760,7 +761,7 @@ checkpoint/
 ├── scenario.py                  # parse markdown -> Scenario
 ├── checker.py                   # Stage 1 deterministic patterns
 ├── checker_llm.py               # Stage 2 LLM-JSON
-├── judge.py                     # Stage 3 GPT judge
+├── eval/judge.py                # Stage 3 LLM judge (verdicts aligned by id)
 ├── compare_diff.py              # pure function: diff two run records
 ├── analytics.py                 # compute_trend, detect_flaky, load_runs_for_scenario
 ├── failure_analyzer.py          # LLM failure analysis (CLI persist step)
@@ -781,7 +782,8 @@ checkpoint/
 │   ├── github.py + github_seeds/
 │   ├── slack.py + slack_seeds/
 │   ├── stripe.py + stripe_seeds/
-│   ├── linear.py + linear_seeds/
+│   ├── linear.py + linear_store.py + linear_graphql.py
+│   │   + linear_schema.graphql (Linear's published SDL) + linear_seeds/
 │   ├── supabase.py + supabase_seeds/
 │   ├── discord.py + discord_seeds/
 │   └── google_workspace.py + google_workspace_seeds/
@@ -896,7 +898,7 @@ If it's a subcommand of an existing group, use `@traces.command(...)` instead.
 - **Harness** — user's agent script, spawned by the runner.
 - **Seed** — starting state loaded into a twin before the run.
 - **Criterion** — one pass/fail check.  `[D]` deterministic, `[P]` perception.
-- **Stage 1/2/3** — the three evaluator stages: regex → LLM-JSON → GPT judge.
+- **Stage 1/2/3** — the three evaluator stages: regex → LLM-JSON → LLM judge.
 - **Run record** — the JSON file persisted to `.checkpoint/cache/runs/<id>.json` after each run.
 - **Bootstrap token** — fixed token each twin accepts; not a secret.
 - **Sidecar** — the intercept-proxy container in Docker mode.
@@ -918,7 +920,7 @@ For a scenario `scenarios/github-supabase-product-launch.md` with `clones: githu
 1.  cli.run() parses the .md via scenario.py → Scenario(clones=['github','supabase'], ...)
 2.  cli.run() applies CLI overrides (--seed-file, --keep-state, etc.)
 3.  cli.run() resolves the harness (--harness > harness.json > .checkpoint.json)
-4.  cli.run() resolves the judge model (--model > scenario.config > .checkpoint.json > env > "gpt-4o-mini")
+4.  cli.run() resolves the judge model (--model > scenario.config > .checkpoint.json > env > "gpt-5.6-luna")
 5.  cli.run() calls runner.run_once(scenario, harness_cmd, ...)
 6.  runner._free_port() × 2  → 54321, 54322
 7.  runner._start_twin('github', 54321)   → uvicorn subprocess on :54321
@@ -945,7 +947,7 @@ For a scenario `scenarios/github-supabase-product-launch.md` with `clones: githu
                   Returns (passed, reasoning, "deterministic") OR sentinel
         If sentinel: Stage 2 → checker_llm.try_stage2(...)
                                 Returns (passed, reasoning, "llm-json")
-        If kind == "P":  Stage 3 → judge.judge(criterion, final_answer, state, ...)
+        If kind == "P":  Stage 3 → eval.judge(criteria, build_world(...), model=...)
                                     Returns (passed, reasoning, "llm")
 17. cli._print_run() renders rich table to stdout
 18. cli._persist_run_record():

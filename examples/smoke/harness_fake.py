@@ -42,6 +42,13 @@ def main():
     # "describing a greeting" which the LLM judge flagged as unfriendly.
     body = "Hello, friend! Hope you are having a wonderful day. Cheers!"
 
+    # An unseeded twin starts with no repositories, and GitHub 404s an issue
+    # filed against a repo that doesn't exist — so create it first, under the
+    # org when the task names one.
+    me = requests.get(f"{GITHUB_BASE}/user", headers=HEADERS, timeout=15).json().get("login")
+    create_path = "/user/repos" if owner == me else f"/orgs/{owner}/repos"
+    requests.post(f"{GITHUB_BASE}{create_path}", json={"name": repo}, headers=HEADERS, timeout=15)
+
     url = f"{GITHUB_BASE}/repos/{owner}/{repo}/issues"
     print(f"[fake] POST {url} title={title!r}", file=sys.stderr)
     r = requests.post(

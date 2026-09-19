@@ -5,7 +5,7 @@
     "dir": "examples/agents/openai-tools",
     "promptFiles": ["scenarios/*.md"]
   },
-  "evaluator": { "model": "gpt-4o-mini" },
+  "evaluator": { "model": "gpt-5.6-luna" },
   "seeds": {
     "github": "small-project",
     "slack": "engineering-team",

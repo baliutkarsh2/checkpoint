@@ -55,12 +55,10 @@ def test_no_failures_returns_empty():
     assert analyze([], task="x", final_answer="", trace=[], state={}) == {}
 
 
-def test_happy_path_aligns_by_exact_text():
+def test_happy_path_aligns_by_id():
     raw = json.dumps({"analyses": [
-        {"criterion": "Exactly 2 issues are closed",
-         "why": "Trace entry 5 closed only 1 issue."},
-        {"criterion": "All closed issues have a comment",
-         "why": "Issue #2 was closed at entry 7 with no follow-up comment."},
+        {"id": "c0", "why": "Trace entry 5 closed only 1 issue."},
+        {"id": "c1", "why": "Issue #2 was closed at entry 7 with no follow-up comment."},
     ]})
     out = analyze(
         ["Exactly 2 issues are closed", "All closed issues have a comment"],
@@ -72,17 +70,29 @@ def test_happy_path_aligns_by_exact_text():
     assert "Issue #2" in out["All closed issues have a comment"]
 
 
-def test_positional_fallback_when_text_mismatch():
+def test_ids_out_of_order_still_land_on_their_own_criterion():
     raw = json.dumps({"analyses": [
-        {"criterion": "different text", "why": "first paragraph"},
-        {"criterion": "different text 2", "why": "second paragraph"},
+        {"id": "c1", "why": "second paragraph"},
+        {"id": "c0", "why": "first paragraph"},
     ]})
     out = analyze(
         ["A", "B"], task="t", final_answer="", trace=[], state={},
         _client_factory=factory(raw),
     )
-    assert out["A"] == "first paragraph"
-    assert out["B"] == "second paragraph"
+    assert out == {"A": "first paragraph", "B": "second paragraph"}
+
+
+def test_an_unknown_id_is_dropped_not_guessed_into_place():
+    """Enrichment attached to the wrong criterion is worse than none at all."""
+    raw = json.dumps({"analyses": [
+        {"id": "not-a-criterion", "why": "first paragraph"},
+        {"id": "c1", "why": "second paragraph"},
+    ]})
+    out = analyze(
+        ["A", "B"], task="t", final_answer="", trace=[], state={},
+        _client_factory=factory(raw),
+    )
+    assert out == {"B": "second paragraph"}
 
 
 def test_invalid_json_returns_empty():
@@ -110,7 +120,7 @@ def test_openai_raises_returns_empty():
 
 
 def test_trace_truncated_to_max_entries():
-    raw = json.dumps({"analyses": [{"criterion": "A", "why": "ok"}]})
+    raw = json.dumps({"analyses": [{"id": "c0", "why": "ok"}]})
     big_trace = [{"i": i} for i in range(500)]
     fake = FakeClient(raw)
     out = analyze(
@@ -123,7 +133,7 @@ def test_trace_truncated_to_max_entries():
 
 
 def test_state_truncated_when_huge():
-    raw = json.dumps({"analyses": [{"criterion": "A", "why": "ok"}]})
+    raw = json.dumps({"analyses": [{"id": "c0", "why": "ok"}]})
     huge = {f"key{i}": "x" * 100 for i in range(500)}
     fake = FakeClient(raw)
     out = analyze(
@@ -137,7 +147,7 @@ def test_state_truncated_when_huge():
 
 def test_partial_analyses_only_one_criterion():
     raw = json.dumps({"analyses": [
-        {"criterion": "A", "why": "explanation A"},
+        {"id": "c0", "why": "explanation A"},
     ]})
     out = analyze(
         ["A", "B"], task="t", final_answer="", trace=[], state={},

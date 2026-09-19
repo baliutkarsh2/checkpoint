@@ -1,5 +1,5 @@
 name: "Checkpoint Agent Gate"
-description: "Statistically gate an AI agent in CI — run each scenario N times and return SHIP / CONDITIONAL / BLOCK (non-zero exit blocks the build)."
+description: "Statistically gate an AI agent in CI — run each scenario N times and return SHIP / CONDITIONAL / INCONCLUSIVE / BLOCK / ERROR (only SHIP passes the build)."
 author: "Checkpoint"
 branding:
   icon: "check-circle"
@@ -21,8 +21,12 @@ inputs:
     description: "Score (0-100) a single run needs to count as a pass."
     required: false
     default: "80"
+  allow-conditional:
+    description: "Pass the build on CONDITIONAL (flaky but not failing). Never covers INCONCLUSIVE, BLOCK or ERROR."
+    required: false
+    default: "false"
   strict:
-    description: "Fail the build on CONDITIONAL as well as BLOCK."
+    description: "Refuse CONDITIONAL even when allow-conditional is set. Already the default; use it to tighten a shared config."
     required: false
     default: "false"
   certificate:
@@ -48,7 +52,7 @@ inputs:
 
 outputs:
   verdict:
-    description: "SHIP, CONDITIONAL, or BLOCK."
+    description: "SHIP, CONDITIONAL, INCONCLUSIVE, BLOCK, or ERROR."
     value: ${{ steps.gate.outputs.verdict }}
 
 runs:
@@ -97,15 +101,19 @@ runs:
         HARNESS: ${{ inputs.harness }}
         RUNS: ${{ inputs.runs }}
         PASS_THRESHOLD: ${{ inputs.pass-threshold }}
+        ALLOW_CONDITIONAL: ${{ inputs.allow-conditional }}
         STRICT: ${{ inputs.strict }}
         CERTIFICATE: ${{ inputs.certificate }}
         JUDGE_MODEL: ${{ inputs.judge-model }}
         AGENT: ${{ inputs.agent }}
       run: |
         args=(--harness "$HARNESS" -n "$RUNS" --pass-threshold "$PASS_THRESHOLD" -o json)
-        # CI is ephemeral: a pass-rate baseline written into the workspace is
-        # never carried between runs, so regression detection would be noise.
+        # Baselines live in .checkpoint/baselines.json, keyed by the target's
+        # path relative to the workspace — restore that file with actions/cache
+        # (or commit it) to get regression detection in CI. Left off here because
+        # a fresh runner has no history to compare against.
         args+=(--no-baseline)
+        if [ "$ALLOW_CONDITIONAL" = "true" ]; then args+=(--allow-conditional); fi
         if [ "$STRICT" = "true" ]; then args+=(--strict); fi
         if [ -n "$CERTIFICATE" ]; then
           mkdir -p "$(dirname "$CERTIFICATE")"
@@ -114,9 +122,9 @@ runs:
         if [ -n "$JUDGE_MODEL" ]; then args+=(--judge-model "$JUDGE_MODEL"); fi
         if [ -n "$AGENT" ]; then args+=(--agent "$AGENT"); fi
 
-        # The gate's exit code (1 = BLOCK, or CONDITIONAL under --strict) is what
-        # fails the build. Capture stdout to a file so the verdict can still be
-        # published as a step output on the failing path.
+        # The gate's exit code fails the build: only SHIP is 0 (BLOCK 1,
+        # CONDITIONAL 2, INCONCLUSIVE 3, ERROR 4). Capture stdout to a file so
+        # the verdict can still be published as a step output on the failing path.
         set +e
         checkpoint gate "$TARGET" "${args[@]}" > checkpoint-gate.json
         code=$?

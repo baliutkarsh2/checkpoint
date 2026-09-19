@@ -38,10 +38,10 @@ def make_shim(
     """Build a REST shim bound to one FastAPI twin app.
 
     Returns an async callable `shim(method, path, *, json=None,
-    params=None, form=None, extra_headers=None)` that returns the parsed
-    JSON body of the response. Non-2xx responses are returned as a dict
-    with an injected `_status` field — letting MCP tool callers surface
-    real API error envelopes to the agent rather than raising.
+    params=None, form=None, content=None, extra_headers=None)` that returns
+    the parsed JSON body of the response. Non-2xx responses are returned as
+    a dict with an injected `_status` field — letting MCP tool callers
+    surface real API error envelopes to the agent rather than raising.
     """
     transport = httpx.ASGITransport(app=app)
     auth_value = (
@@ -55,16 +55,20 @@ def make_shim(
         json: Any | None = None,
         params: Mapping[str, Any] | None = None,
         form: Mapping[str, Any] | None = None,
+        content: bytes | str | None = None,
         extra_headers: Mapping[str, str] | None = None,
     ) -> Any:
         # Tag the call so the twin's trace records it as an MCP tool call.
         headers: dict[str, str] = {auth_header: auth_value, VIA_HEADER: "mcp"}
         if extra_headers:
             headers.update(extra_headers)
-        # httpx mutual-exclusion: json vs data. Form takes precedence
-        # because Stripe's twin reads `await request.form()`.
+        # httpx mutual-exclusion: content vs json vs data. Raw content comes
+        # first (Supabase storage uploads a file body), then form, because
+        # Stripe's twin reads `await request.form()`.
         kwargs: dict[str, Any] = {"headers": headers}
-        if form is not None:
+        if content is not None:
+            kwargs["content"] = content
+        elif form is not None:
             kwargs["data"] = {k: v for k, v in form.items() if v is not None}
         elif json is not None:
             kwargs["json"] = json

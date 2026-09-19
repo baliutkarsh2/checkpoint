@@ -1,12 +1,4 @@
-"""Phase 5 / Plan 05-04: end-to-end acceptance test for the eval pipeline.
-
-Drives the runner's evaluator directly (no twin processes, no live LLM):
-  - Stage 1 (regex)  -> deterministic verdict
-  - Stage 2 (LLM-JSON) -> mocked happy path -> llm-json verdict
-  - Stage 2 fall-through -> [P] judge with original text -> llm verdict
-  - Failure analysis -> per-criterion "why" paragraph
-  - Run record -> persisted at tmp cache root with last-run pointer
-"""
+"""Run records: what a finished run leaves on disk, including failure analysis."""
 from __future__ import annotations
 
 import json
@@ -93,6 +85,8 @@ def make_state() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# End-to-end: stage 1 + stage 2 + [P]
+# ---------------------------------------------------------------------------
 # Run-record persistence + failure analysis
 # ---------------------------------------------------------------------------
 
@@ -114,7 +108,7 @@ def test_persist_record_with_failure_analysis(tmp_path: Path, monkeypatch):
     ]
 
     failure_json = json.dumps({"analyses": [
-        {"criterion": "c2", "why": "Trace entry 0 did the wrong thing."},
+        {"id": "c0", "why": "Trace entry 0 did the wrong thing."},
     ]})
     unified = FakeOpenAI([failure_json])
     import openai as openai_mod

@@ -13,6 +13,7 @@ mock the OpenAI judge so [P] criteria don't require an API key.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,31 +46,38 @@ class _Resp:
 
 
 class _AlwaysPassCompletions:
-    """Answers both model calls a run makes, by looking at what was asked.
-
-    The judge sends `{"criteria": [{"id", "criterion"}]}` and expects a verdict
-    per id; the assertion compiler sends `{"criterion": ...}` and expects an
-    assertion. Here the compiler declines (so the criterion reaches the judge)
-    and the judge passes everything.
-    """
+    """Returns 'pass' for every criterion in every batch judge call."""
 
     def __init__(self):
         self.calls: list[dict] = []
 
     def create(self, **kw):
         self.calls.append(kw)
-        request = json.loads(next(
-            (m.get("content", "") for m in kw.get("messages", []) if m.get("role") == "user"),
-            "{}",
-        ) or "{}")
-        if "criteria" in request:
-            content = json.dumps({"results": [
-                {"id": c["id"], "verdict": "pass", "evidence": "state",
+        messages = kw.get("messages", [])
+        system_msg = next((m.get("content", "") for m in messages
+                           if m.get("role") == "system"), "")
+        user_msg = next((m.get("content", "") for m in messages
+                         if m.get("role") == "user"), "")
+        if "judge in an automated release gate" in system_msg:
+            # Answer the ids the judge actually asked about. A fake that
+            # invented ids would be scored as "no verdict", which is the point
+            # of the id contract — so read them out of the payload.
+            ids = re.findall(r"^- id: (\S+)$", user_msg, re.M)
+            content = json.dumps({"verdicts": [
+                {"id": cid, "verdict": "pass", "evidence": "answer",
                  "reasoning": "Synthetic acceptance: assumed pass."}
-                for c in request["criteria"]
+                for cid in ids
             ]})
         else:
-            content = json.dumps({"assertion": None, "reason": "synthetic: leave it to the judge"})
+            # Stage-2 [D] LLM-JSON path expects a single JSON object; return
+            # one that won't match any real resource so callers fall through
+            # to the [P] judge.
+            content = json.dumps({
+                "resource": "unknown_for_fall_through",
+                "selector": None,
+                "operator": "exists",
+                "value": None,
+            })
         return _Resp(choices=[_Choice(message=_Msg(content=content))])
 
 

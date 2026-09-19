@@ -1,145 +1,63 @@
 """Linear twin: a stateful, in-memory Linear API.
 
-Implements the most-used Linear surfaces via a REST-ish API that mirrors
-the shapes returned by the official Linear MCP server and GraphQL API:
+Linear is GraphQL-only, so the twin's real surface is ``POST /graphql``
+(:mod:`checkpoint.twins.linear_graphql`), served from Linear's own published
+schema: @linear/sdk, `gql`, and hand-rolled clients all work against it
+unchanged.
 
-  Issues       — create, list, get, update, close, add comments
-  Teams        — list, get
-  Projects     — list, get, create
-  Users        — list, get
-  Labels       — list, create
-  WorkflowStates — list, get
-  Cycles       — list, get
-
-Linear's public API is GraphQL; this twin serves the equivalent REST-shaped
-surface used by the Linear MCP server. Linear IDs are UUIDs and issues use
-``<TEAM>-<n>`` identifiers. The control plane and fault model come from :mod:`checkpoint.twins.kit`.
+A REST-ish ``/v1/*`` surface sits beside it for the twin's MCP server, whose
+tools predate the GraphQL surface and call it in-process. Both write through
+:mod:`checkpoint.twins.linear_store`, so state is identical whichever one an
+agent uses. The control plane and fault model come from
+:mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
 import os
-import uuid
-from datetime import UTC, datetime
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from checkpoint.fake_credentials import FAKE_LINEAR_TOKEN
-from checkpoint.twins import kit
+from checkpoint.twins import kit, linear_graphql
+from checkpoint.twins import linear_store as store
 
 app = FastAPI(title="checkpoint linear twin")
 
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_LINEAR_TOKEN
 
 SEEDS_DIR = Path(__file__).parent / "linear_seeds"
+GRAPHQL_PATH = "/graphql"
 
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _uid() -> str:
-    return str(uuid.uuid4())
-
-
-def _fresh_state() -> dict:
-    org_id = "org-checkpoint-test"
-    default_team_id = "team-engineering"
-    return {
-        "organization": {
-            "id": org_id,
-            "name": "Checkpoint Test Org",
-            "urlKey": "checkpoint",
-            "createdAt": _now(),
-        },
-        "teams": {
-            default_team_id: {
-                "id": default_team_id,
-                "name": "Engineering",
-                "key": "ENG",
-                "description": "Engineering team",
-                "createdAt": _now(),
-            },
-        },
-        "workflow_states": {
-            "state-backlog": {
-                "id": "state-backlog",
-                "teamId": default_team_id,
-                "name": "Backlog",
-                "type": "backlog",
-                "color": "#95A5A6",
-                "position": 0.0,
-            },
-            "state-todo": {
-                "id": "state-todo",
-                "teamId": default_team_id,
-                "name": "Todo",
-                "type": "unstarted",
-                "color": "#E2E2E2",
-                "position": 1.0,
-            },
-            "state-in-progress": {
-                "id": "state-in-progress",
-                "teamId": default_team_id,
-                "name": "In Progress",
-                "type": "started",
-                "color": "#F2C94C",
-                "position": 2.0,
-            },
-            "state-done": {
-                "id": "state-done",
-                "teamId": default_team_id,
-                "name": "Done",
-                "type": "completed",
-                "color": "#5E6AD2",
-                "position": 3.0,
-            },
-            "state-cancelled": {
-                "id": "state-cancelled",
-                "teamId": default_team_id,
-                "name": "Cancelled",
-                "type": "cancelled",
-                "color": "#95A5A6",
-                "position": 4.0,
-            },
-        },
-        "projects": {},      # project_id -> project dict
-        "cycles": {},        # cycle_id -> cycle dict
-        "users": {
-            "user-default": {
-                "id": "user-default",
-                "name": "Default User",
-                "email": "user@checkpoint.test",
-                "displayName": "Default User",
-                "active": True,
-                "admin": True,
-                "createdAt": _now(),
-            },
-        },
-        "labels": {},        # label_id -> label dict
-        "issues": {},        # issue_id -> issue dict
-        "comments": {},      # comment_id -> comment dict
-        "_counters": {
-            "issue_seq": {},    # team_key -> int (for identifier like ENG-1)
-        },
-        "_config": {
-            "rate_limit": None,
-        },
-    }
-
-
-STATE: dict = _fresh_state()
+STATE: dict = store.fresh_state()
 TRACE: list[dict] = []
+
+# The kit hands the error factory no request, but faults must be shaped for the
+# surface that is being called — a GraphQL error envelope on /graphql, a REST
+# error body on /v1/*. The authenticator runs first for every request, so it
+# records the surface here for the factory that follows it.
+_on_graphql: ContextVar[bool] = ContextVar("linear_on_graphql", default=False)
 
 
 # --- helpers -----------------------------------------------------------------
 
 def linear_error(status: int, message: str, **extra: Any) -> JSONResponse:
+    """The REST surface's error body."""
     body: dict[str, Any] = {"error": message}
     body.update(extra)
     return JSONResponse(status_code=status, content=body)
+
+
+def graphql_error(status: int, shape: tuple[str, str, int], message: str,
+                  user_message: str | None = None, **kwargs: Any) -> JSONResponse:
+    type_, code, _status = shape
+    return JSONResponse(status_code=status, content=linear_graphql.error_body(
+        message, type_=type_, code=code, status=status, user_message=user_message), **kwargs)
 
 
 def _bootstrap_token() -> str:
@@ -147,63 +65,154 @@ def _bootstrap_token() -> str:
 
 
 def _extract_token(auth_header: str | None) -> str | None:
+    """Linear takes API keys bare and OAuth tokens with a ``Bearer`` prefix."""
     if not auth_header:
         return None
-    for prefix in ("Bearer ", "bearer "):
-        if auth_header.startswith(prefix):
-            return auth_header[len(prefix):].strip()
+    prefix, _, rest = auth_header.partition(" ")
+    if prefix.lower() == "bearer":
+        return rest.strip()
     return auth_header.strip()
 
 
-def _next_issue_id(team_key: str) -> str:
-    seq = STATE["_counters"]["issue_seq"]
-    seq[team_key] = seq.get(team_key, 0) + 1
-    return f"{team_key}-{seq[team_key]}"
+# Both carry a user_message; the REST surface reports them the same way.
+STORE_ERRORS = (store.LinearInvalidInput, store.LinearNotFound)
 
 
-def _default_state_id(team_id: str) -> str:
-    for sid, s in STATE["workflow_states"].items():
-        if s.get("teamId") == team_id and s.get("type") == "backlog":
-            return sid
-    for sid in STATE["workflow_states"]:
-        return sid
-    return "state-backlog"
+def _store_error(exc: store.LinearInvalidInput | store.LinearNotFound) -> JSONResponse:
+    """A rejection from the store, in the REST surface's error shape."""
+    return linear_error(400, str(exc), message=exc.user_message)
 
 
-def _team_key(team_id: str) -> str:
-    t = STATE["teams"].get(team_id) or {}
-    return t.get("key", "ENG")
+def _issue_or_404(issue_id: str) -> tuple[dict | None, JSONResponse | None]:
+    issue = store.find_issue(STATE, issue_id)
+    if issue is None:
+        return None, linear_error(404, f"Issue {issue_id!r} not found")
+    return issue, None
+
+
+def _nodes(records: list[dict], first: int | None = None) -> dict:
+    """The connection-ish envelope the MCP tools read."""
+    page = records if first is None else records[:first]
+    return {"nodes": page, "pageInfo": {
+        "hasNextPage": first is not None and len(records) > first,
+        "endCursor": page[-1]["id"] if page else None}}
 
 
 # --- runtime: auth, faults, trace, control plane ----------------------------
 
 def _authenticate(request: Request) -> Response | None:
+    on_graphql = request.url.path.rstrip("/") == GRAPHQL_PATH
+    _on_graphql.set(on_graphql)
     token = _extract_token(request.headers.get("authorization"))
-    if not token:
-        return linear_error(401, "Authentication required, not authenticated")
-    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
-        return linear_error(401, "Invalid API key")
-    return None
+    if token and not (TWIN.config.get("strict_auth") and token != _bootstrap_token()):
+        return None
+    message = "Authentication required, not authenticated" if not token else "Invalid API key"
+    if on_graphql:
+        return graphql_error(401, linear_graphql.AUTH, message,
+                             "You need to authenticate to access this operation.")
+    return linear_error(401, message)
+
+
+_FAULT_SHAPES = {
+    "forbidden": (linear_graphql.FORBIDDEN, "You do not have access to this resource."),
+    "read_only": (linear_graphql.FORBIDDEN, "This workspace is read-only."),
+    "rate_limited": (linear_graphql.RATELIMITED, "You have exceeded the rate limit."),
+}
+
+# What Linear returns alongside a rate-limited response (API-key defaults).
+_RATE_LIMIT_HEADERS = {
+    "Retry-After": "60",
+    "X-RateLimit-Requests-Limit": "2500",
+    "X-RateLimit-Requests-Remaining": "0",
+}
 
 
 def _error(kind: str, status: int, message: str) -> Response:
+    if not _on_graphql.get():
+        if kind == "rate_limited":
+            return linear_error(429, "Rate limit exceeded", headers=_RATE_LIMIT_HEADERS)
+        return linear_error(status, message)
+    shape, user_message = _FAULT_SHAPES.get(kind, (linear_graphql.INTERNAL, message))
     if kind == "rate_limited":
-        return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"},
-                            headers={"Retry-After": "60"})
-    if kind in ("forbidden", "read_only"):
-        return linear_error(403, message)
-    return linear_error(status, message)
+        # Linear reports rate limiting as a GraphQL error on HTTP 400, not 429.
+        return graphql_error(400, shape, "Rate limit exceeded", user_message,
+                             headers=_RATE_LIMIT_HEADERS)
+    return graphql_error(shape[2] if kind in _FAULT_SHAPES else status, shape,
+                         message, user_message)
+
+
+def _classify(method: str, path: str, body: Any) -> tuple[kit.Op, str] | None:
+    """Name the resource every call touched, on either surface."""
+    if path.rstrip("/") == GRAPHQL_PATH:
+        query = body.get("query") if isinstance(body, dict) else None
+        if not query:
+            return "other", "graphql"
+        # An unparseable document names no resource, but it is still a call.
+        return linear_graphql.classify(query, body.get("operationName")) or ("other", "graphql")
+    segments = [s for s in path.split("/") if s and s != "v1"]
+    if not segments:
+        return None
+    resource = _REST_RESOURCES.get(segments[-1]) or _REST_RESOURCES.get(segments[0])
+    if resource is None:
+        return None
+    op = {"GET": "read", "POST": "create", "PATCH": "update",
+          "PUT": "update", "DELETE": "delete"}.get(method.upper(), "other")
+    return op, resource
+
+
+_REST_RESOURCES = {
+    "issues": "issues", "comments": "comments", "teams": "teams", "users": "users",
+    "labels": "labels", "projects": "projects", "cycles": "cycles",
+    "workflow-states": "workflow_states", "states": "workflow_states",
+    "organization": "organization", "search": "issues",
+}
+
+
+def _failed(status: int, body: Any) -> bool:
+    # GraphQL reports application errors on HTTP 200 with an `errors` array.
+    return status >= 400 or bool(isinstance(body, dict) and body.get("errors"))
 
 
 TWIN = kit.install(app, kit.Twin(
     name="linear",
     state=STATE,
     trace=TRACE,
-    fresh_state=_fresh_state,
+    fresh_state=store.fresh_state,
     seeds_dir=SEEDS_DIR,
     error=_error,
     authenticate=_authenticate,
+    after_seed=store.normalize,
+    views=store.views,
+    classify=_classify,
+    failed=_failed,
 ))
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException) -> Response:
+    """Unknown routes answer in Linear's shape, not FastAPI's ``{"detail": ...}``."""
+    message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    if request.url.path.rstrip("/") == GRAPHQL_PATH:
+        return graphql_error(exc.status_code, linear_graphql.INVALID_INPUT, message)
+    return linear_error(exc.status_code, message)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError) -> Response:
+    return linear_error(400, "Argument Validation Error", details=exc.errors())
+
+
+# --- GraphQL -----------------------------------------------------------------
+
+@app.post(GRAPHQL_PATH)
+async def graphql_endpoint(request: Request) -> Response:
+    """Linear's only public endpoint."""
+    try:
+        payload = await request.json()
+    except ValueError:
+        return graphql_error(400, linear_graphql.INVALID_INPUT, "Request body is not valid JSON.")
+    status, body = linear_graphql.execute(STATE, payload)
+    return JSONResponse(status_code=status, content=body)
 
 
 # --- organization ------------------------------------------------------------
@@ -217,56 +226,32 @@ def get_organization():
 
 @app.get("/v1/teams")
 def list_teams(includeArchived: bool = False):
-    teams = list(STATE["teams"].values())
-    return {"nodes": teams, "pageInfo": {"hasNextPage": False}}
+    teams = [t for t in STATE["teams"].values() if includeArchived or not t.get("archivedAt")]
+    return _nodes(teams)
 
 
 @app.get("/v1/teams/{team_id}")
 def get_team(team_id: str):
-    if team_id not in STATE["teams"]:
+    team = STATE["teams"].get(team_id)
+    if team is None:
         return linear_error(404, f"Team {team_id!r} not found")
-    return STATE["teams"][team_id]
+    return team
 
 
 @app.post("/v1/teams", status_code=201)
 async def create_team(request: Request):
     body = await request.json()
-    name = body.get("name")
-    if not name:
-        return linear_error(400, "name is required")
-    key = (body.get("key") or name[:3].upper()).upper()
-    tid = _uid()
-    team = {
-        "id": tid,
-        "name": name,
-        "key": key,
-        "description": body.get("description", ""),
-        "createdAt": _now(),
-    }
-    STATE["teams"][tid] = team
-    # Add default workflow states for new team.
-    for sname, stype, color, pos in [
-        ("Backlog", "backlog", "#95A5A6", 0.0),
-        ("Todo", "unstarted", "#E2E2E2", 1.0),
-        ("In Progress", "started", "#F2C94C", 2.0),
-        ("Done", "completed", "#5E6AD2", 3.0),
-        ("Cancelled", "cancelled", "#95A5A6", 4.0),
-    ]:
-        sid = _uid()
-        STATE["workflow_states"][sid] = {
-            "id": sid, "teamId": tid, "name": sname, "type": stype,
-            "color": color, "position": pos,
-        }
-    return team
+    try:
+        return store.create_team(STATE, body)
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 # --- workflow states ---------------------------------------------------------
 
 @app.get("/v1/teams/{team_id}/states")
 def list_workflow_states(team_id: str):
-    states = [s for s in STATE["workflow_states"].values() if s.get("teamId") == team_id]
-    states.sort(key=lambda s: s.get("position", 0.0))
-    return {"nodes": states, "pageInfo": {"hasNextPage": False}}
+    return _nodes(store.team_states(STATE, team_id))
 
 
 @app.get("/v1/workflow-states")
@@ -275,61 +260,46 @@ def list_all_workflow_states(teamId: str | None = None):
     if teamId:
         states = [s for s in states if s.get("teamId") == teamId]
     states.sort(key=lambda s: s.get("position", 0.0))
-    return {"nodes": states, "pageInfo": {"hasNextPage": False}}
+    return _nodes(states)
 
 
 # --- projects ----------------------------------------------------------------
 
 @app.get("/v1/projects")
-def list_projects(teamId: str | None = None):
-    projects = list(STATE["projects"].values())
+def list_projects(teamId: str | None = None, includeArchived: bool = False):
+    projects = [p for p in STATE["projects"].values()
+                if includeArchived or not p.get("archivedAt")]
     if teamId:
         projects = [p for p in projects if teamId in (p.get("teamIds") or [])]
-    return {"nodes": projects, "pageInfo": {"hasNextPage": False}}
+    return _nodes(projects)
 
 
 @app.post("/v1/projects", status_code=201)
 async def create_project(request: Request):
     body = await request.json()
-    name = body.get("name")
-    if not name:
-        return linear_error(400, "name is required")
-    pid = _uid()
-    project = {
-        "id": pid,
-        "name": name,
-        "description": body.get("description", ""),
-        "state": body.get("state", "planned"),
-        "teamIds": body.get("teamIds") or [],
-        "createdAt": _now(),
-        "updatedAt": _now(),
-        "startDate": body.get("startDate"),
-        "targetDate": body.get("targetDate"),
-        "progress": 0.0,
-        "issueCount": 0,
-    }
-    STATE["projects"][pid] = project
-    return project
+    try:
+        return store.create_project(STATE, body)
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 @app.get("/v1/projects/{project_id}")
 def get_project(project_id: str):
-    if project_id not in STATE["projects"]:
+    project = STATE["projects"].get(project_id)
+    if project is None:
         return linear_error(404, f"Project {project_id!r} not found")
-    return STATE["projects"][project_id]
+    return project
 
 
 @app.patch("/v1/projects/{project_id}")
 async def update_project(project_id: str, request: Request):
-    if project_id not in STATE["projects"]:
+    project = STATE["projects"].get(project_id)
+    if project is None:
         return linear_error(404, f"Project {project_id!r} not found")
-    body = await request.json()
-    proj = STATE["projects"][project_id]
-    for field in ("name", "description", "state", "targetDate", "startDate"):
-        if field in body:
-            proj[field] = body[field]
-    proj["updatedAt"] = _now()
-    return proj
+    try:
+        return store.update_project(STATE, project, await request.json())
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 # --- cycles ------------------------------------------------------------------
@@ -339,29 +309,16 @@ def list_cycles(teamId: str | None = None):
     cycles = list(STATE["cycles"].values())
     if teamId:
         cycles = [c for c in cycles if c.get("teamId") == teamId]
-    return {"nodes": cycles, "pageInfo": {"hasNextPage": False}}
+    return _nodes(cycles)
 
 
 @app.post("/v1/cycles", status_code=201)
 async def create_cycle(request: Request):
     body = await request.json()
-    team_id = body.get("teamId")
-    if not team_id or team_id not in STATE["teams"]:
-        return linear_error(400, "valid teamId is required")
-    cid = _uid()
-    cycle = {
-        "id": cid,
-        "teamId": team_id,
-        "number": len([c for c in STATE["cycles"].values() if c.get("teamId") == team_id]) + 1,
-        "name": body.get("name"),
-        "startsAt": body.get("startsAt"),
-        "endsAt": body.get("endsAt"),
-        "description": body.get("description", ""),
-        "createdAt": _now(),
-        "issueCount": 0,
-    }
-    STATE["cycles"][cid] = cycle
-    return cycle
+    try:
+        return store.create_cycle(STATE, body)
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 # --- labels ------------------------------------------------------------------
@@ -370,53 +327,41 @@ async def create_cycle(request: Request):
 def list_labels(teamId: str | None = None):
     labels = list(STATE["labels"].values())
     if teamId:
-        labels = [lab for lab in labels if lab.get("teamId") == teamId or not lab.get("teamId")]
-    return {"nodes": labels, "pageInfo": {"hasNextPage": False}}
+        labels = [lab for lab in labels if lab.get("teamId") in (teamId, None)]
+    return _nodes(labels)
 
 
 @app.post("/v1/labels", status_code=201)
 async def create_label(request: Request):
     body = await request.json()
-    name = body.get("name")
-    if not name:
-        return linear_error(400, "name is required")
-    lid = _uid()
-    label = {
-        "id": lid,
-        "name": name,
-        "color": body.get("color", "#B0B0B0"),
-        "teamId": body.get("teamId"),
-        "createdAt": _now(),
-    }
-    STATE["labels"][lid] = label
-    return label
+    try:
+        return store.create_label(STATE, body)
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 # --- users -------------------------------------------------------------------
 
 @app.get("/v1/users")
 def list_users():
-    users = list(STATE["users"].values())
-    return {"nodes": users, "pageInfo": {"hasNextPage": False}}
+    return _nodes(list(STATE["users"].values()))
 
 
 @app.get("/v1/users/me")
 def get_me():
-    user = next(iter(STATE["users"].values()), None)
-    if not user:
+    user = store.viewer(STATE)
+    if user is None:
         return linear_error(404, "No users in state")
     return user
 
 
 @app.get("/v1/users/{user_id}")
 def get_user(user_id: str):
-    u = STATE["users"].get(user_id)
-    if not u:
-        # Try by email
-        u = next((x for x in STATE["users"].values() if x.get("email") == user_id), None)
-    if not u:
+    user = STATE["users"].get(user_id) or next(
+        (u for u in STATE["users"].values() if u.get("email") == user_id), None)
+    if user is None:
         return linear_error(404, f"User {user_id!r} not found")
-    return u
+    return user
 
 
 # --- issues ------------------------------------------------------------------
@@ -424,60 +369,12 @@ def get_user(user_id: str):
 @app.post("/v1/issues", status_code=201)
 async def create_issue(request: Request):
     body = await request.json()
-    title = body.get("title")
-    if not title:
+    if not body.get("title"):
         return linear_error(400, "title is required")
-    team_id = body.get("teamId") or next(iter(STATE["teams"]), "team-engineering")
-    if team_id not in STATE["teams"]:
-        return linear_error(400, f"Team {team_id!r} not found")
-
-    state_id = body.get("stateId") or _default_state_id(team_id)
-    assignee_id = body.get("assigneeId")
-    iid = _uid()
-    team_key = _team_key(team_id)
-    identifier = _next_issue_id(team_key)
-
-    label_ids = body.get("labelIds") or []
-    priority = body.get("priority", 0)
-
-    issue = {
-        "id": iid,
-        "identifier": identifier,
-        "title": title,
-        "description": body.get("description", ""),
-        "priority": priority,
-        "priorityLabel": _priority_label(priority),
-        "state": STATE["workflow_states"].get(state_id, {"name": "Backlog", "type": "backlog"}),
-        "stateId": state_id,
-        "team": STATE["teams"].get(team_id, {}),
-        "teamId": team_id,
-        "assignee": STATE["users"].get(assignee_id) if assignee_id else None,
-        "assigneeId": assignee_id,
-        "labels": [STATE["labels"][lid] for lid in label_ids if lid in STATE["labels"]],
-        "labelIds": label_ids,
-        "projectId": body.get("projectId"),
-        "cycleId": body.get("cycleId"),
-        "estimate": body.get("estimate"),
-        "dueDate": body.get("dueDate"),
-        "createdAt": _now(),
-        "updatedAt": _now(),
-        "completedAt": None,
-        "canceledAt": None,
-        "url": f"https://linear.app/checkpoint/issue/{identifier}",
-        "commentCount": 0,
-    }
-    STATE["issues"][iid] = issue
-
-    # Bump project issue count.
-    pid = body.get("projectId")
-    if pid and pid in STATE["projects"]:
-        STATE["projects"][pid]["issueCount"] += 1
-
-    return issue
-
-
-def _priority_label(p: int) -> str:
-    return {0: "No priority", 1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}.get(p, "No priority")
+    try:
+        return store.create_issue(STATE, body)
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 @app.get("/v1/issues")
@@ -486,100 +383,53 @@ def list_issues(
     stateId: str | None = None,
     assigneeId: str | None = None,
     projectId: str | None = None,
+    cycleId: str | None = None,
     labelId: str | None = None,
     priority: int | None = None,
+    includeArchived: bool = False,
     first: int = 50,
     after: str | None = None,
 ):
-    issues = list(STATE["issues"].values())
-    if teamId:
-        issues = [i for i in issues if i.get("teamId") == teamId]
-    if stateId:
-        issues = [i for i in issues if i.get("stateId") == stateId]
-    if assigneeId:
-        issues = [i for i in issues if i.get("assigneeId") == assigneeId]
-    if projectId:
-        issues = [i for i in issues if i.get("projectId") == projectId]
+    issues = [i for i in STATE["issues"].values()
+              if includeArchived or not i.get("archivedAt")]
+    for field, value in (("teamId", teamId), ("stateId", stateId), ("assigneeId", assigneeId),
+                         ("projectId", projectId), ("cycleId", cycleId)):
+        if value:
+            issues = [i for i in issues if i.get(field) == value]
     if labelId:
         issues = [i for i in issues if labelId in (i.get("labelIds") or [])]
     if priority is not None:
         issues = [i for i in issues if i.get("priority") == priority]
-    # Cursor: simple offset by ID.
     if after:
         ids = [i["id"] for i in issues]
-        try:
-            idx = ids.index(after)
-            issues = issues[idx + 1:]
-        except ValueError:
-            pass
-    page = issues[:first]
-    has_next = len(issues) > first
-    return {
-        "nodes": page,
-        "pageInfo": {
-            "hasNextPage": has_next,
-            "endCursor": page[-1]["id"] if page else None,
-        },
-    }
+        if after in ids:
+            issues = issues[ids.index(after) + 1:]
+    return _nodes(issues, first)
 
 
 @app.get("/v1/issues/{issue_id}")
 def get_issue(issue_id: str):
-    # Allow lookup by identifier (ENG-1) or UUID.
-    issue = STATE["issues"].get(issue_id)
-    if not issue:
-        issue = next((i for i in STATE["issues"].values() if i.get("identifier") == issue_id), None)
-    if not issue:
-        return linear_error(404, f"Issue {issue_id!r} not found")
-    return issue
+    issue, error = _issue_or_404(issue_id)
+    return error or issue
 
 
 @app.patch("/v1/issues/{issue_id}")
 async def update_issue(issue_id: str, request: Request):
-    issue = STATE["issues"].get(issue_id)
-    if not issue:
-        issue = next((i for i in STATE["issues"].values() if i.get("identifier") == issue_id), None)
-    if not issue:
-        return linear_error(404, f"Issue {issue_id!r} not found")
-    body = await request.json()
-    for field in ("title", "description", "priority", "estimate", "dueDate"):
-        if field in body:
-            issue[field] = body[field]
-    if "priority" in body:
-        issue["priorityLabel"] = _priority_label(body["priority"])
-    if "stateId" in body:
-        sid = body["stateId"]
-        issue["stateId"] = sid
-        issue["state"] = STATE["workflow_states"].get(sid, {"name": "Unknown"})
-        s_type = issue["state"].get("type", "")
-        if s_type == "completed":
-            issue["completedAt"] = _now()
-        elif s_type == "cancelled":
-            issue["canceledAt"] = _now()
-    if "assigneeId" in body:
-        aid = body["assigneeId"]
-        issue["assigneeId"] = aid
-        issue["assignee"] = STATE["users"].get(aid) if aid else None
-    if "labelIds" in body:
-        lids = body["labelIds"] or []
-        issue["labelIds"] = lids
-        issue["labels"] = [STATE["labels"][lid] for lid in lids if lid in STATE["labels"]]
-    if "projectId" in body:
-        issue["projectId"] = body["projectId"]
-    if "cycleId" in body:
-        issue["cycleId"] = body["cycleId"]
-    issue["updatedAt"] = _now()
-    return issue
+    issue, error = _issue_or_404(issue_id)
+    if error is not None:
+        return error
+    try:
+        return store.update_issue(STATE, issue, await request.json())
+    except STORE_ERRORS as exc:
+        return _store_error(exc)
 
 
 @app.delete("/v1/issues/{issue_id}")
 def archive_issue(issue_id: str):
-    issue = STATE["issues"].get(issue_id)
-    if not issue:
-        issue = next((i for i in STATE["issues"].values() if i.get("identifier") == issue_id), None)
-    if not issue:
-        return linear_error(404, f"Issue {issue_id!r} not found")
-    issue["archivedAt"] = _now()
+    issue, error = _issue_or_404(issue_id)
+    if error is not None:
+        return error
+    store.archive_issue(STATE, issue)
     return {"success": True}
 
 
@@ -587,54 +437,33 @@ def archive_issue(issue_id: str):
 
 @app.post("/v1/issues/{issue_id}/comments", status_code=201)
 async def add_comment(issue_id: str, request: Request):
-    issue = STATE["issues"].get(issue_id)
-    if not issue:
-        issue = next((i for i in STATE["issues"].values() if i.get("identifier") == issue_id), None)
-    if not issue:
-        return linear_error(404, f"Issue {issue_id!r} not found")
+    issue, error = _issue_or_404(issue_id)
+    if error is not None:
+        return error
     body = await request.json()
-    body_text = body.get("body")
-    if not body_text:
-        return linear_error(400, "body is required")
-    cid = _uid()
-    comment = {
-        "id": cid,
-        "body": body_text,
-        "issueId": issue["id"],
-        "userId": body.get("userId", "user-default"),
-        "user": STATE["users"].get(body.get("userId", "user-default")),
-        "createdAt": _now(),
-        "updatedAt": _now(),
-    }
-    STATE["comments"][cid] = comment
-    issue["commentCount"] = issue.get("commentCount", 0) + 1
-    return comment
+    try:
+        return store.create_comment(STATE, {**body, "issueId": issue["id"]})
+    except store.LinearInvalidInput as exc:
+        return linear_error(400, "body is required", message=exc.user_message)
 
 
 @app.get("/v1/issues/{issue_id}/comments")
 def list_comments(issue_id: str):
-    issue = STATE["issues"].get(issue_id)
-    if not issue:
-        issue = next((i for i in STATE["issues"].values() if i.get("identifier") == issue_id), None)
-    if not issue:
-        return linear_error(404, f"Issue {issue_id!r} not found")
-    iid = issue["id"]
-    comments = [c for c in STATE["comments"].values() if c.get("issueId") == iid]
-    comments.sort(key=lambda c: c["createdAt"])
-    return {"nodes": comments, "pageInfo": {"hasNextPage": False}}
+    issue, error = _issue_or_404(issue_id)
+    if error is not None:
+        return error
+    return _nodes(store.issue_comments(STATE, issue["id"]))
 
 
 # --- search ------------------------------------------------------------------
 
 @app.get("/v1/search/issues")
 def search_issues(query: str = "", first: int = 50):
-    q = query.lower()
-    results = []
-    for issue in STATE["issues"].values():
-        text = f"{issue.get('title', '')} {issue.get('description', '')} {issue.get('identifier', '')}".lower()
-        if not q or q in text:
-            results.append(issue)
-    return {"nodes": results[:first], "pageInfo": {"hasNextPage": False}}
+    needle = query.lower()
+    results = [i for i in STATE["issues"].values()
+               if not i.get("archivedAt") and needle in
+               f"{i.get('title', '')} {i.get('description', '')} {i.get('identifier', '')}".lower()]
+    return _nodes(results, first)
 
 
 # --- MCP transport -----------------------------------------------------------

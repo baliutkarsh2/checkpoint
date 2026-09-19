@@ -1,12 +1,13 @@
 {
   "state": {
+    "team": {"name": "Acme", "domain": "acme", "url": "https://acme.slack.com/"},
     "channels": {
-      "C00000001": {"id": "C00000001", "name": "general", "is_channel": true, "num_members": 12, "topic": {"value": "Company-wide announcements"}},
-      "C00000002": {"id": "C00000002", "name": "engineering", "is_channel": true, "num_members": 8, "topic": {"value": "Engineering chatter"}},
-      "C00000003": {"id": "C00000003", "name": "backend", "is_channel": true, "num_members": 5, "topic": {"value": "Backend team"}},
-      "C00000004": {"id": "C00000004", "name": "frontend", "is_channel": true, "num_members": 4, "topic": {"value": "Frontend team"}},
-      "C00000005": {"id": "C00000005", "name": "design", "is_channel": true, "num_members": 3, "topic": {"value": "Design discussions"}},
-      "C00000006": {"id": "C00000006", "name": "random", "is_channel": true, "num_members": 12, "topic": {"value": "Memes and watercooler"}}
+      "C00000001": {"id": "C00000001", "name": "general", "topic": {"value": "Company-wide announcements"}, "members": ["U0CHECKPOINT", "U00000001", "U00000002", "U00000003", "U00000004", "U00000005", "U00000006", "U00000007", "U00000008", "U00000009", "U00000010", "U00000011", "U00000012"]},
+      "C00000002": {"id": "C00000002", "name": "engineering", "topic": {"value": "Engineering chatter"}, "members": ["U0CHECKPOINT", "U00000001", "U00000002", "U00000003", "U00000004", "U00000005", "U00000008", "U00000009", "U00000010"]},
+      "C00000003": {"id": "C00000003", "name": "backend", "topic": {"value": "Backend team"}, "members": ["U00000002", "U00000003", "U00000004", "U00000008", "U00000010"]},
+      "C00000004": {"id": "C00000004", "name": "frontend", "topic": {"value": "Frontend team"}, "members": ["U00000003", "U00000005", "U00000009", "U00000011"]},
+      "C00000005": {"id": "C00000005", "name": "design", "topic": {"value": "Design discussions"}, "members": ["U00000006", "U00000007", "U00000011"]},
+      "C00000006": {"id": "C00000006", "name": "random", "topic": {"value": "Memes and watercooler"}, "members": ["U00000001", "U00000002", "U00000003", "U00000004", "U00000005", "U00000006", "U00000007", "U00000008", "U00000009", "U00000010", "U00000011", "U00000012"]}
     },
     "users": {
       "U00000001": {"id": "U00000001", "name": "alice", "real_name": "Alice Anderson", "profile": {"real_name": "Alice Anderson", "display_name": "alice", "email": "alice@acme.com", "title": "CTO"}},
@@ -24,16 +25,17 @@
     },
     "messages": {
       "C00000002": [
-        {"type": "message", "user": "U00000003", "text": "Sprint planning at 10am tomorrow", "ts": "1714521600.000001", "channel": "C00000002"},
+        {"type": "message", "user": "U00000003", "text": "Sprint planning at 10am tomorrow", "ts": "1714521600.000001", "channel": "C00000002", "thread_ts": "1714521600.000001", "reply_count": 1, "reply_users": ["U00000002"], "reply_users_count": 1, "latest_reply": "1714521650.000006"},
+        {"type": "message", "user": "U00000002", "text": "Adding the capacity numbers to the deck", "ts": "1714521650.000006", "channel": "C00000002", "thread_ts": "1714521600.000001", "parent_user_id": "U00000003"},
         {"type": "message", "user": "U00000002", "text": "I'll prep the deck", "ts": "1714521700.000002", "channel": "C00000002"},
         {"type": "message", "user": "U00000004", "text": "Backend retro notes pushed to the wiki", "ts": "1714608000.000003", "channel": "C00000002"}
       ],
       "C00000003": [
         {"type": "message", "user": "U00000004", "text": "API latency spike at 3pm, investigating", "ts": "1714694400.000004", "channel": "C00000003"},
-        {"type": "message", "user": "U00000008", "text": "Looks like the rate limiter wasn't backing off", "ts": "1714694500.000005", "channel": "C00000003"}
+        {"type": "message", "user": "U00000008", "text": "Looks like the rate limiter wasn't backing off", "ts": "1714694500.000005", "channel": "C00000003", "reactions": [{"name": "eyes", "users": ["U00000004"], "count": 1}]}
       ]
     },
-    "_counters": {"channel_id": 6, "user_id": 12, "ts_seq": 100, "requests": 0}
+    "_counters": {"channel_id": 6, "user_id": 12, "ts_seq": 100}
   },
   "config": {}
 }

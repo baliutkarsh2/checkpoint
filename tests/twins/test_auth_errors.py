@@ -130,6 +130,7 @@ def test_error_body_has_documentation_url(client):
 
 def test_existing_issue_flow_still_works_with_auth(client):
     h = {"Authorization": f"token {TOKEN}"}
+    client.post("/user/repos", json={"name": "webapp", "owner": "acme"}, headers=h)
     r = client.post(
         "/repos/acme/webapp/issues",
         json={"title": "hello world", "body": "hi"},
