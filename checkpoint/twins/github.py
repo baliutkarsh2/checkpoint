@@ -2491,8 +2491,10 @@ async def merge_pull_request(owner: str, name: str, number: int, request: Reques
         "state": "closed", "merged": True, "merged_at": _now(), "closed_at": _now(),
         "merge_commit_sha": commit["sha"], "merged_by": _actor(),
     })
+    # Freeze both ends at what was merged: a merged PR keeps showing its own
+    # diff, which pointing base at the merge commit would erase.
     pull["head"]["sha"] = head_sha
-    pull["base"]["sha"] = commit["sha"]
+    pull["base"]["sha"] = base_sha
     _touch(pull)
     return {"sha": commit["sha"], "merged": True, "message": "Pull Request successfully merged"}
 
