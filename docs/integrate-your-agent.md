@@ -100,7 +100,7 @@ timeout: 60
 ```
 
 `[D]` = deterministic (regex/state lookup, free). `[P]` = perception
-(GPT-judged, ~1 LLM call). Mix and match.
+(LLM-judged, ~1 LLM call). Mix and match.
 
 To use the bundled scenarios that ship with Checkpoint:
 

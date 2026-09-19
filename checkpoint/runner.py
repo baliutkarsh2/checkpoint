@@ -15,7 +15,8 @@ from checkpoint.fake_credentials import FAKE_TOKENS
 from .checker import check
 from .checker_llm import try_stage2
 from .engine.agent import extract_answer
-from .judge import judge
+from .eval import JudgeCriterion, Verdict, build_world, judge
+from .llm import DEFAULT_MODEL
 from .scenario import Criterion, Scenario
 from .twins import registry as twin_registry
 
@@ -86,7 +87,7 @@ def run_once(
     scenario: Scenario,
     harness_cmd: Sequence[str] | str,
     cwd: str | None = None,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     *,
     agent: Agent | None = None,
     options: RunOptions | None = None,
@@ -207,25 +208,36 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
     if not deferred:
         return
 
-    try:
-        verdicts = judge(
-            task=scenario.prompt,
-            final_answer=result.final_answer,
-            trace=result.trace,
-            state=result.state,
-            criteria=[c.text for c in deferred],
-            model=judge_model,
-        )
-    except Exception as e:
-        for c in deferred:
-            result.criteria.append(CriterionResult(
-                text=c.text, kind=c.kind, passed=False,
-                reasoning=f"Judge failed: {e}", evaluator="llm",
-            ))
-        return
+    # The id is positional but opaque: it exists so a verdict can only come back
+    # attached to the criterion that produced it, never matched by its wording.
+    criteria = [JudgeCriterion(id=f"c{i}", text=c.text) for i, c in enumerate(deferred)]
+    world = build_world(
+        seed_views=result.seed_views,
+        final_views=result.views,
+        trace=result.trace,
+        answer=result.final_answer,
+        task=scenario.prompt,
+        egress=result.egress,
+        exit_code=result.exit_code,
+        duration=result.duration_s,
+    )
+    verdicts = judge(criteria, world, model=judge_model)
 
-    for c, v in zip(deferred, verdicts, strict=False):
+    for c, v in zip(deferred, verdicts, strict=True):
         result.criteria.append(CriterionResult(
-            text=c.text, kind=c.kind, passed=v.passed,
-            reasoning=v.reasoning, evaluator="llm",
+            # An undecided criterion is not a pass: a gate that cannot tell must
+            # not ship, and the reasoning carries why so it is visible, not silent.
+            text=c.text, kind=c.kind, passed=v.passed is True,
+            reasoning=_reason(v), evaluator="llm",
         ))
+
+
+def _reason(verdict: Verdict) -> str:
+    """The verdict as one line, keeping the cited evidence with the claim."""
+    if verdict.error:
+        return f"Judge error: {verdict.error}"
+    if verdict.passed is None:
+        return f"Judge could not decide: {verdict.reasoning}"
+    if verdict.evidence:
+        return f"{verdict.reasoning} (evidence: {verdict.evidence})"
+    return verdict.reasoning
