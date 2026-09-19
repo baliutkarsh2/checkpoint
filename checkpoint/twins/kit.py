@@ -43,6 +43,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 
@@ -197,6 +198,9 @@ class Twin:
     seeds_dir: Path | None = None
     error: ErrorFactory = field(default_factory=lambda: default_error)
     authenticate: Authenticator | None = None
+    public_paths: tuple[str, ...] = ()
+    """Path patterns served without a credential, as real APIs do for webhook
+    URLs, CDN assets and payment links (fnmatch syntax, e.g. "/webhooks/*")."""
     on_response: ResponseHook | None = None
     after_seed: SeedHook | None = None
     views: ViewBuilder | None = None
@@ -301,6 +305,9 @@ class Twin:
             return self.views(self.state)
         return default_views(self.state)
 
+    def _is_public(self, path: str) -> bool:
+        return any(fnmatch(path, pattern) for pattern in self.public_paths)
+
     def classify_call(self, method: str, path: str, body: Any) -> tuple[Op, str]:
         if self.classify is not None:
             result = self.classify(method, path, body)
@@ -313,7 +320,14 @@ class Twin:
     async def _fault(self, request: Request) -> Response | None:
         """Return an injected failure for this request, or None to serve it."""
         method, path, cfg = request.method, request.url.path, self.config
-        is_write = method in WRITE_METHODS
+        # What counts as a write comes from the twin's own classification, not the
+        # HTTP verb: Slack's SDK POSTs every call, so verb-based read-only mode
+        # refused reads too, and the same is true of any RPC or GraphQL surface.
+        if self.classify is not None:
+            classified = self.classify(method, path, None)
+            is_write = classified[0] != "read" if classified else method in WRITE_METHODS
+        else:
+            is_write = method in WRITE_METHODS
 
         if cfg.get("latency_ms"):
             await asyncio.sleep(float(cfg["latency_ms"]) / 1000)
@@ -348,7 +362,9 @@ class Twin:
 
         request._receive = receive  # type: ignore[attr-defined]  # replay the consumed body
 
-        response = self.authenticate(request) if self.authenticate else None
+        response = None
+        if self.authenticate is not None and not self._is_public(request.url.path):
+            response = self.authenticate(request)
         fault: str | None = None
         if response is None:
             response = await self._fault(request)

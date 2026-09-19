@@ -207,3 +207,62 @@ def test_default_classify_uses_http_semantics():
     assert default_classify("PATCH", "/repos/acme/webapp/issues/12") == ("update", "issues")
     assert default_classify("DELETE", "/api/v10/channels/1/messages/2") == ("delete", "messages")
     assert default_classify("GET", "/v1/customers/cus_abc123") == ("read", "customers")
+
+
+def test_read_only_uses_the_twins_own_idea_of_a_write():
+    # RPC and GraphQL APIs POST everything, reads included (Slack's SDK does), so
+    # deciding "is this a write?" from the HTTP verb made read-only mode refuse reads.
+    from fastapi import FastAPI
+
+    from checkpoint.twins import kit
+
+    app = FastAPI()
+    state: dict = {}
+
+    def classify(method: str, path: str, body: object):
+        return ("read", "things") if path.endswith(".list") else ("create", "things")
+
+    kit.install(app, kit.Twin(name="rpc", state=state, trace=[], fresh_state=dict,
+                              classify=classify))
+
+    @app.post("/api/things.list")
+    def _list() -> dict:
+        return {"ok": True}
+
+    @app.post("/api/things.create")
+    def _create() -> dict:
+        return {"ok": True}
+
+    client = TestClient(app)
+    client.post("/_config", json={"read_only": True})
+    assert client.post("/api/things.list").status_code == 200
+    assert client.post("/api/things.create").status_code == 403
+
+
+def test_public_paths_skip_authentication():
+    # Real APIs serve some URLs without a credential: webhook endpoints, CDN
+    # assets, payment links. A twin declares them instead of special-casing auth.
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    from checkpoint.twins import kit
+
+    app = FastAPI()
+
+    def deny(request):
+        return JSONResponse(status_code=401, content={"error": "no credential"})
+
+    kit.install(app, kit.Twin(name="pub", state={}, trace=[], fresh_state=dict,
+                              authenticate=deny, public_paths=("/webhooks/*",)))
+
+    @app.get("/webhooks/{token}")
+    def _hook(token: str) -> dict:
+        return {"ok": True}
+
+    @app.get("/private")
+    def _private() -> dict:
+        return {"ok": True}
+
+    client = TestClient(app)
+    assert client.get("/webhooks/abc").status_code == 200
+    assert client.get("/private").status_code == 401
