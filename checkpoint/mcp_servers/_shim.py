@@ -23,6 +23,7 @@ from fastapi import FastAPI
 
 from checkpoint.mcp_compat import FastMCP
 from checkpoint.mcp_compat import streamable_http_app as compat_streamable_http_app
+from checkpoint.twins.kit import VIA_HEADER
 
 ShimFn = Callable[..., Awaitable[Any]]
 
@@ -56,7 +57,8 @@ def make_shim(
         form: Mapping[str, Any] | None = None,
         extra_headers: Mapping[str, str] | None = None,
     ) -> Any:
-        headers: dict[str, str] = {auth_header: auth_value}
+        # Tag the call so the twin's trace records it as an MCP tool call.
+        headers: dict[str, str] = {auth_header: auth_value, VIA_HEADER: "mcp"}
         if extra_headers:
             headers.update(extra_headers)
         # httpx mutual-exclusion: json vs data. Form takes precedence

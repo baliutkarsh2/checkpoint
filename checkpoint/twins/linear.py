@@ -1,4 +1,4 @@
-"""Linear twin: stateful in-memory clone of the Linear REST/GraphQL API.
+"""Linear twin: a stateful, in-memory Linear API.
 
 Implements the most-used Linear surfaces via a REST-ish API that mirrors
 the shapes returned by the official Linear MCP server and GraphQL API:
@@ -11,15 +11,12 @@ the shapes returned by the official Linear MCP server and GraphQL API:
   WorkflowStates — list, get
   Cycles       — list, get
 
-Introspection at /_health, /_trace, /_state, /_reset, /_seed/<name>,
-/_seed-file, /_config.
-
-Linear IDs use the standard UUID format. Bootstrap token mimics Linear
-API key format: lin_api_<hex>.
+Linear's public API is GraphQL; this twin serves the equivalent REST-shaped
+surface used by the Linear MCP server. Linear IDs are UUIDs and issues use
+``<TEAM>-<n>`` identifiers. The control plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -30,11 +27,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from checkpoint.fake_credentials import FAKE_LINEAR_TOKEN
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint linear twin")
 
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_LINEAR_TOKEN
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "linear_seeds"
 
@@ -126,7 +123,6 @@ def _fresh_state() -> dict:
         "comments": {},      # comment_id -> comment dict
         "_counters": {
             "issue_seq": {},    # team_key -> int (for identifier like ENG-1)
-            "requests": 0,
         },
         "_config": {
             "rate_limit": None,
@@ -179,142 +175,35 @@ def _team_key(team_id: str) -> str:
     return t.get("key", "ENG")
 
 
-# --- middlewares -------------------------------------------------------------
+# --- runtime: auth, faults, trace, control plane ----------------------------
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
+def _authenticate(request: Request) -> Response | None:
     token = _extract_token(request.headers.get("authorization"))
-    if token != _bootstrap_token():
+    if not token:
+        return linear_error(401, "Authentication required, not authenticated")
+    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
         return linear_error(401, "Invalid API key")
-    STATE["_counters"]["requests"] += 1
-    rl = STATE["_config"].get("rate_limit")
-    if rl is not None and STATE["_counters"]["requests"] > rl:
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Too Many Requests"},
-            headers={"Retry-After": "60"},
-        )
-    return await call_next(request)
+    return None
 
 
-@app.middleware("http")
-async def trace_middleware(request: Request, call_next):
-    path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
-    body_bytes = await request.body()
-    try:
-        body = json.loads(body_bytes) if body_bytes else None
-    except Exception:
-        body = body_bytes.decode("utf-8", errors="replace") if body_bytes else None
-
-    async def receive():
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    request._receive = receive  # type: ignore[attr-defined]
-    response = await call_next(request)
-
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk)
-    resp_bytes = b"".join(chunks)
-    try:
-        resp_body = json.loads(resp_bytes) if resp_bytes else None
-    except Exception:
-        resp_body = resp_bytes.decode("utf-8", errors="replace") if resp_bytes else None
-
-    TRACE.append({
-        "ts": _now(),
-        "method": request.method,
-        "path": path,
-        "query": dict(request.query_params),
-        "body": body,
-        "status": response.status_code,
-        "response": resp_body,
-    })
-
-    return Response(
-        content=resp_bytes,
-        status_code=response.status_code,
-        headers={k: v for k, v in response.headers.items() if k.lower() != "content-length"},
-        media_type=response.media_type,
-    )
+def _error(kind: str, status: int, message: str) -> Response:
+    if kind == "rate_limited":
+        return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"},
+                            headers={"Retry-After": "60"})
+    if kind in ("forbidden", "read_only"):
+        return linear_error(403, message)
+    return linear_error(status, message)
 
 
-# --- introspection -----------------------------------------------------------
-
-@app.get("/_health")
-def health():
-    return {"ok": True}
-
-
-@app.get("/_trace")
-def get_trace():
-    return TRACE
-
-
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
-
-
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
-
-
-@app.post("/_config")
-async def set_config(request: Request):
-    body = await request.json()
-    if "rate_limit" in body:
-        STATE["_config"]["rate_limit"] = body["rate_limit"]
-    return {"ok": True, "config": STATE["_config"]}
-
-
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "seed": name}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    data = await request.json()
-    if not isinstance(data, dict):
-        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True}
+TWIN = kit.install(app, kit.Twin(
+    name="linear",
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+))
 
 
 # --- organization ------------------------------------------------------------

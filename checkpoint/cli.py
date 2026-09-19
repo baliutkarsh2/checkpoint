@@ -2296,9 +2296,8 @@ def validate(scenario_path, as_json):
         )
 
     # 4. Clone validity
-    known_clones = {
-        "github", "slack", "stripe", "linear", "supabase", "discord", "google-workspace",
-    }
+    from .twins import registry as _twin_registry
+    known_clones = set(_twin_registry.names())
     for clone_id in scn.clones:
         if clone_id not in known_clones:
             errors.append(f"Unknown clone: {clone_id!r} (known: {', '.join(sorted(known_clones))})")

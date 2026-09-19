@@ -1,16 +1,15 @@
-"""Google Workspace twin: stateful in-memory clone of Gmail + Drive APIs.
+"""Google Workspace twin: a stateful, in-memory Gmail and Drive API.
 
 Implements the primary Google Workspace surfaces used by agents:
 
   Gmail   — threads, messages, labels, drafts, send, search, modify
   Drive   — files, folders, permissions, copy, search
 
-Authentication mirrors Google OAuth 2.0 Bearer token format.
-Introspection at /_health, /_trace, /_state, /_reset, /_seed/<name>, /_seed-file.
+Authentication accepts an OAuth 2.0 Bearer token (or ``access_token`` query param).
+The control plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -21,11 +20,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from checkpoint.fake_credentials import FAKE_GOOGLE_WORKSPACE_TOKEN
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint google-workspace twin")
 
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_GOOGLE_WORKSPACE_TOKEN
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "google_workspace_seeds"
 
@@ -72,7 +71,6 @@ def _fresh_state() -> dict:
             "historyId": "1",
         },
         "_counters": {
-            "requests": 0,
         },
         "_config": {
             "rate_limit": None,
@@ -96,105 +94,49 @@ def _bootstrap_token() -> str:
     return os.environ.get("GOOGLE_WORKSPACE_BOOTSTRAP_TOKEN", DEFAULT_BOOTSTRAP_TOKEN)
 
 
-def _check_auth(request: Request) -> bool:
-    if request.url.path.startswith(INTROSPECTION_PREFIX):
-        return True
-    expected = _bootstrap_token()
-    auth = request.headers.get("Authorization", "")
-    token = auth.removeprefix("Bearer ").strip()
-    return token == expected or f"Bearer {token}" == f"Bearer {expected}"
+
+# --- runtime: auth, faults, trace, control plane ----------------------------
+
+def _authenticate(request: Request) -> Response | None:
+    token = _request_token(request)
+    if not token:
+        return JSONResponse(status_code=401, content={"error": {
+            "code": 401, "status": "UNAUTHENTICATED",
+            "message": "Request is missing required authentication credential.",
+        }})
+    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
+        return JSONResponse(status_code=401, content={"error": {
+            "code": 401, "status": "UNAUTHENTICATED",
+            "message": "Request had invalid authentication credentials.",
+        }})
+    return None
 
 
-# --- middleware / tracing -----------------------------------------------------
-
-@app.middleware("http")
-async def _middleware(request: Request, call_next):
-    path = request.url.path
-    is_introspection = path.startswith(INTROSPECTION_PREFIX)
-    is_mcp = path.startswith("/mcp")
-    if not is_introspection and not is_mcp:
-        STATE["_counters"]["requests"] += 1
-        if not _check_auth(request):
-            return JSONResponse(status_code=401, content={
-                "error": {"code": 401, "message": "Request had invalid authentication credentials.", "status": "UNAUTHENTICATED"}
-            })
-    response = await call_next(request)
-    if not is_introspection and not is_mcp:
-        TRACE.append({"method": request.method, "path": path, "status": response.status_code, "ts": _now()})
-    return response
+def _request_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization", "")
+    token = auth.removeprefix("Bearer ").removeprefix("bearer ").strip()
+    return token or request.query_params.get("access_token") or request.query_params.get("key")
 
 
-# --- introspection -----------------------------------------------------------
-
-@app.get("/_health")
-def health():
-    return {"ok": True, "twin": "google-workspace"}
+_GOOGLE_STATUS = {403: "PERMISSION_DENIED", 429: "RESOURCE_EXHAUSTED", 500: "INTERNAL", 503: "UNAVAILABLE"}
 
 
-@app.get("/_trace")
-def get_trace():
-    return TRACE
+def _error(kind: str, status: int, message: str) -> Response:
+    return JSONResponse(status_code=status, content={"error": {
+        "code": status, "message": message, "status": _GOOGLE_STATUS.get(status, "UNKNOWN"),
+    }})
 
 
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
+TWIN = kit.install(app, kit.Twin(
+    name="google-workspace",
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+))
 
-
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
-
-
-@app.post("/_config")
-async def configure(request: Request):
-    body = await request.json()
-    if "rate_limit" in body:
-        STATE["_config"]["rate_limit"] = body["rate_limit"]
-    return {"ok": True, "config": STATE["_config"]}
-
-
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    for ck, cv in (data.get("config") or {}).items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "seed": name}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    data = await request.json()
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    for ck, cv in (data.get("config") or {}).items():
-        STATE["_config"][ck] = cv
-    return {"ok": True}
-
-
-# =============================================================================
-# Gmail API
-# =============================================================================
 
 # --- User profile ------------------------------------------------------------
 

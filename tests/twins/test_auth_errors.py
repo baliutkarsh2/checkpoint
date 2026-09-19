@@ -1,4 +1,4 @@
-"""Phase 2 Plan 01: bootstrap-token auth + GitHub error/header shapes."""
+"""GitHub twin auth semantics and GitHub-shaped error/header envelopes."""
 from __future__ import annotations
 
 import pytest
@@ -9,10 +9,7 @@ from checkpoint.twins import github as gh
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    # Hard reset between tests.
-    gh.STATE.clear()
-    gh.STATE.update(gh._fresh_state())
-    gh.TRACE.clear()
+    gh.TWIN.reset()
     yield
 
 
@@ -28,11 +25,21 @@ def test_missing_authorization_returns_401(client):
     r = client.get("/repos/acme/webapp")
     assert r.status_code == 401
     body = r.json()
-    assert body["message"] == "Bad credentials"
+    assert body["message"] == "Requires authentication"
     assert "documentation_url" in body
 
 
-def test_wrong_token_returns_401(client):
+def test_any_token_accepted_by_default(client):
+    # The agent's own credential handling runs unchanged: any non-empty token works.
+    r = client.get(
+        "/repos/acme/webapp",
+        headers={"Authorization": "token ghp_CHECKPOINTFAKEagentsown"},
+    )
+    assert r.status_code == 404  # authenticated; the repo just doesn't exist
+
+
+def test_wrong_token_returns_401_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get(
         "/repos/acme/webapp",
         headers={"Authorization": "token ghp_CHECKPOINTFAKEwrongtoken"},
@@ -61,6 +68,7 @@ def test_token_form_accepted(client):
 
 def test_env_override(monkeypatch, client):
     monkeypatch.setenv("GITHUB_BOOTSTRAP_TOKEN", "ghp_CHECKPOINTFAKEenvoverride")
+    client.post("/_config", json={"strict_auth": True})
     # Default token is now wrong.
     r = client.get(
         "/repos/acme/webapp",

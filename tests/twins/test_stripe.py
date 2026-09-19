@@ -1,4 +1,4 @@
-"""Phase 3 Plan 03: Stripe twin strict-mode endpoints + auth + idempotency."""
+"""Stripe twin: core endpoints, auth semantics, idempotency."""
 from __future__ import annotations
 
 import pytest
@@ -34,7 +34,13 @@ def test_missing_token_returns_401(client):
     assert "did not provide" in body["error"]["message"].lower()
 
 
-def test_wrong_token_returns_401(client):
+def test_any_key_accepted_by_default(client):
+    r = client.get("/v1/balance", headers={"Authorization": "Bearer sk_test_CHECKPOINTFAKEagentsown"})
+    assert r.status_code == 200
+
+
+def test_wrong_token_returns_401_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/balance", headers={"Authorization": "Bearer sk_test_wrong"})
     assert r.status_code == 401
     assert r.json()["error"]["type"] == "invalid_request_error"
@@ -42,6 +48,7 @@ def test_wrong_token_returns_401(client):
 
 def test_env_override_bootstrap_token(monkeypatch, client):
     monkeypatch.setenv("STRIPE_BOOTSTRAP_TOKEN", "sk_live_CHECKPOINTFAKEoverride")
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/balance", headers=H)
     assert r.status_code == 401
     r = client.get("/v1/balance", headers={"Authorization": "Bearer sk_live_CHECKPOINTFAKEoverride"})
@@ -122,7 +129,7 @@ def test_list_prices_filter_by_product(client):
     assert body["data"][0]["product"] == p1["id"]
 
 
-# --- payment_intents (list only in strict) ------------------------------
+# --- payment_intents ----------------------------------------------------
 
 def test_list_payment_intents_empty(client):
     r = client.get("/v1/payment_intents", headers=H)

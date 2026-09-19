@@ -31,9 +31,14 @@ def test_missing_token_returns_401(client):
     assert r.status_code == 401
 
 
-def test_wrong_token_returns_401(client):
+def test_wrong_token_returns_401_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/rest/v1/users", headers={"Authorization": "Bearer bad"})
     assert r.status_code == 401
+
+
+def test_missing_credentials_return_401(client):
+    assert client.get('/rest/v1/users').status_code == 401
 
 
 def test_introspection_bypasses_auth(client):
