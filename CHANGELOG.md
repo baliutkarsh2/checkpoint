@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The gate is safe by default: only SHIP exits 0.** CONDITIONAL used to exit 0,
+  so 0/3 passing runs (Wilson upper bound 0.56 > `block_max`) — and 9/20 at the
+  default N — produced a green build. Exit codes are now SHIP 0, BLOCK 1,
+  CONDITIONAL 2, INCONCLUSIVE 3, ERROR 4. `--allow-conditional` opts back into a
+  green CONDITIONAL; `--strict` refuses it even then.
+- **A new INCONCLUSIVE verdict** for evidence that cannot decide. A flawless 5/5
+  cannot clear `ship_min 0.80` at any confidence, so it is no longer labelled
+  "flaky": the gate reports how many clean runs SHIP needs
+  (`ceil(ship_min·z²/(1−ship_min))`, 16 by default) and exits non-zero.
+- **Infrastructure failures are first class.** A sandbox that will not start, a
+  missing judge credential, or a scenario that cannot be parsed is reported as
+  ERROR, kept out of the pass-rate sample, and exits non-zero — never scored as a
+  run the agent lost. A missing judge key is caught before any run happens.
+- **Only real scenarios run.** Files under the gate target with no task or no
+  success criteria (a `README.md`, say) are reported as skipped with a reason
+  instead of being run with an empty task; a target matching nothing is an ERROR.
+- **Honest baselines.** Keyed by the scenario's path relative to the gate target
+  plus a hash of its success criteria, stored under a path-independent key so CI
+  checkouts find them, and updated only on a SHIP — a flaky run can no longer
+  ratchet its own bar down. A regression now requires a statistically meaningful
+  drop (the baseline must fall outside the current interval), not just a
+  difference of point estimates.
+- **Exact statistics.** The z-value comes from `NormalDist().inv_cdf`, so
+  `--confidence 0.85` no longer silently uses the 0.80 value, and threshold
+  comparisons are tolerance-safe (a 0.20 drop that floats to 0.1999… still counts).
+
 ## [0.1.0] - 2026-08-31
 
 First public release.

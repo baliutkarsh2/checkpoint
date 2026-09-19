@@ -47,6 +47,13 @@ def test_unknown_gate_verdict_is_not_approved():
     assert _overall("", [], signature_valid=True) == REJECTED
 
 
+def test_verdicts_that_cannot_support_a_release_are_rejected():
+    # INCONCLUSIVE and ERROR are newer than the assurance report's vocabulary.
+    # It must keep failing closed on them rather than reading "not BLOCK" as OK.
+    for verdict in ("INCONCLUSIVE", "ERROR"):
+        assert _overall(verdict, [], signature_valid=True) == REJECTED
+
+
 def test_block_and_critical_vulns_reject():
     assert _overall("BLOCK", [], signature_valid=True) == REJECTED
     assert _overall("SHIP", [{"classification": "stable_fail"}], signature_valid=True) == REJECTED
@@ -98,3 +105,29 @@ def test_gate_blocks_when_harness_never_executes(tmp_path, monkeypatch):
     assert result.errors, "execution failures must be surfaced in errors"
     assert any("did not complete" in e for e in result.errors)
     assert any("never executed successfully" in e for e in result.errors)
+
+
+def test_no_gate_option_can_make_a_failing_agent_green(tmp_path, monkeypatch):
+    """The opt-in that softens CONDITIONAL must not soften anything worse."""
+    scenario = tmp_path / "s.md"
+    scenario.write_text(
+        "# s\n## Prompt\np\n## Success Criteria\n- [D] An issue titled \"x\" exists\n"
+        "## Config\nclones: github\n",
+        encoding="utf-8",
+    )
+
+    class _Failed:
+        complete = True
+        error = None
+        score = 0.0
+
+    _stub_runs(monkeypatch, lambda *a, **k: _Failed())
+
+    for policy in (
+        gate_engine.GatePolicy(runs=3, allow_conditional=True),
+        gate_engine.GatePolicy(runs=20, allow_conditional=True),
+        gate_engine.GatePolicy(runs=1, allow_conditional=True),
+    ):
+        result = gate_engine.run_gate(tmp_path, ["python", "agent.py"], policy)
+        assert result.verdict == "BLOCK", policy.runs
+        assert result.exit_code != 0, policy.runs
