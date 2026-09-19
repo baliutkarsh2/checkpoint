@@ -1,21 +1,22 @@
 {
   "state": {
+    "team": {"name": "Acme", "domain": "acme", "url": "https://acme.slack.com/"},
     "channels": {
-      "C00000001": {"id": "C00000001", "name": "general", "is_channel": true, "num_members": 80},
-      "C00000002": {"id": "C00000002", "name": "engineering", "is_channel": true, "num_members": 35},
-      "C00000003": {"id": "C00000003", "name": "backend", "is_channel": true, "num_members": 15},
-      "C00000004": {"id": "C00000004", "name": "frontend", "is_channel": true, "num_members": 12},
-      "C00000005": {"id": "C00000005", "name": "infra", "is_channel": true, "num_members": 8},
-      "C00000006": {"id": "C00000006", "name": "security", "is_channel": true, "num_members": 6},
-      "C00000007": {"id": "C00000007", "name": "data", "is_channel": true, "num_members": 9},
-      "C00000008": {"id": "C00000008", "name": "ml", "is_channel": true, "num_members": 11},
-      "C00000009": {"id": "C00000009", "name": "design", "is_channel": true, "num_members": 7},
-      "C00000010": {"id": "C00000010", "name": "product", "is_channel": true, "num_members": 14},
-      "C00000011": {"id": "C00000011", "name": "marketing", "is_channel": true, "num_members": 10},
-      "C00000012": {"id": "C00000012", "name": "sales", "is_channel": true, "num_members": 18},
-      "C00000013": {"id": "C00000013", "name": "support", "is_channel": true, "num_members": 22},
-      "C00000014": {"id": "C00000014", "name": "random", "is_channel": true, "num_members": 75},
-      "C00000015": {"id": "C00000015", "name": "announcements", "is_channel": true, "num_members": 80}
+      "C00000001": {"id": "C00000001", "name": "general", "num_members": 80, "members": ["U0CHECKPOINT", "U00000001", "U00000002", "U00000003", "U00000004", "U00000005", "U00000006", "U00000007", "U00000008", "U00000009", "U00000010"]},
+      "C00000002": {"id": "C00000002", "name": "engineering", "num_members": 35, "members": ["U0CHECKPOINT", "U00000001", "U00000003", "U00000005", "U00000007", "U00000009"]},
+      "C00000003": {"id": "C00000003", "name": "backend", "num_members": 15, "members": ["U00000003", "U00000005", "U00000007"]},
+      "C00000004": {"id": "C00000004", "name": "frontend", "num_members": 12, "members": ["U00000009", "U00000011"]},
+      "C00000005": {"id": "C00000005", "name": "infra", "num_members": 8, "members": ["U00000012", "U00000013"]},
+      "C00000006": {"id": "C00000006", "name": "security", "num_members": 6, "members": ["U00000014"]},
+      "C00000007": {"id": "C00000007", "name": "data", "num_members": 9, "members": ["U00000015", "U00000016"]},
+      "C00000008": {"id": "C00000008", "name": "ml", "num_members": 11, "members": ["U00000016", "U00000017"]},
+      "C00000009": {"id": "C00000009", "name": "design", "num_members": 7, "members": ["U00000018"]},
+      "C00000010": {"id": "C00000010", "name": "product", "num_members": 14, "members": ["U00000019", "U00000020"]},
+      "C00000011": {"id": "C00000011", "name": "marketing", "num_members": 10, "members": ["U00000019"]},
+      "C00000012": {"id": "C00000012", "name": "sales", "num_members": 18, "members": ["U00000020"]},
+      "C00000013": {"id": "C00000013", "name": "support", "num_members": 22, "members": ["U0CHECKPOINT", "U00000017", "U00000018", "U00000019", "U00000020"]},
+      "C00000014": {"id": "C00000014", "name": "random", "num_members": 75, "members": ["U00000010", "U00000011", "U00000012", "U00000013"]},
+      "C00000015": {"id": "C00000015", "name": "announcements", "num_members": 80, "members": ["U0CHECKPOINT", "U00000001", "U00000002"]}
     },
     "users": {
       "U00000001": {"id": "U00000001", "name": "user01", "real_name": "User One", "profile": {"real_name": "User One", "display_name": "user01", "email": "u01@acme.com"}},
@@ -49,7 +50,7 @@
         {"type": "message", "user": "U00000010", "text": "Anyone tried the new lunch place?", "ts": "1714525000.000004", "channel": "C00000014"}
       ]
     },
-    "_counters": {"channel_id": 15, "user_id": 20, "ts_seq": 200, "requests": 0}
+    "_counters": {"channel_id": 15, "user_id": 20, "ts_seq": 200}
   },
   "config": {}
 }

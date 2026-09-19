@@ -90,3 +90,21 @@ def test_host_rejects_unknown_twin():
     )
     assert proc.returncode != 0
     assert "unknown twin 'jira'" in proc.stderr
+
+
+def test_domains_are_owned_by_the_registry():
+    # The proxy, the Docker runner and the sandbox all ask the registry which
+    # hostnames to intercept; three hand-kept tables had already drifted apart.
+    table = registry.domains()
+    assert table["api.github.com"].name == "github"
+    assert table["oauth2.googleapis.com"].name == "google-workspace"
+    assert registry.for_domain("some-project.supabase.co").name == "supabase"
+    assert registry.for_domain("example.com") is None
+
+
+def test_auth_header_follows_each_service_scheme():
+    assert registry.get("github").auth_header.startswith("token ")
+    assert registry.get("slack").auth_header.startswith("Bearer ")
+    assert registry.get("discord").auth_header.startswith("Bot ")
+    # Linear sends a personal API key with no scheme at all.
+    assert registry.get("linear").auth_header == registry.get("linear").token

@@ -300,13 +300,14 @@ Every twin returns errors in the *real* service's envelope shape:
 - GitHub: `{"message": "...", "documentation_url": "...", "errors": [...]}`
 - Slack: `{"ok": false, "error": "channel_not_found"}`
 - Stripe: `{"error": {"type": "...", "code": "...", "message": "..."}}`
+- Linear: `{"errors": [{"message": "...", "extensions": {"type": "invalid input", "code": "INVALID_INPUT", "userPresentableMessage": "..."}}]}` — GraphQL, so most of these arrive on HTTP 200
 
 This is non-negotiable.  Real SDKs branch on these shapes; a wrong-shape error breaks the test before the agent's logic is even exercised.
 
 ### Runtime knobs (`/_config`)
 
 Each twin's `/_config` accepts a small set of keys:
-- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.
+- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.  The github twin hands the budget back a few seconds later (the epoch it advertises in `X-RateLimit-Reset`), so an agent that honors `Retry-After` recovers instead of retrying against a counter that never resets.
 - `permissions_denied: bool` — return 403 on any mutating method.
 - `read_only: bool` — same as permissions_denied but with a Checkpoint-flavored message; also enforced by the runner's pre/post state-snapshot diff so other twins are covered even if their middleware hasn't been updated.
 
@@ -779,7 +780,8 @@ checkpoint/
 │   ├── github.py + github_seeds/
 │   ├── slack.py + slack_seeds/
 │   ├── stripe.py + stripe_seeds/
-│   ├── linear.py + linear_seeds/
+│   ├── linear.py + linear_store.py + linear_graphql.py
+│   │   + linear_schema.graphql (Linear's published SDL) + linear_seeds/
 │   ├── supabase.py + supabase_seeds/
 │   ├── discord.py + discord_seeds/
 │   └── google_workspace.py + google_workspace_seeds/

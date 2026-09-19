@@ -7,6 +7,7 @@
       "objects": {}
     },
     "rpc_stubs": {},
+    "edge_functions": {},
     "_counters": {
       "requests": 0
     }
