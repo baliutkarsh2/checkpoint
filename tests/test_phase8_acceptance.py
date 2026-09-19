@@ -13,6 +13,7 @@ mock the OpenAI judge so [P] criteria don't require an API key.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,31 +53,31 @@ class _AlwaysPassCompletions:
 
     def create(self, **kw):
         self.calls.append(kw)
-        # The judge prompt lists criteria as numbered/bulleted lines. We
-        # don't need to parse them — just reply with a single batch that
-        # passes everything; the judge does positional fallback alignment
-        # if exact-text alignment misses.
-        # Build a generic 10-slot results list. Each entry passes.
-        results = [
-            {"criterion": f"criterion-{i}", "passed": True,
-             "reasoning": "Synthetic acceptance: assumed pass."}
-            for i in range(10)
-        ]
-        # Stage-2 [D] LLM-JSON path expects a single JSON object; we return
-        # one that won't match any real resource so callers fall through
-        # to the [P] judge. Distinguish by inspecting the prompt content.
-        # Tell the two apart by the system prompt: the judge's names its job.
-        system_msg = next((m.get("content", "") for m in kw.get("messages", [])
+        messages = kw.get("messages", [])
+        system_msg = next((m.get("content", "") for m in messages
                            if m.get("role") == "system"), "")
-        if "met specific success criteria" not in system_msg:
+        user_msg = next((m.get("content", "") for m in messages
+                         if m.get("role") == "user"), "")
+        if "judge in an automated release gate" in system_msg:
+            # Answer the ids the judge actually asked about. A fake that
+            # invented ids would be scored as "no verdict", which is the point
+            # of the id contract — so read them out of the payload.
+            ids = re.findall(r"^- id: (\S+)$", user_msg, re.M)
+            content = json.dumps({"verdicts": [
+                {"id": cid, "verdict": "pass", "evidence": "answer",
+                 "reasoning": "Synthetic acceptance: assumed pass."}
+                for cid in ids
+            ]})
+        else:
+            # Stage-2 [D] LLM-JSON path expects a single JSON object; return
+            # one that won't match any real resource so callers fall through
+            # to the [P] judge.
             content = json.dumps({
                 "resource": "unknown_for_fall_through",
                 "selector": None,
                 "operator": "exists",
                 "value": None,
             })
-        else:
-            content = json.dumps({"results": results})
         return _Resp(choices=[_Choice(message=_Msg(content=content))])
 
 

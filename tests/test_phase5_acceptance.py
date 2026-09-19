@@ -117,12 +117,13 @@ def test_three_stage_pipeline_end_to_end(monkeypatch):
     })
     stage2_chatty = "Sure! This one's about tone, not state."
 
-    # [P] judge fake: gets criteria #4 and #5 (both deferred to it).
-    judge_response = json.dumps({"results": [
-        {"criterion": "The agent's final answer is concise and friendly",
-         "passed": True, "reasoning": "Tone is polite."},
-        {"criterion": "The agent's final answer references github, slack, and stripe",
-         "passed": True, "reasoning": "All three referenced."},
+    # [P] judge fake: gets criteria #4 and #5 (both deferred to it), keyed by
+    # the ids the runner assigns to deferred criteria, in order.
+    judge_response = json.dumps({"verdicts": [
+        {"id": "c0", "verdict": "pass", "reasoning": "Tone is polite.",
+         "evidence": "answer"},
+        {"id": "c1", "verdict": "pass", "reasoning": "All three referenced.",
+         "evidence": "answer"},
     ]})
 
     stage2_client = FakeOpenAI([stage2_json_valid, stage2_chatty])
@@ -190,9 +191,9 @@ def test_stage2_unknown_noun_falls_through_to_judge(monkeypatch):
         "operator": "count_eq",
         "value": 0,
     })
-    judge_response = json.dumps({"results": [
-        {"criterion": "No new gizmos were created",
-         "passed": True, "reasoning": "Out-of-scope -> trivially true."},
+    judge_response = json.dumps({"verdicts": [
+        {"id": "c0", "verdict": "pass", "reasoning": "Out-of-scope -> trivially true.",
+         "evidence": "changes"},
     ]})
     unified = FakeOpenAI([bad, judge_response])
     import openai as openai_mod
@@ -227,7 +228,7 @@ def test_persist_record_with_failure_analysis(tmp_path: Path, monkeypatch):
     ]
 
     failure_json = json.dumps({"analyses": [
-        {"criterion": "c2", "why": "Trace entry 0 did the wrong thing."},
+        {"id": "c0", "why": "Trace entry 0 did the wrong thing."},
     ]})
     unified = FakeOpenAI([failure_json])
     import openai as openai_mod

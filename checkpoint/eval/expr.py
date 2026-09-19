@@ -17,6 +17,7 @@ Roots:
     trace                                    every API call (method, path, status, body, twin, op, ...)
     egress                                   connections to hosts outside the sandbox
     answer                                   the agent's final answer (string)
+    task                                     the prompt the agent was given (string)
     exit_code, duration                      process facts
 
 Operators: ``== != < <= > >=``, ``~`` / ``!~`` (regex; ``/re/flags`` or a string),
@@ -340,6 +341,8 @@ class World:
     trace: list[dict] = field(default_factory=list)
     egress: list[dict] = field(default_factory=list)
     answer: str = ""
+    task: str = ""
+    """The prompt the agent was given — the context a judged criterion is read against."""
     exit_code: int | None = 0
     duration: float = 0.0
 
@@ -357,7 +360,7 @@ class Outcome:
         return self.status == "pass"
 
 
-_ROOT_SCALARS = ("answer", "exit_code", "duration")
+_ROOT_SCALARS = ("answer", "task", "exit_code", "duration")
 _DELTA_ROOTS = ("created", "deleted", "changed", "seed")
 
 
@@ -392,7 +395,8 @@ class _Evaluator:
         if head in _ROOT_SCALARS:
             if len(parts) > 1:
                 raise ExprError(f"{head} has no fields")
-            return {"answer": w.answer, "exit_code": w.exit_code, "duration": w.duration}[head]
+            return {"answer": w.answer, "task": w.task,
+                    "exit_code": w.exit_code, "duration": w.duration}[head]
         if head in _DELTA_ROOTS:
             if len(parts) < 3:
                 raise ExprError(f"{head} needs a twin and collection, e.g. {head}.github.issues")

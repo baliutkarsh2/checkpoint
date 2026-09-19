@@ -20,6 +20,7 @@ def build_world(
     final_views: Mapping[str, Mapping[str, dict]],
     trace: list[dict],
     answer: str = "",
+    task: str = "",
     egress: list[dict] | None = None,
     exit_code: int | None = 0,
     duration: float = 0.0,
@@ -32,6 +33,7 @@ def build_world(
         trace=list(trace),
         egress=list(egress or []),
         answer=answer,
+        task=task,
         exit_code=exit_code,
         duration=duration,
     )
