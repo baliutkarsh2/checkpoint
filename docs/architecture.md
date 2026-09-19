@@ -300,6 +300,7 @@ Every twin returns errors in the *real* service's envelope shape:
 - GitHub: `{"message": "...", "documentation_url": "...", "errors": [...]}`
 - Slack: `{"ok": false, "error": "channel_not_found"}`
 - Stripe: `{"error": {"type": "...", "code": "...", "message": "..."}}`
+- Linear: `{"errors": [{"message": "...", "extensions": {"type": "invalid input", "code": "INVALID_INPUT", "userPresentableMessage": "..."}}]}` — GraphQL, so most of these arrive on HTTP 200
 
 This is non-negotiable.  Real SDKs branch on these shapes; a wrong-shape error breaks the test before the agent's logic is even exercised.
 
@@ -779,7 +780,8 @@ checkpoint/
 │   ├── github.py + github_seeds/
 │   ├── slack.py + slack_seeds/
 │   ├── stripe.py + stripe_seeds/
-│   ├── linear.py + linear_seeds/
+│   ├── linear.py + linear_store.py + linear_graphql.py
+│   │   + linear_schema.graphql (Linear's published SDL) + linear_seeds/
 │   ├── supabase.py + supabase_seeds/
 │   ├── discord.py + discord_seeds/
 │   └── google_workspace.py + google_workspace_seeds/
