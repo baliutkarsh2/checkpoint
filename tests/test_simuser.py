@@ -99,7 +99,7 @@ def test_simulate_runs_multiple_turns(monkeypatch):
 def test_simulate_unknown_clone_errors():
     scn = parse("# x\n## Prompt\np\n## Success Criteria\n- [D] x\n## Config\nclones: notaclone\n")
     res = simulate(scn, ["python", "x"], Persona("u", "g"))
-    assert res.error and "Unknown clones" in res.error
+    assert res.error and "unknown twin 'notaclone'" in res.error
 
 
 def test_simulate_cli_json(tmp_path, monkeypatch):

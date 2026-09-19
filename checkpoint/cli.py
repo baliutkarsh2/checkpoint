@@ -27,6 +27,7 @@ from .config import (
     matches_tag,
     resolve_evaluator_model,
 )
+from .engine import Agent, RunOptions, split_command
 from .failure_analyzer import analyze as analyze_failures
 from .run_record import RUNS_DIR, build_record, load_last_run, write_record
 from .runner import RunResult, run_once
@@ -209,52 +210,38 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
         # SCOPE §7: hosted session reuse — local v1 has no hosted sessions.
         console.print("[dim]--reuse-session: hosted sessions unavailable in local v1; ignoring.[/dim]")
 
-    # --- Resolve harness command ---
+    # --- Resolve how to start the agent ---
     # Priority: --command (inline, zero-code) > --harness > harness.json > .checkpoint.json
-    extra_env: dict[str, str] = {}
+    agent_env: dict[str, str] = {}
     if isinstance(_agent_model, str) and _agent_model:
-        extra_env["CHECKPOINT_AGENT_MODEL"] = _agent_model
+        agent_env["CHECKPOINT_AGENT_MODEL"] = _agent_model
+    agent_task_via = "env"
+    agent_task_env = "CHECKPOINT_TASK"
+    agent_task_arg: str | None = None
     if inline_command:
-        # Zero-code path: pass the user's command verbatim. The runner already
-        # shlex-splits it with the right posix flag for the platform. Task
-        # injection happens via the sentinel env vars below.
         harness_cmd_str = inline_command
-        chosen_via = task_via or "env"
-        if chosen_via == "env":
-            # Default — runner injects CHECKPOINT_TASK as env var (already does).
-            if task_env and task_env != "CHECKPOINT_TASK":
-                extra_env["CHECKPOINT_TASK_ENV"] = task_env
-        elif chosen_via == "arg":
-            extra_env["CHECKPOINT_TASK_VIA"] = "arg"
-            if task_arg:
-                extra_env["CHECKPOINT_TASK_ARG"] = task_arg
-        elif chosen_via == "stdin":
-            extra_env["CHECKPOINT_TASK_VIA"] = "stdin"
-        elif chosen_via == "none":
-            extra_env["CHECKPOINT_TASK_VIA"] = "none"
+        agent_task_via = task_via or "env"
+        agent_task_env = task_env or "CHECKPOINT_TASK"
+        agent_task_arg = task_arg
     else:
         harness_cmd_str = harness
         if not harness_cmd_str:
-            # Try a v2 declarative harness.json first (command-based, zero
-            # user code). Fall back to legacy {"path": "..."} or to
-            # .checkpoint.json's harness.path.
+            # A declarative harness.json (command-based, zero user code), else the
+            # legacy {"path": "..."} form or .checkpoint.json's harness.path.
             v2_spec = _maybe_load_v2_harness(harness_cfg.source_path)
             if v2_spec is not None:
                 harness_cmd_str = " ".join(v2_spec.argv)
-                if v2_spec.task_via != "env":
-                    extra_env["CHECKPOINT_TASK_VIA"] = v2_spec.task_via
-                if v2_spec.task_arg and v2_spec.task_via == "arg":
-                    extra_env["CHECKPOINT_TASK_ARG"] = v2_spec.task_arg
+                agent_task_via = v2_spec.task_via
+                agent_task_env = v2_spec.task_env
+                agent_task_arg = v2_spec.task_arg
                 for k, v in v2_spec.env.items():
-                    extra_env.setdefault(k, v)
+                    agent_env.setdefault(k, v)
             elif harness_cfg.path:
                 harness_cmd_str = f"{sys.executable} {harness_cfg.path}"
             elif ckpt_cfg.harness_path:
                 harness_cmd_str = f"{sys.executable} {ckpt_cfg.harness_path}"
-
-    # Push extra env into the process so the runner picks it up.
-    for k, v in extra_env.items():
-        os.environ[k] = v
+    if agent_task_via == "none":  # the command already carries the task
+        agent_task_via = "env"
 
     if harness_cmd_str:
         harness_cmd_str = _normalize_harness_arg(harness_cmd_str)
@@ -269,18 +256,6 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
         console.print("[red]Provide a scenario file/dir or --task[/red]")
         sys.exit(2)
     scenario_files, is_directory = resolved
-
-    # Surface runtime knobs to the runner via env vars (kept out of run_once
-    # signatures to avoid a 7-arg function and to remain backwards-compatible).
-    if rate_limit is not None:
-        os.environ["CHECKPOINT_RUNTIME_RATE_LIMIT"] = str(rate_limit)
-    if read_only:
-        os.environ["CHECKPOINT_RUNTIME_READ_ONLY"] = "1"
-
-    if quiet and output_format != "json":
-        # Quiet mode without JSON still emits the final per-scenario score line
-        # but suppresses the noisy rich panels per individual run.
-        os.environ["CHECKPOINT_RUNTIME_QUIET"] = "1"
 
     # Docker-mode preflight: verify the daemon is reachable BEFORE we spend
     # time spinning up twins / building images. The CHECKPOINT_NO_DOCKER env
@@ -308,9 +283,9 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
     # Docker mode delivers the task only via the CHECKPOINT_TASK env var; the
     # arg/stdin injection modes are a subprocess-mode feature. Fail loudly
     # rather than silently ignoring the flag (B6).
-    if docker and extra_env.get("CHECKPOINT_TASK_VIA") in ("arg", "stdin"):
+    if docker and agent_task_via in ("arg", "stdin"):
         raise click.UsageError(
-            f"--task-via {extra_env['CHECKPOINT_TASK_VIA']} is not supported in Docker mode "
+            f"--task-via {agent_task_via} is not supported in Docker mode "
             "(the task is delivered via the CHECKPOINT_TASK env var). "
             "Use --task-via env (the default), or pass --no-docker for subprocess mode."
         )
@@ -412,9 +387,16 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
                 suffix = "…" if len(scenario.prompt) > 240 else ""
                 console.print(f"[dim]Task:[/dim] {preview}{suffix}")
 
-        # On Windows, shlex.split with posix=True treats backslashes as escape
-        # chars, mangling Windows paths. posix=False preserves them as literals.
-        harness_cmd = shlex.split(harness_cmd_str, posix=sys.platform != "win32") if harness_cmd_str else []
+        harness_cmd = split_command(harness_cmd_str) if harness_cmd_str else []
+        run_agent = Agent(
+            command=harness_cmd or ("",), cwd=cwd, env=agent_env, task_via=agent_task_via,
+            task_env=agent_task_env, task_arg=agent_task_arg,
+        ) if harness_cmd else None
+        run_options = RunOptions(
+            judge_model=resolution.model,
+            faults={"*": {"rate_limit": rate_limit}} if rate_limit is not None else {},
+            read_only=read_only,
+        )
 
         # Snapshot harness identity so it lands in every run record. Without
         # this the dashboard can't tell you which agent produced a run.
@@ -435,7 +417,7 @@ def run(scenario_path, harness, inline_command, task_via, task_env, task_arg,
                 hdir = Path(harness_dir or cwd or ".").resolve()
                 r = docker_run_once(scenario, harness_cmd, hdir, cwd=cwd, judge_model=resolution.model, verbose=docker_logs)
             else:
-                r = run_once(scenario, harness_cmd, cwd=cwd, judge_model=resolution.model)
+                r = run_once(scenario, harness_cmd, agent=run_agent, options=run_options)
             durations_ms.append((time.perf_counter() - _t0) * 1000)
             results.append(r)
             if not quiet and output_format != "json":
@@ -735,6 +717,10 @@ def _persist_run_record(
         failure_analysis=failure_analysis or None,
         harness=harness,
         duration_ms=duration_ms,
+        run_id=getattr(r, "run_id", None) or None,
+        warnings=getattr(r, "warnings", None),
+        egress=getattr(r, "egress", None),
+        twins=getattr(r, "twins", None),
     )
     try:
         path = write_record(record)

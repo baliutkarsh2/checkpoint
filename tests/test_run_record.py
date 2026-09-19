@@ -22,23 +22,12 @@ class _C:
     evaluator: str
 
 
-def test_run_id_is_stable_with_same_inputs():
-    a = make_run_id("scenarios/a.md", "2026-05-12T12:00:00Z")
-    b = make_run_id("scenarios/a.md", "2026-05-12T12:00:00Z")
-    assert a == b
-    assert len(a) == 12
-
-
-def test_run_id_differs_per_scenario():
-    a = make_run_id("scenarios/a.md", "2026-05-12T12:00:00Z")
-    b = make_run_id("scenarios/b.md", "2026-05-12T12:00:00Z")
-    assert a != b
-
-
-def test_run_id_differs_per_timestamp():
-    a = make_run_id("scenarios/a.md", "2026-05-12T12:00:00Z")
-    b = make_run_id("scenarios/a.md", "2026-05-12T12:00:01Z")
-    assert a != b
+def test_run_ids_are_unique_even_within_one_second():
+    # Runs of the same scenario routinely start in the same second; ids derived
+    # from (path, timestamp) collided and runs overwrote each other's records.
+    ids = {make_run_id() for _ in range(500)}
+    assert len(ids) == 500
+    assert all(len(i) == 12 for i in ids)
 
 
 def test_build_record_satisfaction_and_criteria():

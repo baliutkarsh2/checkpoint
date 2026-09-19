@@ -9,7 +9,6 @@ runner's normal `run_once` path; we use a no-op harness that exits 0 with
 from __future__ import annotations
 
 import json
-import os
 import sys
 
 import pytest
@@ -26,8 +25,6 @@ NOOP_HARNESS = (
 @pytest.fixture
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))
-    monkeypatch.setenv("CHECKPOINT_RUNTIME_RATE_LIMIT", "")
-    monkeypatch.setenv("CHECKPOINT_RUNTIME_READ_ONLY", "")
     return tmp_path
 
 
@@ -59,7 +56,7 @@ def test_run_json_output_contains_summary(isolated_home, scenario_in_tmp, monkey
     from checkpoint import runner as _runner
     from checkpoint.runner import CriterionResult, RunResult
 
-    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
+    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini", **kwargs):
         return RunResult(
             final_answer="ok", stderr="", exit_code=0, trace=[], state={},
             criteria=[CriterionResult(text="Exactly 0 issue exists", kind="D",
@@ -120,7 +117,7 @@ def test_keep_state_removes_seed_keys(isolated_home, tmp_path, monkeypatch):
     captured = {}
     from checkpoint import runner as _runner
 
-    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
+    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini", **kwargs):
         captured["seed"] = scenario.config.get("seed")
         captured["seed_file"] = scenario.config.get("seed-file")
         captured["setup"] = scenario.setup
@@ -162,7 +159,7 @@ def test_seed_file_flag_overrides_scenario(isolated_home, tmp_path, monkeypatch)
     captured = {}
     from checkpoint import runner as _runner
 
-    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
+    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini", **kwargs):
         captured["seed_file"] = scenario.config.get("seed-file")
         from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
@@ -200,7 +197,7 @@ def test_setup_file_flag_replaces_setup_prose(isolated_home, tmp_path, monkeypat
     captured = {}
     from checkpoint import runner as _runner
 
-    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
+    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini", **kwargs):
         captured["setup"] = scenario.setup
         from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
@@ -239,15 +236,13 @@ def test_setup_file_flag_replaces_setup_prose(isolated_home, tmp_path, monkeypat
 # --rate-limit / --read-only set the runtime env vars the runner reads
 # ---------------------------------------------------------------------------
 
-def test_rate_limit_flag_sets_env(isolated_home, scenario_in_tmp, monkeypatch):
-    """The `--rate-limit` flag should poke `CHECKPOINT_RUNTIME_RATE_LIMIT`
-    *before* run_once executes."""
+def test_rate_limit_and_read_only_flags_reach_the_run(isolated_home, scenario_in_tmp, monkeypatch):
+    """`--rate-limit` and `--read-only` travel to the run as typed options."""
     seen = {}
     from checkpoint import runner as _runner
 
-    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini"):
-        seen["rate"] = os.environ.get("CHECKPOINT_RUNTIME_RATE_LIMIT")
-        seen["ro"] = os.environ.get("CHECKPOINT_RUNTIME_READ_ONLY")
+    def fake_run_once(scenario, harness_cmd, cwd=None, judge_model="gpt-4o-mini", **kwargs):
+        seen["options"] = kwargs["options"]
         from checkpoint.runner import CriterionResult, RunResult
         return RunResult(
             final_answer="x", stderr="", exit_code=0, trace=[], state={},
@@ -267,5 +262,5 @@ def test_rate_limit_flag_sets_env(isolated_home, scenario_in_tmp, monkeypatch):
                "--no-failure-analysis"]
     )
     assert r.exit_code == 0, r.output
-    assert seen["rate"] == "5"
-    assert seen["ro"] == "1"
+    assert seen["options"].faults == {"*": {"rate_limit": 5}}
+    assert seen["options"].read_only is True

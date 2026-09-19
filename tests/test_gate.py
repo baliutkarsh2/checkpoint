@@ -20,6 +20,24 @@ FAKE_HARNESS = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"
 
 # --- Wilson interval --------------------------------------------------------
 
+
+class _NullSandbox:
+    """Stands in for a real sandbox when the per-run function is stubbed."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+def _stub_runs(monkeypatch, fn):
+    monkeypatch.setattr(gate_engine, "Sandbox", _NullSandbox)
+    monkeypatch.setattr(gate_engine, "run_scenario", fn)
+
 def test_wilson_bounds_in_unit_interval():
     for passes, n in [(0, 5), (5, 5), (3, 10), (1, 100)]:
         ci = wilson_interval(passes, n)
@@ -95,7 +113,7 @@ class _FakeResult:
 def test_run_gate_ship_with_stubbed_runner(tmp_path, monkeypatch):
     scn = tmp_path / "s.md"
     scn.write_text("# s\n## Prompt\ndo\n## Success Criteria\n- [D] x exists\n## Config\nclones: github\n")
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
     assert res.verdict == "SHIP" and res.exit_code == 0
     assert res.scenarios[0].passes == 20
@@ -104,7 +122,7 @@ def test_run_gate_ship_with_stubbed_runner(tmp_path, monkeypatch):
 def test_run_gate_block_with_stubbed_runner(tmp_path, monkeypatch):
     scn = tmp_path / "s.md"
     scn.write_text("# s\n## Prompt\ndo\n## Success Criteria\n- [D] x exists\n## Config\nclones: github\n")
-    monkeypatch.setattr(gate_engine, "run_once", lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
     assert res.verdict == "BLOCK" and res.exit_code == 1
 

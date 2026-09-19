@@ -192,7 +192,6 @@ def test_evaluate_makes_no_llm_call_on_failure(monkeypatch):
     assert result.criteria[0].passed is False
     assert result.criteria[0].evaluator == "deterministic"
     assert calls == []  # no OpenAI client was ever constructed
-    assert result.failure_analysis is None  # runner no longer populates it
 
     # The duplicate-analysis machinery is gone for good.
     assert not hasattr(runner, "_maybe_analyze_failures")
