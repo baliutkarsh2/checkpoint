@@ -127,6 +127,34 @@ class ConfigError(ValueError):
     """An invalid ``/_config`` or seed ``config`` payload."""
 
 
+_FAIL_RULE_KEYS = {"method", "path", "status", "times", "message"}
+
+
+def _fail_rule_problem(raw: Any) -> str | None:
+    """Why ``raw`` is not a valid fail rule, or None."""
+    if not isinstance(raw, dict):
+        return f"fail rule must be an object, got {raw!r}"
+    unknown = set(raw) - _FAIL_RULE_KEYS
+    if unknown:
+        return f"fail rule has unknown keys {sorted(unknown)}"
+    status, times = raw.get("status", 500), raw.get("times")
+    if not isinstance(status, int) or isinstance(status, bool) or not 400 <= status <= 599:
+        return f"fail rule status must be an integer 400-599, got {status!r}"
+    if times is not None and (not isinstance(times, int) or isinstance(times, bool) or times < 0):
+        return f"fail rule times must be a non-negative integer, got {times!r}"
+    if not _is_regex(str(raw.get("path", ".*"))):
+        return f"fail rule path is not a valid regular expression: {raw.get('path')!r}"
+    return None
+
+
+def _is_regex(pattern: str) -> bool:
+    try:
+        re.compile(pattern)
+    except re.error:
+        return False
+    return True
+
+
 @dataclass
 class FailRule:
     method: str
@@ -136,26 +164,14 @@ class FailRule:
     message: str
 
     @classmethod
-    def parse(cls, raw: Any) -> FailRule:
-        if not isinstance(raw, dict):
-            raise ConfigError(f"fail rule must be an object, got {raw!r}")
-        unknown = set(raw) - {"method", "path", "status", "times", "message"}
-        if unknown:
-            raise ConfigError(f"fail rule has unknown keys {sorted(unknown)}")
-        try:
-            status = int(raw.get("status", 500))
-            times = raw.get("times")
-            times = None if times is None else int(times)
-            pattern = re.compile(str(raw.get("path", ".*")))
-        except (TypeError, ValueError, re.error) as e:
-            raise ConfigError(f"invalid fail rule {raw!r}: {e}") from e
-        if not 400 <= status <= 599:
-            raise ConfigError(f"fail rule status must be 4xx/5xx, got {status}")
+    def parse(cls, raw: dict) -> FailRule:
+        """Build a rule from input already accepted by ``_fail_rule_problem``."""
+        status = int(raw.get("status", 500))
         return cls(
             method=str(raw.get("method", "*")).upper(),
-            path=pattern,
+            path=re.compile(str(raw.get("path", ".*"))),
             status=status,
-            times=times,
+            times=raw.get("times"),
             message=str(raw.get("message") or f"Injected failure ({status})"),
         )
 
@@ -179,7 +195,7 @@ class Twin:
     trace: list
     fresh_state: Callable[[], dict]
     seeds_dir: Path | None = None
-    error: ErrorFactory = default_error
+    error: ErrorFactory = field(default_factory=lambda: default_error)
     authenticate: Authenticator | None = None
     on_response: ResponseHook | None = None
     after_seed: SeedHook | None = None
@@ -215,31 +231,52 @@ class Twin:
                 config[key] = _copy(value)
         return config
 
-    def configure(self, updates: dict) -> dict:
-        """Validate and apply config updates; raise ConfigError on bad input."""
+    def config_problem(self, updates: Any) -> str | None:
+        """Why ``updates`` is not a valid config change, or None."""
         if not isinstance(updates, dict):
-            raise ConfigError("config must be a JSON object")
+            return "config must be a JSON object"
         allowed = set(DEFAULT_FAULTS) | set(self.knobs) | set(self.config)
         unknown = sorted(set(updates) - allowed)
         if unknown:
-            raise ConfigError(
-                f"unknown config key(s) {unknown} for the {self.name} twin; "
-                f"supported: {sorted(allowed)}"
-            )
-        staged = dict(self.config)
-        staged.update(updates)
-        rules = [FailRule.parse(r) for r in staged.get("fail") or []]
-        _validate_faults(staged)
+            return (f"unknown config key(s) {unknown} for the {self.name} twin; "
+                    f"supported: {sorted(allowed)}")
+        staged = {**self.config, **updates}
+        rules = staged.get("fail") or []
+        if not isinstance(rules, list):
+            return "fail must be a list of rules"
+        for rule in rules:
+            problem = _fail_rule_problem(rule)
+            if problem:
+                return problem
+        return _fault_problem(staged)
+
+    def configure(self, updates: dict) -> dict:
+        """Validate and apply config updates; raise ConfigError on bad input."""
+        problem = self.config_problem(updates)
+        if problem:
+            raise ConfigError(problem)
+        staged = {**self.config, **updates}
         self.config.clear()
         self.config.update(staged)
-        self._rules = rules
+        self._rules = [FailRule.parse(r) for r in staged.get("fail") or []]
         if "fault_seed" in updates:
             self._rng = random.Random(self.config.get("fault_seed", 0))
         return self.config
 
-    def load_seed(self, data: dict) -> None:
+    def seed_problem(self, data: Any) -> str | None:
+        """Why ``data`` is not a valid seed, or None."""
         if not isinstance(data, dict):
-            raise ConfigError("seed must be a JSON object")
+            return "seed must be a JSON object"
+        if not isinstance(data.get("state") or {}, dict):
+            return "seed state must be a JSON object"
+        if data.get("config"):
+            return self.config_problem(data["config"])
+        return None
+
+    def load_seed(self, data: dict) -> None:
+        problem = self.seed_problem(data)
+        if problem:
+            raise ConfigError(problem)
         self.reset()
         for key, value in (data.get("state") or {}).items():
             if isinstance(value, dict) and isinstance(self.state.get(key), dict):
@@ -392,11 +429,11 @@ def install(app: FastAPI, twin: Twin) -> Twin:
 
     @app.post("/_config", include_in_schema=False)
     async def _set_config(request: Request) -> Response:
-        try:
-            config = twin.configure(await _json(request))
-        except ConfigError as e:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
-        return JSONResponse({"ok": True, "config": config})
+        body, problem = await _json(request)
+        problem = problem or twin.config_problem(body)
+        if problem:
+            return _bad_request(problem)
+        return JSONResponse({"ok": True, "config": twin.configure(body)})
 
     @app.get("/_seeds", include_in_schema=False)
     def _seeds() -> dict:
@@ -415,18 +452,20 @@ def install(app: FastAPI, twin: Twin) -> Twin:
                 "error": f"seed {name!r} not found for the {twin.name} twin",
                 "available": twin.seed_names(),
             })
-        try:
-            twin.load_seed(json.loads(path.read_text(encoding="utf-8")))
-        except ConfigError as e:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+        data = json.loads(path.read_text(encoding="utf-8"))
+        problem = twin.seed_problem(data)
+        if problem:
+            return _bad_request(f"bundled seed {name!r} is invalid: {problem}")
+        twin.load_seed(data)
         return JSONResponse({"ok": True, "seed": name, "config": twin.config})
 
     @app.post("/_seed-file", include_in_schema=False)
     async def _seed_file(request: Request) -> Response:
-        try:
-            twin.load_seed(await _json(request))
-        except ConfigError as e:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+        data, problem = await _json(request)
+        problem = problem or twin.seed_problem(data)
+        if problem:
+            return _bad_request(problem)
+        twin.load_seed(data)
         return JSONResponse({"ok": True, "config": twin.config})
 
     return twin
@@ -456,33 +495,33 @@ def default_classify(method: str, path: str) -> tuple[Op, str]:
     return _METHOD_OPS.get(method.upper(), "other"), resource
 
 
-def _validate_faults(cfg: dict) -> None:
-    def _num(key: str, lo: float, hi: float | None = None) -> None:
+def _fault_problem(cfg: dict) -> str | None:
+    """Why the numeric fault settings in ``cfg`` are out of range, or None."""
+    bounds = {"rate_limit": (0, None), "latency_ms": (0, 60_000), "error_rate": (0, 1)}
+    for key, (lo, hi) in bounds.items():
         value = cfg.get(key)
         if value is None:
-            return
-        try:
-            v = float(value)
-        except (TypeError, ValueError) as e:
-            raise ConfigError(f"{key} must be a number, got {value!r}") from e
-        if v < lo or (hi is not None and v > hi):
-            raise ConfigError(f"{key} must be in [{lo}, {hi if hi is not None else 'inf'}], got {v}")
-
-    _num("rate_limit", 0)
-    _num("latency_ms", 0, 60_000)
-    _num("error_rate", 0, 1)
-    if not isinstance(cfg.get("fail") or [], list):
-        raise ConfigError("fail must be a list of rules")
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"{key} must be a number, got {value!r}"
+        if value < lo or (hi is not None and value > hi):
+            return f"{key} must be in [{lo}, {hi if hi is not None else 'inf'}], got {value}"
+    return None
 
 
-async def _json(request: Request) -> Any:
+def _bad_request(problem: str) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"ok": False, "error": problem})
+
+
+async def _json(request: Request) -> tuple[Any, str | None]:
+    """The request's JSON body and, if it is not valid JSON, why."""
     raw = await request.body()
     if not raw:
-        return {}
+        return {}, None
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ConfigError(f"body is not valid JSON: {e}") from e
+        return json.loads(raw), None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, "body is not valid JSON"
 
 
 def _decode(raw: bytes) -> Any:
