@@ -162,11 +162,15 @@ def test_twin_204_and_state_through_the_proxy(github_proxy, github_twin, ca):
     with httpx.Client(proxy=github_proxy.client_env()["HTTPS_PROXY"], verify=trust,
                       trust_env=False, timeout=30) as client:
         client.post("https://api.github.com/user/repos", json={"name": name}).raise_for_status()
-        refs = f"https://api.github.com/repos/default-user/{name}/git/refs"
-        client.post(refs, json={"ref": "refs/heads/topic"}).raise_for_status()
+        repo = f"https://api.github.com/repos/default-user/{name}"
+        main = client.get(f"{repo}/branches/main").json()
+        refs = f"{repo}/git/refs"
+        # GitHub requires the sha a new ref points at, and so does the twin.
+        client.post(refs, json={"ref": "refs/heads/topic",
+                                "sha": main["commit"]["sha"]}).raise_for_status()
         deleted = client.delete(f"{refs}/heads/topic")
         assert deleted.status_code == 204 and deleted.content == b""
-        branches = client.get(f"https://api.github.com/repos/default-user/{name}/branches")
+        branches = client.get(f"{repo}/branches")
     assert [b["name"] for b in branches.json()] == ["main"]
     state = httpx.get(f"{github_twin}/_state").json()
     assert f"default-user/{name}" in state["repos"]
