@@ -306,7 +306,7 @@ This is non-negotiable.  Real SDKs branch on these shapes; a wrong-shape error b
 ### Runtime knobs (`/_config`)
 
 Each twin's `/_config` accepts a small set of keys:
-- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.
+- `rate_limit: int` — return 429 after N requests.  Currently fully enforced by the github twin; others honor the field but enforcement is per-twin.  The github twin hands the budget back a few seconds later (the epoch it advertises in `X-RateLimit-Reset`), so an agent that honors `Retry-After` recovers instead of retrying against a counter that never resets.
 - `permissions_denied: bool` — return 403 on any mutating method.
 - `read_only: bool` — same as permissions_denied but with a Checkpoint-flavored message; also enforced by the runner's pre/post state-snapshot diff so other twins are covered even if their middleware hasn't been updated.
 
