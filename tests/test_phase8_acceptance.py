@@ -52,13 +52,6 @@ class _AlwaysPassCompletions:
 
     def create(self, **kw):
         self.calls.append(kw)
-        # Find the criteria list in the prompt; reply with one passing
-        # verdict per criterion in the same order.
-        user_msg = ""
-        for m in kw.get("messages", []):
-            if m.get("role") == "user":
-                user_msg = m.get("content", "")
-                break
         # The judge prompt lists criteria as numbered/bulleted lines. We
         # don't need to parse them — just reply with a single batch that
         # passes everything; the judge does positional fallback alignment
@@ -72,7 +65,10 @@ class _AlwaysPassCompletions:
         # Stage-2 [D] LLM-JSON path expects a single JSON object; we return
         # one that won't match any real resource so callers fall through
         # to the [P] judge. Distinguish by inspecting the prompt content.
-        if "assertion" in user_msg.lower() or "resource" in user_msg.lower():
+        # Tell the two apart by the system prompt: the judge's names its job.
+        system_msg = next((m.get("content", "") for m in kw.get("messages", [])
+                           if m.get("role") == "system"), "")
+        if "met specific success criteria" not in system_msg:
             content = json.dumps({
                 "resource": "unknown_for_fall_through",
                 "selector": None,
