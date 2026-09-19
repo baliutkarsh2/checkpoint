@@ -1646,9 +1646,13 @@ def mcp_cmd():
 @click.option("--block-max", type=float, default=None,
               help="CI upper bound (0-1) at/under which to BLOCK. [default: 0.50]")
 @click.option("--confidence", type=float, default=0.95, show_default=True,
-              help="Confidence level for the interval.")
+              help="Confidence level for the interval (exact, any value in 0-1).")
+@click.option("--regression-drop", type=float, default=None,
+              help="Pass-rate drop vs the baseline that flags a regression. [default: 0.20]")
+@click.option("--allow-conditional", is_flag=True, default=False,
+              help="Exit 0 on CONDITIONAL too. Never covers INCONCLUSIVE/BLOCK/ERROR.")
 @click.option("--strict", is_flag=True, default=False,
-              help="Exit non-zero on CONDITIONAL as well as BLOCK.")
+              help="Refuse CONDITIONAL even with --allow-conditional (already the default).")
 @click.option("--judge-model", default=None, help="Model for [P] LLM-judged criteria.")
 @click.option("--agent", default=None, help="Agent name recorded in the certificate.")
 @click.option("--certificate", "cert_path", type=click.Path(dir_okay=False), default=None,
@@ -1658,25 +1662,50 @@ def mcp_cmd():
 @click.option("-o", "--output", "output_format",
               type=click.Choice(["text", "json"]), default="text", show_default=True)
 def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
-         strict, judge_model, agent, cert_path, no_baseline, output_format):
-    """Statistically gate an agent: run each scenario N times and decide
-    SHIP / CONDITIONAL / BLOCK from the pass-rate distribution (not one run).
+         regression_drop, allow_conditional, strict, judge_model, agent, cert_path,
+         no_baseline, output_format):
+    """Statistically gate an agent: run each scenario N times and decide from the
+    pass-rate distribution (not one lucky run).
 
-    Exit code is 0 for SHIP (and CONDITIONAL unless --strict), 1 for BLOCK.
+    \b
+    Verdict       Exit  Meaning
+    SHIP           0    every scenario confidently passes
+    BLOCK          1    a confident failure, a regression, or a scenario that
+                        failed every run
+    CONDITIONAL    2    enough runs to decide, results genuinely mixed
+                        (0 with --allow-conditional)
+    INCONCLUSIVE   3    too few runs for SHIP to be reachable — the output says
+                        how many it needs
+    ERROR          4    sandbox / judge / scenario plumbing broke; no pass-fail
+                        verdict is possible
+
+    Only SHIP is green by default. Scenario files that carry no task or no
+    success criteria (a README, say) are skipped and reported, never run; a
+    target that matches no scenario at all is an ERROR.
+
+    Pass rates are remembered per scenario (relative path + a hash of its
+    criteria) in .checkpoint/baselines.json and updated only on a SHIP, so a
+    build that used to pass and now fails reads as a regression rather than
+    quietly resetting the bar. `--no-baseline` disables both sides.
     """
     import json as _json
     import shlex as _shlex
 
     from .gate import GatePolicy, run_gate
 
-    policy = GatePolicy(
-        runs=runs if runs is not None else 20,
-        pass_threshold=pass_threshold if pass_threshold is not None else 80.0,
-        confidence=confidence,
-        ship_min=ship_min if ship_min is not None else 0.80,
-        block_max=block_max if block_max is not None else 0.50,
-        strict=strict,
-    )
+    try:
+        policy = GatePolicy(
+            runs=runs if runs is not None else 20,
+            pass_threshold=pass_threshold if pass_threshold is not None else 80.0,
+            confidence=confidence,
+            ship_min=ship_min if ship_min is not None else 0.80,
+            block_max=block_max if block_max is not None else 0.50,
+            regression_drop=regression_drop if regression_drop is not None else 0.20,
+            allow_conditional=allow_conditional,
+            strict=strict,
+        )
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
     harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
     jm = judge_model or "gpt-4o-mini"
 
@@ -1688,25 +1717,19 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         mark = "[green]P[/green]" if (complete and score >= policy.pass_threshold) else "[red]F[/red]"
         console.print(f"[dim]{name}[/dim]  run {i}/{total}  {mark} {score:.0f}/100", highlight=False)
 
-    baselines = None
-    if not no_baseline:
-        from .gate import baseline as _baseline
-        baselines = _baseline.load(Path(target))
+    from .gate import baseline as _baseline
+
+    baselines = None if no_baseline else _baseline.load(Path(target))
 
     result = run_gate(Path(target), harness_cmd, policy, judge_model=jm,
                       progress=_progress, baselines=baselines)
 
-    if not no_baseline:
-        from .gate import baseline as _baseline
-        # Never let a failing run rewrite the baseline. Otherwise the run that
-        # BLOCKs on a regression records its own degraded rate, and re-running
-        # the identical broken build sees no drop — the gate silently flips from
-        # BLOCK to CONDITIONAL. Regressed/failing scenarios keep their old
-        # baseline (save() merges per scenario, so omitting them preserves it).
-        keep = [s for s in result.scenarios
-                if s.classification not in ("regression", "stable_fail")]
-        if keep:
-            _baseline.save(Path(target), keep)
+    baseline_written: list[str] = []
+    if not no_baseline and result.verdict == "SHIP":
+        # Only a SHIP moves the bar. A gate that recorded flaky or failing rates
+        # ratcheted itself downward: the run that should BLOCK on a regression
+        # wrote its own degraded rate, and the next identical run saw no drop.
+        baseline_written = _baseline.save(Path(target), result.scenarios)
 
     cert_written: str | None = None
     if cert_path:
@@ -1730,6 +1753,10 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
                 "runs": policy.runs, "pass_threshold": policy.pass_threshold,
                 "confidence": policy.confidence, "ship_min": policy.ship_min,
                 "block_max": policy.block_max, "strict": policy.strict,
+                "regression_drop": policy.regression_drop,
+                "allow_conditional": policy.allow_conditional,
+                # Runs a flawless scenario needs before SHIP is reachable at all.
+                "runs_needed_to_ship": policy.min_runs_to_ship,
             },
             "scenarios": [{
                 "scenario": s.scenario, "n": s.n, "passes": s.passes,
@@ -1740,8 +1767,17 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
                                for k in (1, 2, 5, 10) if k <= s.n},
                 "classification": s.classification,
                 "mean_score": round(s.mean_score, 2),
+                "runs_needed_to_ship": s.min_runs,
+                "error_runs": s.error_runs,
+                "errors": s.error_reasons,
+                "baseline_rate": s.baseline_rate,
+                "criteria_hash": s.criteria_hash,
+                "evidence": s.evidence(),
             } for s in result.scenarios],
+            "skipped": [{"path": sk.path, "reason": sk.reason} for sk in result.skipped],
             "errors": result.errors,
+            "notes": result.notes,
+            "baseline_updated": baseline_written,
             "certificate": cert_written,
         }))
         sys.exit(result.exit_code)
@@ -1755,8 +1791,8 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
     table.add_column(f"{int(policy.confidence * 100)}% CI", justify="center")
     table.add_column(f"pass^{k_headline}", justify="right")
     table.add_column("Verdict")
-    _cls_color = {"stable_pass": "green", "stable_fail": "red",
-                  "regression": "red", "flaky": "yellow"}
+    _cls_color = {"stable_pass": "green", "stable_fail": "red", "regression": "red",
+                  "flaky": "yellow", "inconclusive": "yellow", "error": "red"}
     for s in result.scenarios:
         color = _cls_color.get(s.classification, "white")
         k = min(k_headline, s.n)
@@ -1770,17 +1806,32 @@ def gate(target, harness, runs, pass_threshold, ship_min, block_max, confidence,
         )
     console.print(table)
 
+    # What the evidence supports, per scenario — including, when the gate cannot
+    # decide, the number of runs that would let it.
+    for s in result.scenarios:
+        console.print(f"  [dim]{s.scenario}: {s.evidence()}[/dim]", highlight=False)
+
+    for skipped in result.skipped:
+        console.print(f"[dim]skipped {skipped.path}: {skipped.reason}[/dim]")
+    for note in result.notes:
+        console.print(f"[dim]{note}[/dim]")
+
     if result.errors:
         console.print(f"[yellow]{len(result.errors)} run error(s):[/yellow]")
         for e in result.errors[:10]:
             console.print(f"  [dim]{e}[/dim]")
 
-    verdict_style = {"SHIP": "bold green", "CONDITIONAL": "bold yellow", "BLOCK": "bold red"}[result.verdict]
+    verdict_style = {"SHIP": "bold green", "CONDITIONAL": "bold yellow",
+                     "INCONCLUSIVE": "bold yellow", "BLOCK": "bold red",
+                     "ERROR": "bold red"}[result.verdict]
     console.print(Panel.fit(
-        f"[{verdict_style}]{result.verdict}[/{verdict_style}]",
+        f"[{verdict_style}]{result.verdict}[/{verdict_style}]  [dim]exit {result.exit_code}[/dim]",
         title="gate verdict",
         border_style=verdict_style.split()[-1],
     ))
+    if baseline_written:
+        console.print(f"[dim]Baseline updated for {len(baseline_written)} scenario(s) "
+                      f"in {_baseline.baseline_path()}[/dim]")
     if cert_written:
         console.print(f"[dim]Signed certificate written to {cert_written}[/dim]")
     sys.exit(result.exit_code)
@@ -1875,7 +1926,10 @@ def redteam(harness, pack_dir, runs, pass_threshold, judge_model, output_format)
         )
         sys.exit(2)
 
-    policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
+    try:
+        policy = GatePolicy(runs=runs, pass_threshold=pass_threshold)
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
     harness_cmd = _shlex.split(harness, posix=(os.name != "nt"))
     jm = judge_model or "gpt-4o-mini"
 

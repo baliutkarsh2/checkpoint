@@ -22,6 +22,11 @@ from .twins import registry as twin_registry
 if TYPE_CHECKING:
     from .engine import Agent, RunOptions
 
+#: Prefix on the reasoning of a criterion the judge could not evaluate (no key,
+#: rate limit, network). Callers that aggregate runs — the gate — key off it to
+#: tell "our evaluator broke" from "the agent got it wrong".
+JUDGE_FAILURE_PREFIX = "Judge failed: "
+
 
 @dataclass
 class CriterionResult:
@@ -220,7 +225,7 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
         for c in deferred:
             result.criteria.append(CriterionResult(
                 text=c.text, kind=c.kind, passed=False,
-                reasoning=f"Judge failed: {e}", evaluator="llm",
+                reasoning=f"{JUDGE_FAILURE_PREFIX}{e}", evaluator="llm",
             ))
         return
 
