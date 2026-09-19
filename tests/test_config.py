@@ -11,6 +11,7 @@ from checkpoint.config import (
     matches_tag,
     resolve_evaluator_model,
 )
+from checkpoint.llm import DEFAULT_MODEL
 
 # ---- find_upward -----------------------------------------------------------
 
@@ -128,7 +129,7 @@ def test_resolve_evaluator_env_beats_default():
 
 def test_resolve_evaluator_default():
     r = resolve_evaluator_model(None, None, None, None)
-    assert r.model == "gpt-4o-mini" and r.source == "default"
+    assert r.model == DEFAULT_MODEL and r.source == "default"
 
 
 def test_resolve_evaluator_empty_string_treated_as_none():

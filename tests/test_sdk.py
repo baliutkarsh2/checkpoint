@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+from checkpoint.llm import DEFAULT_MODEL
 from checkpoint.runner import CriterionResult, RunResult
 from checkpoint.sdk import (
     Checkpoint,
@@ -33,7 +34,7 @@ def test_run_config_defaults():
     cfg = RunConfig()
     assert cfg.clones == ["github"]
     assert cfg.seed is None
-    assert cfg.evaluator_model == "gpt-4o-mini"
+    assert cfg.evaluator_model == DEFAULT_MODEL
     assert cfg.timeout == 120
     assert cfg.cwd is None
     assert cfg.harness_cmd == [sys.executable, "harness.py"]

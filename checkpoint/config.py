@@ -7,7 +7,7 @@
     "path": "./harness.py",               # default harness command (file)
     "promptFiles": ["./prompts/**.md"]    # globs (unused by core; for skills)
   },
-  "evaluator": {"model": "<model id>"},
+  "evaluator": {"model": "gpt-5.6-luna"},
   "seeds": {"github": "small-project"}    # default named seeds
 }
 
@@ -150,9 +150,9 @@ def resolve_evaluator_model(
 ) -> EvaluatorResolution:
     """Precedence: flag > scenario > config > env > default.
 
-    A value of None/"" is treated as "not specified". The CLI default for
-    --model is `None` in Phase 4 (was `gpt-4o-mini` in v0) so the precedence
-    chain can actually see whether the user passed it.
+    A value of None/"" is treated as "not specified". The CLI passes `None`
+    rather than a model name, so the precedence chain can see whether the user
+    actually passed one; the default comes from :mod:`checkpoint.llm`.
     """
     if flag_value:
         return EvaluatorResolution(flag_value, "flag")

@@ -10,6 +10,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from checkpoint.dashboard.app import create_app
+from checkpoint.llm import DEFAULT_MODEL
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,7 +99,7 @@ def test_api_meta(client_with_data):
     assert "version" in m
     assert "runs_dir" in m
     assert "scenarios_dir" in m
-    assert m["judge_model_default"] == "gpt-4o-mini"
+    assert m["judge_model_default"] == DEFAULT_MODEL
 
 
 def test_request_id_propagated(client):
