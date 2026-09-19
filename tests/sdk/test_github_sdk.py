@@ -320,7 +320,7 @@ def test_typed_errors(gh, twin):
 def test_bad_credentials_under_strict_auth(twin):
     twin.seed("small-project")
     twin.configure(strict_auth=True)
-    client = github.Github(auth=github.Auth.Token("ghp_not_the_twins_token"),
+    client = github.Github(auth=github.Auth.Token("ghp_CHECKPOINTFAKEnotthetwinstoken"),
                            base_url=twin.url, retry=None)
     with pytest.raises(github.BadCredentialsException):
         client.get_repo("acme/webapp")

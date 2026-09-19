@@ -260,7 +260,7 @@ def test_name_taken_on_duplicate_channel(slack):
 
 def test_strict_auth_rejects_a_foreign_token(twin, empty_slack):
     twin.configure(strict_auth=True)
-    stranger = slack_sdk.WebClient(token="xoxb-not-ours", base_url=f"{twin.url}/api/")
+    stranger = slack_sdk.WebClient(token="xoxb-CHECKPOINTFAKE-not-ours", base_url=f"{twin.url}/api/")
     with pytest.raises(SlackApiError) as caught:
         stranger.auth_test()
     assert caught.value.response["error"] == "invalid_auth"
