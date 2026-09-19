@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import tempfile
+import tomllib
 from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
@@ -77,7 +78,15 @@ def _find_source_root() -> Path | None:
 
 
 def _runtime_requirements() -> list[str]:
-    """Best-effort runtime dependencies for the generated pyproject stub."""
+    """Runtime dependencies for the generated pyproject stub.
+
+    A source checkout is the truth when there is one: installed metadata is a
+    snapshot from install time, so a dependency added since then would be
+    missing from the sidecar image and only fail when the container runs.
+    """
+    from_source = _requirements_from_source()
+    if from_source:
+        return from_source
     for dist in ("checkpoint-agents", "checkpoint"):
         try:
             reqs = metadata.requires(dist)
@@ -92,6 +101,19 @@ def _runtime_requirements() -> list[str]:
         if out:
             return out
     return list(_FALLBACK_REQUIREMENTS)
+
+
+def _requirements_from_source() -> list[str]:
+    """Dependencies from the repository's pyproject.toml, when running from one."""
+    pyproject = _PKG_DIR.parent / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    deps = data.get("project", {}).get("dependencies")
+    return [str(d) for d in deps] if isinstance(deps, list) else []
 
 
 def _assemble_wheel_context(ctx: Path) -> None:
