@@ -11,6 +11,14 @@ with ``.choices[0].message.content``. Non-OpenAI providers are thin adapters tha
 translate to and from that shape, so the call sites — and every existing test
 seam that injects an OpenAI-shaped fake — stay unchanged.
 """
-from .resolve import get_client, provider_for
+from .complete import DEFAULT_MODEL, LLMError, complete_json
+from .resolve import bare_model, get_client, provider_for
 
-__all__ = ["get_client", "provider_for"]
+__all__ = [
+    "DEFAULT_MODEL",
+    "LLMError",
+    "bare_model",
+    "complete_json",
+    "get_client",
+    "provider_for",
+]

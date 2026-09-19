@@ -264,10 +264,15 @@ def _load_clones(registry_path: Path | None) -> list[dict]:
 
 
 def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
-    try:
-        from ..checker import PATTERNS as _checker_patterns
-    except ImportError:
-        _checker_patterns = []
+    """Summarize each scenario, including how many checks are deterministic.
+
+    A criterion counts as deterministic when it already carries an assertion or
+    a pattern compiles one; the rest need a model at run time.
+    """
+    from ..eval import schema_for
+    from ..eval.nl import compile_criterion
+
+    schemas: dict[tuple[str, ...], object] = {}
 
     summaries: list[dict] = []
     total_d = 0
@@ -282,10 +287,15 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
             continue
         if not (scn.prompt or scn.criteria):
             continue
-        d_crits = [c for c in scn.criteria if c.kind == "D"]
+        d_crits = [c for c in scn.criteria if c.kind in ("D", "T")]
         p_crits = [c for c in scn.criteria if c.kind == "P"]
+        key = tuple(sorted(scn.twins))
+        if key not in schemas:
+            schemas[key] = schema_for(scn.twins) if scn.twins else None
+        schema = schemas[key]
         d_hits = sum(
-            1 for c in d_crits if any(pat.search(c.text) for pat, _ in _checker_patterns)
+            1 for c in d_crits
+            if c.assertion or (schema is not None and compile_criterion(c.text, schema) is not None)
         )
         total_d += len(d_crits)
         stage1_hits += d_hits
@@ -295,8 +305,8 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
             {
                 "title": scn.title or md.stem,
                 "path": str(md.relative_to(scenarios_dir)),
-                "clones": ", ".join(scn.clones) if scn.clones else "",
-                "tags": scn.config.get("tags", "") or "",
+                "clones": ", ".join(scn.twins),
+                "tags": ", ".join(scn.tags),
                 "d_count": len(d_crits),
                 "p_count": len(p_crits),
                 "coverage_pct": cov_pct,

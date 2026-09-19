@@ -1,4 +1,4 @@
-"""Trajectory model, metrics, and `[T]` criterion evaluation."""
+"""The trajectory model and metrics, and `[T]` criteria end to end."""
 from __future__ import annotations
 
 import sys
@@ -6,7 +6,6 @@ from pathlib import Path
 
 from checkpoint.scenario import parse
 from checkpoint.trajectory import Trajectory, compute_metrics
-from checkpoint.trajectory.checker import check
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,30 +34,6 @@ def test_metrics():
     assert m.redundant_calls == 1      # the repeated POST
     assert m.distinct_endpoints == 3
     assert m.methods == {"GET": 1, "POST": 2, "DELETE": 1}
-
-
-def _check(text):
-    traj = Trajectory.from_trace(_TRACE)
-    return check(text, traj, compute_metrics(traj))
-
-
-def test_checker_call_budgets():
-    assert _check("at most 10 tool calls")[0] is True
-    assert _check("no more than 2 calls")[0] is False
-    assert _check("at least 3 api calls")[0] is True
-
-
-def test_checker_writes_errors_redundancy_and_methods():
-    assert _check("at most 2 writes")[0] is False       # 3 writes
-    assert _check("no failed calls")[0] is False         # a 404 happened
-    assert _check("no redundant calls")[0] is False      # one repeat
-    assert _check("the agent did not call DELETE")[0] is False
-    assert _check("the agent did not call PUT")[0] is True
-
-
-def test_checker_unrecognized_returns_none():
-    passed, _ = _check("the vibes were good")
-    assert passed is None
 
 
 def test_t_criterion_parsed():
@@ -93,4 +68,5 @@ def test_t_criteria_end_to_end(monkeypatch):
     traj = [c for c in result.criteria if c.kind == "T"]
     assert len(traj) == 3, [c.text for c in result.criteria]
     assert all(c.passed for c in traj), [(c.text, c.reasoning) for c in traj]
-    assert all(c.evaluator == "trajectory" for c in traj)
+    assert all(c.evaluator == "assertion:pattern" for c in traj)
+    assert all(c.assertion for c in traj), [(c.text, c.assertion) for c in traj]

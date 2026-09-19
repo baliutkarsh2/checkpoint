@@ -8,10 +8,12 @@ that archive instead of deleting, which the old checker always scored as pass.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+import importlib
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .expr import World
+from .nl import Schema
 
 
 def build_world(
@@ -49,3 +51,25 @@ def _meta(views: Mapping[str, Mapping[str, dict]], field: str, default: Any) -> 
         twin: {name: view.get(field, default) or default for name, view in colls.items()}
         for twin, colls in views.items()
     }
+
+
+def schema_for(twins: Sequence[str]) -> Schema:
+    """The collections a scenario's twins expose, without starting them.
+
+    Lets `validate` and the dashboard tell an author which criteria will be
+    checked deterministically and which will need a model, before any run.
+    """
+    from checkpoint.twins import registry
+
+    views: dict[str, dict[str, dict]] = {}
+    for name in twins:
+        try:
+            spec = registry.get(name)
+            module = importlib.import_module(spec.app.partition(":")[0])
+        except (KeyError, ImportError):
+            continue
+        twin = getattr(module, "TWIN", None)
+        if twin is None:
+            continue
+        views[spec.name] = {n: v.to_json() for n, v in twin.collection_views().items()}
+    return Schema.from_views(views)

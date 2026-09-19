@@ -45,38 +45,31 @@ class _Resp:
 
 
 class _AlwaysPassCompletions:
-    """Returns 'pass' for every criterion in every batch judge call."""
+    """Answers both model calls a run makes, by looking at what was asked.
+
+    The judge sends `{"criteria": [{"id", "criterion"}]}` and expects a verdict
+    per id; the assertion compiler sends `{"criterion": ...}` and expects an
+    assertion. Here the compiler declines (so the criterion reaches the judge)
+    and the judge passes everything.
+    """
 
     def __init__(self):
         self.calls: list[dict] = []
 
     def create(self, **kw):
         self.calls.append(kw)
-        # The judge prompt lists criteria as numbered/bulleted lines. We
-        # don't need to parse them — just reply with a single batch that
-        # passes everything; the judge does positional fallback alignment
-        # if exact-text alignment misses.
-        # Build a generic 10-slot results list. Each entry passes.
-        results = [
-            {"criterion": f"criterion-{i}", "passed": True,
-             "reasoning": "Synthetic acceptance: assumed pass."}
-            for i in range(10)
-        ]
-        # Stage-2 [D] LLM-JSON path expects a single JSON object; we return
-        # one that won't match any real resource so callers fall through
-        # to the [P] judge. Distinguish by inspecting the prompt content.
-        # Tell the two apart by the system prompt: the judge's names its job.
-        system_msg = next((m.get("content", "") for m in kw.get("messages", [])
-                           if m.get("role") == "system"), "")
-        if "met specific success criteria" not in system_msg:
-            content = json.dumps({
-                "resource": "unknown_for_fall_through",
-                "selector": None,
-                "operator": "exists",
-                "value": None,
-            })
+        request = json.loads(next(
+            (m.get("content", "") for m in kw.get("messages", []) if m.get("role") == "user"),
+            "{}",
+        ) or "{}")
+        if "criteria" in request:
+            content = json.dumps({"results": [
+                {"id": c["id"], "verdict": "pass", "evidence": "state",
+                 "reasoning": "Synthetic acceptance: assumed pass."}
+                for c in request["criteria"]
+            ]})
         else:
-            content = json.dumps({"results": results})
+            content = json.dumps({"assertion": None, "reason": "synthetic: leave it to the judge"})
         return _Resp(choices=[_Choice(message=_Msg(content=content))])
 
 

@@ -12,6 +12,7 @@ import click
 from dotenv import find_dotenv, load_dotenv
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -638,20 +639,30 @@ def _dump(r: RunResult) -> dict:
 
 def _print_run(r: RunResult) -> None:
     if r.error:
-        console.print(f"[red]Error: {r.error}[/red]")
+        console.print(f"[red]Error:[/red] {escape(r.error)}")
         if r.stderr:
-            console.print(Panel(r.stderr, title="stderr (tail)", border_style="red"))
+            console.print(Panel(escape(r.stderr), title="stderr (tail)", border_style="red"))
+    for warning in getattr(r, "warnings", []):
+        console.print(f"[yellow]note:[/yellow] {escape(warning)}")
 
     if r.criteria:
         t = Table(box=box.SIMPLE_HEAD, show_lines=False)
-        t.add_column("", style="dim", width=2)
+        t.add_column("", style="dim", width=4)
         t.add_column("Kind", width=4)
         t.add_column("Criterion")
-        t.add_column("Reasoning", overflow="fold")
-        t.add_column("Eval", style="dim", width=14)
+        t.add_column("Why", overflow="fold")
+        t.add_column("Checked by", style="dim", width=18)
+        marks = {"pass": "[green]PASS[/green]", "fail": "[red]FAIL[/red]",
+                 "error": "[magenta]ERR[/magenta]"}
         for c in r.criteria:
-            mark = "[green]PASS[/green]" if c.passed else "[red]FAIL[/red]"
-            t.add_row(mark, f"[{c.kind}]", c.text, c.reasoning, c.evaluator)
+            status = getattr(c, "status", "") or ("pass" if c.passed else "fail")
+            kind = f"{c.kind}{'!' if getattr(c, 'must_pass', False) else ''}"
+            why = escape(c.reasoning or "")
+            assertion = getattr(c, "assertion", None)
+            if assertion and status != "pass":
+                shown = f"[dim]{escape(assertion)}[/dim]"
+                why = f"{why}\n{shown}" if why else shown
+            t.add_row(marks.get(status, status), f"[{kind}]", escape(c.text), why, escape(c.evaluator))
         console.print(t)
 
     color = "green" if r.score == 100 else ("yellow" if r.score >= 50 else "red")
@@ -913,22 +924,6 @@ def _enumerate_scenarios(root: Path) -> list[dict]:
     return rows
 
 
-def _suggest_reword(text: str) -> str | None:
-    """Return a reword hint when a [D] criterion noun is recognisable but unmatched."""
-    import re as _re
-
-    from .checker import _RESOURCE_MAP
-    t = text.lower()
-    for noun, _twin, _key in _RESOURCE_MAP:
-        if _re.search(r"\b" + _re.escape(noun) + r"\b", t):
-            return (
-                f'Try: "Exactly N {noun}s exist" / '
-                f'"An {noun} titled \\"…\\" exists" / '
-                f'"At least N {noun}s are <state>"'
-            )
-    return None
-
-
 @scenario.command("generate")
 @click.argument("description")
 @click.option("--output", "-o", type=click.Path(dir_okay=False), default=None,
@@ -960,65 +955,6 @@ def scenario_generate(description, output, clone, model):
         console.print(f"[green]Wrote scenario to {output}[/green]")
     else:
         click.echo(content)
-
-
-@scenario.command("coverage")
-@click.argument("path", required=False, type=click.Path(exists=True), default=".")
-@click.option("--json", "as_json", is_flag=True, default=False,
-              help="Emit JSON instead of a table.")
-def scenario_coverage(path, as_json):
-    """Report Stage-1 pattern hit rate for [D] criteria under PATH."""
-    from .checker import PATTERNS as _checker_patterns
-
-    rows = []
-    for md in sorted(Path(path).rglob("*.md")):
-        try:
-            scn = parse_file(md)
-        except Exception:
-            continue
-        if not (scn.prompt or scn.criteria):
-            continue
-        for crit in scn.criteria:
-            if crit.kind != "D":
-                continue
-            hit = any(pat.search(crit.text) for pat, _ in _checker_patterns)
-            rows.append({
-                "scenario": md.name,
-                "criterion": crit.text,
-                "stage1": hit,
-            })
-
-    if as_json:
-        total = len(rows)
-        hit_count = sum(1 for r in rows if r["stage1"])
-        click.echo(json.dumps({
-            "total_d": total,
-            "stage1_hits": hit_count,
-            "stage1_pct": round(100 * hit_count / total, 1) if total else 0,
-            "rows": rows,
-        }, indent=2))
-        return
-
-    if not rows:
-        console.print(f"[yellow]No [D] criteria found under {path}[/yellow]")
-        return
-
-    t = Table(box=box.SIMPLE_HEAD)
-    t.add_column("Scenario")
-    t.add_column("Criterion", overflow="fold")
-    t.add_column("Stage 1?", width=9)
-    for r in rows:
-        mark = "[green]PASS[/green]" if r["stage1"] else "[red]FAIL[/red]"
-        t.add_row(r["scenario"], r["criterion"][:100], mark)
-    console.print(t)
-
-    total = len(rows)
-    hits = sum(1 for r in rows if r["stage1"])
-    pct = 100 * hits // total if total else 0
-    color = "green" if pct >= 80 else ("yellow" if pct >= 50 else "red")
-    console.print(
-        f"\nStage-1 coverage: [{color}]{hits}/{total} ({pct}%)[/{color}] of [D] criteria"
-    )
 
 
 @main.group()
@@ -2229,110 +2165,112 @@ def gen_attacks(base_scenario, out_dir, count, model):
 
 @main.command("validate")
 @click.argument("scenario_path", type=click.Path(exists=True))
-@click.option("--json", "as_json", is_flag=True, default=False, help="Emit structured JSON instead of a table.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit structured JSON instead of a table.")
 def validate(scenario_path, as_json):
-    """Validate a scenario file: parse, check required sections, lint criteria patterns.
+    """Check a scenario (or a directory of them) before running it.
 
-    Exits 0 if valid, 1 if any errors are found.
+    Reports anything that would make a run meaningless — a missing task, an
+    unknown twin or setting, a line that looks like a criterion but is not —
+    and shows the assertion each criterion will be checked with. Exits 1 if
+    any scenario has an error.
     """
-    from .checker import PATTERNS as _checker_patterns
+    from .eval import schema_for
+    from .eval.nl import compile_criterion
+    from .twins import registry as _twin_registry
 
     path = Path(scenario_path)
-    errors: list[str] = []
-    warnings: list[str] = []
+    files = sorted(path.rglob("*.md")) if path.is_dir() else [path]
+    known_twins = set(_twin_registry.names())
+    known_keys = {
+        "twins", "clones", "seed", "seed-file", "runs", "timeout", "tags",
+        "faults", "judge-model", "owasp", "persona",
+    }
+    reports: list[dict] = []
 
-    # 1. Parse
-    try:
-        scn = parse_file(path)
-    except Exception as exc:
-        errors.append(f"Parse error: {exc}")
-        if as_json:
-            click.echo(json.dumps({"valid": False, "errors": errors, "warnings": []}, indent=2))
-        else:
-            console.print(f"[red]Parse error: {exc}[/red]")
+    for file in files:
+        errors: list[str] = []
+        warnings: list[str] = []
+        try:
+            scn = parse_file(file)
+        except Exception as exc:  # noqa: BLE001 — report, never crash the linter
+            reports.append({"scenario": str(file), "valid": False,
+                            "errors": [f"cannot read: {exc}"], "warnings": [], "criteria": []})
+            continue
+        if path.is_dir() and not scn.runnable and not scn.criteria:
+            continue  # an ordinary markdown file in a scenario directory
+
+        errors.extend(scn.problems)
+        if not scn.prompt:
+            errors.append("no task: add a '## Task' section with the prompt for the agent")
+        if not scn.criteria:
+            errors.append("no criteria: add a '## Criteria' section")
+        for twin in scn.twins:
+            if twin.lower() not in known_twins:
+                errors.append(f"unknown twin {twin!r}; available: {', '.join(sorted(known_twins))}")
+        for key in scn.config:
+            if key not in known_keys:
+                warnings.append(f"unknown setting {key!r}")
+        for name in scn.config.get("faults", {}) if isinstance(scn.config.get("faults"), dict) else {}:
+            if name not in {t.lower() for t in scn.twins}:
+                warnings.append(f"faults for {name!r}, which this scenario does not run")
+
+        schema = schema_for(scn.twins) if scn.twins else None
+        criteria: list[dict] = []
+        for crit in scn.criteria:
+            assertion, source = crit.assertion, "pinned" if crit.assertion else ""
+            if assertion is None and crit.kind != "P" and schema is not None:
+                compiled = compile_criterion(crit.text, schema)
+                if compiled is not None:
+                    assertion, source = compiled.assertion, compiled.source
+            if assertion is None and crit.kind != "P":
+                warnings.append(
+                    f"{crit.label} {crit.text[:70]!r} has no deterministic check yet: it will be "
+                    "compiled by the judge model at run time. Pin one with '=> <assertion>' to keep "
+                    "it deterministic and free."
+                )
+            criteria.append({"text": crit.text, "kind": crit.kind, "must_pass": crit.must_pass,
+                             "assertion": assertion, "source": source or "judge"})
+        reports.append({
+            "scenario": str(file), "title": scn.title, "valid": not errors,
+            "twins": list(scn.twins), "runs": scn.runs, "criteria": criteria,
+            "errors": errors, "warnings": warnings,
+        })
+
+    if not reports:
+        console.print(f"[yellow]No scenarios found under {path}[/yellow]")
         sys.exit(1)
 
-    # 2. Required sections
-    if not scn.prompt:
-        errors.append("Missing required section: ## Prompt (or ## Task)")
-    if not scn.criteria:
-        warnings.append("No success criteria found (## Success Criteria / ## Checks)")
-
-    # 3. Criteria pattern coverage
-    unhandled: list[str] = []
-    for crit in scn.criteria:
-        text = crit.text.strip()
-        kind = crit.kind  # "D" or "P"
-        if kind == "D":
-            # PATTERNS is list[tuple[re.Pattern, handler]]; use .search() directly.
-            matched = any(pat.search(text) for pat, _ in _checker_patterns)
-            if not matched:
-                unhandled.append(text)
-
-    if unhandled:
-        lines = []
-        for t in unhandled:
-            lines.append(f"  - {t[:120]}")
-            hint = _suggest_reword(t)
-            if hint:
-                lines.append(f"    -> {hint}")
-        warnings.append(
-            f"{len(unhandled)} [D] criterion(a) have no deterministic pattern match "
-            f"(will fall through to LLM stage 2):\n" + "\n".join(lines)
-        )
-
-    # 4. Clone validity
-    from .twins import registry as _twin_registry
-    known_clones = set(_twin_registry.names())
-    for clone_id in scn.clones:
-        if clone_id not in known_clones:
-            errors.append(f"Unknown clone: {clone_id!r} (known: {', '.join(sorted(known_clones))})")
-
-    # 5. Config key spelling
-    known_config_keys = {
-        "clones", "seed", "seed-file", "seed_file", "seed_name", "runs",
-        "timeout", "tags", "evaluator-model", "evaluator_model",
-    }
-    for key in scn.config:
-        if key not in known_config_keys:
-            warnings.append(f"Unknown config key: {key!r}")
-
-    valid = len(errors) == 0
-
     if as_json:
-        click.echo(json.dumps({
-            "valid": valid,
-            "scenario": str(path),
-            "title": scn.title,
-            "clones": list(scn.clones),
-            "runs": scn.runs,
-            "criteria_count": len(scn.criteria),
-            "errors": errors,
-            "warnings": warnings,
-        }, indent=2))
+        click.echo(json.dumps(reports if path.is_dir() else reports[0], indent=2))
     else:
-        console.print(Panel.fit(
-            f"[bold]{scn.title or path.name}[/bold]\n"
-            f"[dim]clones:[/dim] {', '.join(scn.clones) or '(none)'}\n"
-            f"[dim]criteria:[/dim] {len(scn.criteria)} "
-            f"({sum(1 for c in scn.criteria if c.kind == 'D')} [D], "
-            f"{sum(1 for c in scn.criteria if c.kind == 'P')} [P])\n"
-            f"[dim]runs:[/dim] {scn.runs}",
-            title=f"validate — {path.name}",
-            border_style="cyan",
-        ))
-        if errors:
-            for e in errors:
-                console.print(f"[red]  Error:[/red] {e}")
-        if warnings:
-            for w in warnings:
-                console.print(f"[yellow]  Warning:[/yellow] {w}")
-        if valid:
-            console.print("[green]  Scenario is valid.[/green]")
-        else:
-            console.print(f"[red]  {len(errors)} error(s) found.[/red]")
+        for report in reports:
+            _print_validation(report)
 
-    sys.exit(0 if valid else 1)
+    sys.exit(0 if all(r["valid"] for r in reports) else 1)
+
+
+def _print_validation(report: dict) -> None:
+    name = Path(report["scenario"]).name
+    console.print(Panel.fit(
+        f"[bold]{report.get('title') or name}[/bold]\n"
+        f"[dim]twins:[/dim] {', '.join(report.get('twins') or []) or '(none)'}\n"
+        f"[dim]criteria:[/dim] {len(report.get('criteria') or [])}",
+        title=f"validate - {name}", border_style="cyan",
+    ))
+    for crit in report.get("criteria") or []:
+        mark = {"pinned": "pinned", "pattern": "pattern", "llm": "model", "judge": "judge"}.get(
+            crit["source"], crit["source"])
+        assertion = crit["assertion"] or ("judged by the model" if crit["kind"] == "P"
+                                          else "compiled at run time")
+        console.print(f"  [{crit['kind']}{'!' if crit['must_pass'] else ''}] "
+                      f"{escape(crit['text'][:70])}\n      [dim]{mark}:[/dim] {escape(assertion)}")
+    for message in report.get("errors") or []:
+        console.print(f"[red]  error:[/red] {escape(message)}")
+    for message in report.get("warnings") or []:
+        console.print(f"[yellow]  warning:[/yellow] {escape(message)}")
+    if report["valid"] and not report.get("warnings"):
+        console.print("[green]  looks good.[/green]")
 
 
 @main.command("replay")

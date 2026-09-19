@@ -181,16 +181,21 @@ def test_evaluate_makes_no_llm_call_on_failure(monkeypatch):
         prompt="close two issues",
         criteria=[Criterion(text="exactly 2 issues exist", kind="D")],
     )
+    views = {"github": {"issues": {"key": "id", "tombstone": None,
+                                   "nouns": ["issue", "issues"], "fields": ["id", "state"],
+                                   "items": []}}}
     result = RunResult(
         final_answer="", stderr="", exit_code=0, trace=[],
-        state={"issues": []},  # 0 issues -> criterion fails deterministically
+        state={"issues": []},  # 0 issues -> the criterion fails deterministically
+        seed_views=views, views=views,
     )
 
     runner._evaluate(scenario, result, "gpt-4o-mini")
 
     assert len(result.criteria) == 1
     assert result.criteria[0].passed is False
-    assert result.criteria[0].evaluator == "deterministic"
+    assert result.criteria[0].evaluator == "assertion:pattern"
+    assert result.criteria[0].assertion == "count(github.issues) == 2"
     assert calls == []  # no OpenAI client was ever constructed
 
     # The duplicate-analysis machinery is gone for good.
