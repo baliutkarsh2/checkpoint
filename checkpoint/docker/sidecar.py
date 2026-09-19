@@ -1,13 +1,14 @@
 """Build the TLS-sidecar image on first use.
 
-The docker-mode runner needs a `checkpoint-sidecar:latest` image (a mitmproxy
-container that mints a CA at startup and routes intercepted SaaS domains to the
-local twins). Historically nothing built it, so the default `checkpoint run`
-failed on a clean machine with `ImageNotFound`. `ensure_sidecar_image()` fixes
-that: it builds the image once, transparently, the first time it is needed.
+The docker-mode runner needs a `checkpoint-sidecar:latest` image (a container
+running Checkpoint's intercept proxy, which mints a CA at startup and routes
+intercepted SaaS domains to the local twins). Historically nothing built it, so
+the default `checkpoint run` failed on a clean machine with `ImageNotFound`.
+`ensure_sidecar_image()` fixes that: it builds the image once, transparently,
+the first time it is needed.
 
 The sidecar Dockerfile (`checkpoint/proxy/Dockerfile`) expects a build context
-holding `pyproject.toml` + the `checkpoint` package (it runs `pip install .`).
+holding `pyproject.toml` + the `checkpoint` package it copies into the image.
 We support both ways Checkpoint can be installed:
 
   * source checkout — pyproject.toml sits at the repo root next to the package;
@@ -33,25 +34,35 @@ log = logging.getLogger("checkpoint.docker.sidecar")
 # Single source of truth for the sidecar tag (docker/runner.py imports this).
 SIDECAR_IMAGE = os.environ.get("CHECKPOINT_SIDECAR_IMAGE", "checkpoint-sidecar:latest")
 
+# The runner <-> sidecar contract: how the sidecar is configured
+# (CHECKPOINT_ROUTES) and how it signals readiness (a "ready" line). It is
+# stamped into the image as a label, and an image built for another contract —
+# e.g. a cached mitmproxy-era image, which never prints "ready" — counts as
+# absent, so it is rebuilt instead of failing every run. Bump it together with
+# the LABEL in checkpoint/proxy/Dockerfile whenever that contract changes.
+SIDECAR_CONTRACT = "intercept-proxy-1"
+SIDECAR_CONTRACT_LABEL = "dev.checkpoint.sidecar-contract"
+
 _PKG_DIR = Path(checkpoint.__file__).resolve().parent          # .../checkpoint
 _PROXY_DOCKERFILE_REL = "checkpoint/proxy/Dockerfile"           # relative to a build context root
 
 # Fallback runtime deps, mirroring pyproject.toml, used only when installed
 # metadata can't be read (e.g. an odd editable layout).
 _FALLBACK_REQUIREMENTS = [
-    "fastapi>=0.110", "uvicorn[standard]>=0.27", "httpx>=0.27", "click>=8.1",
-    "rich>=13.7", "openai>=1.30", "pydantic>=2.0", "python-dotenv>=1.0",
-    "mitmproxy>=10.0", "docker>=7.0", "mcp>=1.27", "sse-starlette>=2.1",
+    "fastapi>=0.115", "uvicorn[standard]>=0.31.1", "httpx>=0.28", "click>=8.1.7",
+    "rich>=13.7", "openai>=2.0", "pydantic>=2.9", "python-dotenv>=1.0",
+    "docker>=7.1", "mcp>=1.27", "sse-starlette>=2.1",
+    "h11>=0.16", "cryptography>=44.0", "certifi>=2025.1.31",
 ]
 
 
 def sidecar_image_exists(client, tag: str = SIDECAR_IMAGE) -> bool:
-    """True if the image is already present locally."""
+    """True if the image is present locally and speaks the current runner contract."""
     try:
-        client.images.get(tag)
-        return True
+        image = client.images.get(tag)
     except Exception:
         return False
+    return (image.labels or {}).get(SIDECAR_CONTRACT_LABEL) == SIDECAR_CONTRACT
 
 
 def _find_source_root() -> Path | None:
@@ -74,16 +85,10 @@ def _runtime_requirements() -> list[str]:
             continue
         if not reqs:
             continue
-        out: list[str] = []
-        for r in reqs:
-            # Core deps carry no marker. Of the optional ones, keep exactly the
-            # `proxy` extra: mitmproxy is not installed on the host (the addon
-            # runs inside this image), but the sidecar itself cannot work
-            # without it, so it must land in the generated pyproject.
-            if "extra ==" in r:
-                if 'extra == "proxy"' not in r.replace("'", '"'):
-                    continue
-            out.append(r.split(";", 1)[0].strip())
+        # Core deps only: they already include everything the sidecar runs
+        # (the intercept proxy's h11/cryptography/certifi and the twins'
+        # stack); extras such as `dev` carry an `extra ==` marker.
+        out = [r.split(";", 1)[0].strip() for r in reqs if "extra ==" not in r]
         if out:
             return out
     return list(_FALLBACK_REQUIREMENTS)

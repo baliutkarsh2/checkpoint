@@ -53,6 +53,14 @@ dependencies = [
     "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
+    # The intercept proxy (checkpoint/proxy/) imports these directly. All three
+    # already arrive transitively (httpx pulls h11 + certifi; mcp pulls
+    # cryptography via pyjwt[crypto]), so naming them adds nothing to the graph
+    # but states the floors the proxy is tested against. h11 0.16 is the
+    # release that fixed chunked-body request smuggling (CVE-2025-43859).
+    "h11>=0.16",
+    "cryptography>=44.0",
+    "certifi>=2025.1.31",
 ]
 
 [project.optional-dependencies]
@@ -62,20 +70,10 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "ruff>=0.6",
-    # The suite covers the sidecar addon (tests/proxy/test_addon.py), so the dev
-    # environment needs the proxy stack even though users' installs do not.
-    "mitmproxy>=11.0",
 ]
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
 anthropic = ["anthropic>=0.40"]
-# The TLS-intercept sidecar. checkpoint/proxy/addon.py is loaded by mitmdump
-# INSIDE the sidecar container (see checkpoint/proxy/entrypoint.sh), so the host
-# process never imports mitmproxy — only the sidecar image and `checkpoint
-# doctor`'s optional check do. Keeping it out of the default install removes its
-# large transitive tree (cryptography, tornado, urwid, ldap3, passlib, ...) from
-# every user's environment.
-proxy = ["mitmproxy>=11.0"]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"

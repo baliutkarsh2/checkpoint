@@ -1,13 +1,15 @@
 """Domain -> twin URL + bootstrap token registry.
 
-Hardcoded for Phase 1: only api.github.com. Adding slack.com / api.stripe.com
-in Phase 3 is a one-file change to the seeded dict below.
+Every SaaS domain Checkpoint can intercept, with the bootstrap token its twin
+accepts. The Docker runner fills in twin URLs per run and turns the entries it
+needs into intercept-proxy routes with :func:`proxy_routes`.
 
 Tokens match SCOPE §3 / REQUIREMENTS.md GH-02 / SL-02 / ST-03 exactly so an
 Archal-authored harness using the real bootstrap-token sees no diff.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from checkpoint.fake_credentials import (
@@ -19,6 +21,8 @@ from checkpoint.fake_credentials import (
     FAKE_STRIPE_KEY,
     FAKE_SUPABASE_TOKEN,
 )
+
+from .server import Route as ProxyRoute
 
 # Per SCOPE §3 / REQUIREMENTS.md GH-02 / SL-02 / ST-03.
 GITHUB_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
@@ -102,3 +106,30 @@ def lookup(host: str) -> Route | None:
 
 def all_domains() -> list[str]:
     return list(_ROUTES.keys())
+
+
+def auth_header_for(domain: str) -> str | None:
+    """The ``Authorization`` value the twin behind ``domain`` accepts.
+
+    Matches exactly, then by parent domain (``x.supabase.co`` -> ``supabase.co``).
+    GitHub documents the ``token <t>`` scheme; a token that already carries its
+    own scheme (Discord's ``Bot <t>``) is sent as-is; everything else is a
+    bearer token.
+    """
+    labels = domain.lower().rstrip(".").split(".")
+    for i in range(len(labels)):
+        route = _ROUTES.get(".".join(labels[i:]))
+        if route is not None:
+            token = route.bootstrap_token
+            if route.domain == "api.github.com":
+                return f"token {token}"
+            return token if " " in token else f"Bearer {token}"
+    return None
+
+
+def proxy_routes(upstreams: Mapping[str, str]) -> list[ProxyRoute]:
+    """Intercept-proxy routes for ``{domain: twin_url}``, each stamping the twin's credential."""
+    return [
+        ProxyRoute(domain, twin_url, auth_header=auth_header_for(domain))
+        for domain, twin_url in upstreams.items()
+    ]
