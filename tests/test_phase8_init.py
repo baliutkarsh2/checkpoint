@@ -104,11 +104,33 @@ def test_existing_harness_json_preserved(tmp_path: Path) -> None:
     assert (tmp_path / "harness.json").read_text() == user_marker
 
 
-def test_starter_scenario_has_required_sections(tmp_path: Path) -> None:
+def test_starter_scenario_is_runnable_and_cannot_pass_vacuously(tmp_path: Path) -> None:
+    from checkpoint.eval import schema_for
+    from checkpoint.eval.nl import compile_criterion
+    from checkpoint.scenario import parse_file
+
     _init.scaffold(tmp_path, command="python a.py")
-    scn = (tmp_path / "scenarios/quickstart.md").read_text()
-    for header in ("## Prompt", "## Success Criteria", "## Config"):
-        assert header in scn, f"scenario missing {header}"
+    scenario = parse_file(tmp_path / "scenarios/quickstart.md")
+    assert scenario.runnable and scenario.twins == ["github"]
+    assert scenario.problems == []
+
+    schema = schema_for(scenario.twins)
+    compiled = {}
+    for criterion in scenario.criteria:
+        if criterion.kind == "P":
+            continue
+        assertion = criterion.assertion or (
+            (compile_criterion(criterion.text, schema) or _NONE).assertion)
+        assert assertion, f"{criterion.text!r} has no deterministic check"
+        compiled[criterion.text] = assertion
+
+    # The starter must not be satisfiable by an agent that does nothing: it
+    # asks what changed, not what exists. (It ships with a seeded repository.)
+    assert any(a.startswith("count(created.") for a in compiled.values())
+
+
+class _NONE:
+    assertion = None
 
 
 def test_gitignore_entry_added(tmp_path: Path) -> None:

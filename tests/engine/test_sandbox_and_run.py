@@ -119,8 +119,9 @@ def test_run_scenario_scores_a_real_agent(agent_path):
     assert result.twins == ["github"] and result.run_id
     created = [c for c in result.trace if c["op"] == "create"]
     assert created and created[0]["resource"] == "issues"
-    seeded = {i["id"] for i in result.seed_views["github"]["issues"]["items"]}
-    final = {i["id"] for i in result.views["github"]["issues"]["items"]}
+    key = result.views["github"]["issues"]["key"]
+    seeded = {i[key] for i in result.seed_views["github"]["issues"]["items"]}
+    final = {i[key] for i in result.views["github"]["issues"]["items"]}
     assert len(final - seeded) == 1
 
 

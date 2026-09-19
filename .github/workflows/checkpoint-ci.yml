@@ -77,7 +77,14 @@ jobs:
           pip install -e ".[dev]"
           pip install --group twin-conformance
 
+      # Linear ships no Python SDK, so its conformance test drives the twin with
+      # the official TypeScript client through the runner's Node.
+      - name: Install @linear/sdk
+        run: npm install --no-audit --no-fund @linear/sdk
+
       - name: Run conformance suite
+        env:
+          CHECKPOINT_LINEAR_SDK_DIR: ${{ github.workspace }}
         run: pytest tests/sdk -m sdk -q
 
   # The container images back three documented deployment paths and the default
@@ -296,6 +303,8 @@ jobs:
           need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
           need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
           need(lambda n: "init_templates" in n, "the init templates")
+          need(lambda n: n.endswith("twins/linear_schema.graphql"),
+               "Linear's vendored GraphQL schema")
 
           seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
           if len(seeds) < 20:
@@ -347,13 +356,16 @@ jobs:
         with:
           target: checkpoint/demo/smoke-scenario.md
           harness: python -m checkpoint.demo.harness_fake
-          runs: "3"
+          # SHIP needs ceil(ship_min*z^2/(1-ship_min)) = 16 clean runs at the
+          # default ship_min 0.80; fewer is INCONCLUSIVE and fails the step, so
+          # a smaller number here would test nothing but the gate's refusal.
+          runs: "16"
           pass-threshold: "80"
 
       - name: Assert the action reported a verdict
         run: |
           echo "verdict=${{ steps.gate.outputs.verdict }}"
           case "${{ steps.gate.outputs.verdict }}" in
-            SHIP|CONDITIONAL|BLOCK) echo "OK: action produced a valid verdict" ;;
+            SHIP|CONDITIONAL|INCONCLUSIVE|BLOCK|ERROR) echo "OK: action produced a valid verdict" ;;
             *) echo "FAIL: action did not report a verdict"; exit 1 ;;
           esac

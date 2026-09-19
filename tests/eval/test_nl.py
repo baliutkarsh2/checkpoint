@@ -101,3 +101,18 @@ def test_schema_from_views_reads_nouns_and_fields():
     coll = schema.resolve("issues")
     assert coll is not None and coll.path == "github.issues"
     assert coll.fields == frozenset({"id", "title"})
+
+
+def test_scenario_comments_are_not_criteria():
+    from checkpoint.scenario import parse
+
+    scenario = parse(
+        "# s\n## Task\ndo\n## Criteria\n"
+        "- [D] Exactly 1 issue was created\n"
+        "<!--\n  Authors annotate scenarios; this is a note, not a check:\n"
+        "  - [D] At least one issue exists\n-->\n"
+        "- [P] The answer is clear\n"
+    )
+    assert [c.text for c in scenario.criteria] == [
+        "Exactly 1 issue was created", "The answer is clear"]
+    assert scenario.problems == []

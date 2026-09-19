@@ -522,7 +522,7 @@
       "customer": 18,
       "product": 3,
       "price": 3,
-      "payment_intent": 0,
+      "payment_intent": 6,
       "refund": 0,
       "invoice": 0,
       "invoice_item": 0,
@@ -531,6 +531,89 @@
       "payment_link": 0,
       "dispute": 0,
       "requests": 0
+    },
+    "payment_intents": {
+      "pi_sh_001": {
+        "id": "pi_sh_001",
+        "object": "payment_intent",
+        "amount": 2999,
+        "currency": "usd",
+        "customer": "cus_sh_001",
+        "description": "Subscription payment for sub_h_001",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717203600
+      },
+      "pi_sh_002": {
+        "id": "pi_sh_002",
+        "object": "payment_intent",
+        "amount": 9999,
+        "currency": "usd",
+        "customer": "cus_sh_002",
+        "description": "Subscription payment for sub_h_002",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717207200
+      },
+      "pi_sh_003": {
+        "id": "pi_sh_003",
+        "object": "payment_intent",
+        "amount": 999,
+        "currency": "usd",
+        "customer": "cus_sh_003",
+        "description": "Subscription payment for sub_h_003",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717210800
+      },
+      "pi_sh_004": {
+        "id": "pi_sh_004",
+        "object": "payment_intent",
+        "amount": 2999,
+        "currency": "usd",
+        "customer": "cus_sh_004",
+        "description": "Subscription payment for sub_h_004",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717214400
+      },
+      "pi_sh_005": {
+        "id": "pi_sh_005",
+        "object": "payment_intent",
+        "amount": 9999,
+        "currency": "usd",
+        "customer": "cus_sh_005",
+        "description": "Subscription payment for sub_h_005",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717218000
+      },
+      "pi_sh_006": {
+        "id": "pi_sh_006",
+        "object": "payment_intent",
+        "amount": 999,
+        "currency": "usd",
+        "customer": "cus_sh_006",
+        "description": "Subscription payment for sub_h_006",
+        "status": "succeeded",
+        "capture_method": "automatic",
+        "created": 1717221600
+      }
+    },
+    "balance": {
+      "object": "balance",
+      "available": [
+        {
+          "amount": 27994,
+          "currency": "usd"
+        }
+      ],
+      "pending": [
+        {
+          "amount": 0,
+          "currency": "usd"
+        }
+      ]
     }
   },
   "config": {}

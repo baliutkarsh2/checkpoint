@@ -3,6 +3,7 @@
     "tables": {
       "products": {
         "columns": ["id", "name", "description", "price", "stock", "category", "active", "created_at", "updated_at"],
+        "primary_key": "id",
         "rows": [
           {
             "id": "prod-001",
@@ -51,10 +52,13 @@
         ]
       },
       "orders": {
-        "columns": ["id", "customer_email", "status", "total", "items", "created_at", "updated_at"],
+        "columns": ["id", "customer_id", "customer_email", "status", "total", "items", "created_at", "updated_at"],
+        "primary_key": "id",
+        "foreign_keys": {"customer_id": "customers.id"},
         "rows": [
           {
             "id": "order-001",
+            "customer_id": "cust-001",
             "customer_email": "alice@acme.test",
             "status": "delivered",
             "total": 199.98,
@@ -64,6 +68,7 @@
           },
           {
             "id": "order-002",
+            "customer_id": "cust-002",
             "customer_email": "bob@acme.test",
             "status": "processing",
             "total": 49.99,
@@ -75,6 +80,8 @@
       },
       "customers": {
         "columns": ["id", "email", "name", "phone", "total_orders", "total_spent", "created_at"],
+        "primary_key": "id",
+        "unique": [["email"]],
         "rows": [
           {
             "id": "cust-001",
@@ -98,16 +105,41 @@
       }
     },
     "auth_users": {
-      "admin-uuid": {
-        "id": "admin-uuid",
+      "0d4b6a21-8f3c-4a7e-9c11-52d9f7a0b3e4": {
+        "id": "0d4b6a21-8f3c-4a7e-9c11-52d9f7a0b3e4",
+        "aud": "authenticated",
         "email": "admin@acme.test",
         "role": "service_role",
         "created_at": "2025-01-01T00:00:00+00:00",
         "updated_at": "2025-01-01T00:00:00+00:00",
         "last_sign_in_at": "2025-01-20T00:00:00+00:00",
         "email_confirmed_at": "2025-01-01T00:01:00+00:00",
-        "user_metadata": {},
-        "app_metadata": {"provider": "email", "role": "admin"}
+        "user_metadata": {"full_name": "Dana Ops"},
+        "app_metadata": {"provider": "email", "providers": ["email"], "role": "admin"}
+      },
+      "7c2e5f90-1b44-4d83-8a67-3ef015c9d2a1": {
+        "id": "7c2e5f90-1b44-4d83-8a67-3ef015c9d2a1",
+        "aud": "authenticated",
+        "email": "alice@acme.test",
+        "role": "authenticated",
+        "created_at": "2025-01-10T00:00:00+00:00",
+        "updated_at": "2025-01-10T00:00:00+00:00",
+        "last_sign_in_at": "2025-01-19T18:30:00+00:00",
+        "email_confirmed_at": "2025-01-10T00:02:00+00:00",
+        "user_metadata": {"full_name": "Alice Chen"},
+        "app_metadata": {"provider": "email", "providers": ["email"]}
+      },
+      "b81f3d67-5a29-4c0e-91d4-7fa62b8e0c35": {
+        "id": "b81f3d67-5a29-4c0e-91d4-7fa62b8e0c35",
+        "aud": "authenticated",
+        "email": "bob@acme.test",
+        "role": "authenticated",
+        "created_at": "2025-01-19T00:00:00+00:00",
+        "updated_at": "2025-01-19T00:00:00+00:00",
+        "last_sign_in_at": "2025-01-20T11:15:00+00:00",
+        "email_confirmed_at": "2025-01-19T00:03:00+00:00",
+        "user_metadata": {"full_name": "Bob Smith"},
+        "app_metadata": {"provider": "email", "providers": ["email"]}
       }
     },
     "storage": {
@@ -115,29 +147,64 @@
         "product-images": {
           "id": "product-images",
           "name": "product-images",
+          "owner": "",
           "public": true,
+          "file_size_limit": 5242880,
+          "allowed_mime_types": null,
           "created_at": "2025-01-01T00:00:00+00:00",
           "updated_at": "2025-01-01T00:00:00+00:00",
-          "object_count": 1
+          "type": "STANDARD"
+        },
+        "media": {
+          "id": "media",
+          "name": "media",
+          "owner": "",
+          "public": true,
+          "file_size_limit": null,
+          "allowed_mime_types": null,
+          "created_at": "2025-01-01T00:00:00+00:00",
+          "updated_at": "2025-01-01T00:00:00+00:00",
+          "type": "STANDARD"
         },
         "invoices": {
           "id": "invoices",
           "name": "invoices",
+          "owner": "",
           "public": false,
+          "file_size_limit": null,
+          "allowed_mime_types": ["application/pdf"],
           "created_at": "2025-01-01T00:00:00+00:00",
           "updated_at": "2025-01-01T00:00:00+00:00",
-          "object_count": 0
+          "type": "STANDARD"
         }
       },
       "objects": {
         "product-images/prod-001/hero.jpg": {
-          "id": "product-images/prod-001/hero.jpg",
+          "id": "8f14e45f-ceea-467a-9e3d-1c2b5a7d9f01",
           "bucket_id": "product-images",
           "name": "prod-001/hero.jpg",
           "content_type": "image/jpeg",
           "size": 204800,
           "created_at": "2025-01-01T01:00:00+00:00",
           "updated_at": "2025-01-01T01:00:00+00:00"
+        },
+        "media/launch/banner.png": {
+          "id": "c9f0f895-fb98-4f1c-b6a3-2ad1c5e8d742",
+          "bucket_id": "media",
+          "name": "launch/banner.png",
+          "content_type": "image/png",
+          "size": 51200,
+          "created_at": "2025-01-05T09:00:00+00:00",
+          "updated_at": "2025-01-05T09:00:00+00:00"
+        },
+        "media/launch/teaser.png": {
+          "id": "45c48cce-2e2d-4fbd-aa1f-3f8e2b0c9a6d",
+          "bucket_id": "media",
+          "name": "launch/teaser.png",
+          "content_type": "image/png",
+          "size": 33280,
+          "created_at": "2025-01-06T09:00:00+00:00",
+          "updated_at": "2025-01-06T09:00:00+00:00"
         }
       }
     },
@@ -154,6 +221,7 @@
         "returns": {"total": 0, "discount": 0}
       }
     },
+    "edge_functions": {},
     "_counters": {
       "requests": 0
     }

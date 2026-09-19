@@ -58,10 +58,10 @@ checkpoint serve   # http://127.0.0.1:4001
 
 Checkpoint is a loop with four moving parts:
 
-1. **Twins** — stateful synthetic SaaS APIs (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) that run locally and hold real state across a multi-step run. They are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (Linear is REST/MCP, not the official GraphQL SDK). Fault-injection varies by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record*.
+1. **Twins** — stateful synthetic SaaS APIs (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) that run locally and hold real state across a multi-step run. They are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (the Linear twin serves Linear's own published GraphQL schema, so `@linear/sdk` and `gql` work against it unchanged). Fault-injection varies by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record*.
 2. **Harness** — your agent, referenced by a command (zero-code) or a Docker image. Checkpoint never modifies your code.
 3. **Scenario** — a markdown file: a `## Setup` seed, a `## Prompt` task, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged).
-4. **Gate** — run each scenario N times, score every run 0–100, and exit non-zero if the average falls below your `--pass-threshold`. That exit code is the whole point: it blocks a bad build in CI.
+4. **Gate** — run each scenario N times, score every run 0–100, and decide from the distribution of outcomes. Only a confident pass exits 0. That exit code is the whole point: it blocks a bad build in CI.
 
 Your agent talks to production URLs; in Docker mode Checkpoint's own TLS-intercepting proxy (a sidecar container) transparently routes those calls to the twins, so real SDKs work unmodified. In `--no-docker` mode the twins run as local processes and your agent reads their URLs from env vars.
 
@@ -129,7 +129,11 @@ Agents are non-deterministic, so a single green run is a coin flip, not a verdic
 checkpoint gate scenarios/ --harness "python my_agent.py" -n 20
 ```
 
-Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regression`, and the run gets one verdict: **SHIP** (every scenario confidently passes), **BLOCK** (any confident failure/regression — exit 1), or **CONDITIONAL** (something's flaky; exit 0, or 1 with `--strict`). Tune with `--ship-min` / `--block-max` / `--pass-threshold`. Pass rates are remembered per scenario, so a build that *used* to pass and now fails reads as a **regression**, not just a failure (`--no-baseline` to disable).
+**Only SHIP exits 0** — a gate that returns success for an agent it has not confidently seen working is worse than no gate. `SHIP` **0**: every scenario is confidently above `--ship-min`. `BLOCK` **1**: a scenario is confidently below `--block-max`, is a regression, or failed *every* run. `CONDITIONAL` **2**: enough runs to decide and the results are genuinely mixed (`--allow-conditional` makes it 0; `--strict` refuses it even then, to tighten a shared config). `INCONCLUSIVE` **3**: too few runs for SHIP to be reachable at all. `ERROR` **4**: the sandbox, the judge credential, or the scenario itself broke, so no pass/fail verdict is possible.
+
+How many runs is enough? For a flawless *n*-of-*n* the Wilson lower bound is `n / (n + z²)`, so SHIP needs at least `ceil(ship_min · z² / (1 − ship_min))` clean runs — **16** at the default `--ship-min 0.80` and 95% confidence. Below that the gate reports `INCONCLUSIVE` and says what it needs (`SHIP needs >= 16 clean runs at ship_min 0.80`) instead of calling a perfect 5/5 "flaky" and waving it through. Tune with `--ship-min` / `--block-max` / `--pass-threshold` / `--confidence` (any level, not just tabulated ones). Infrastructure failures are never agent failures: a sandbox that won't start or a judge with no API key is an `ERROR` and leaves the pass-rate sample, not a run the agent lost. Files under the target that aren't scenarios (a `README.md`, a draft with no `## Success Criteria`) are reported as **skipped** with a reason rather than run with an empty task, and a target matching no scenario at all is an `ERROR`.
+
+Pass rates are remembered per scenario, so a build that *used* to pass and now fails reads as a **regression** — one that needs a drop both large (`--regression-drop`, default 0.20) and statistically meaningful (the baseline must fall outside the current interval), so three unlucky runs don't block a release. Baselines live in `.checkpoint/baselines.json` (or `$CHECKPOINT_HOME/baselines.json`), keyed by the scenario's path **relative to the gate target** plus a hash of its success criteria — rewrite the criteria and the stale baseline is discarded rather than reported as a regression. They are written **only on a SHIP**, so a slipping agent can never quietly reset its own bar. Commit the file or restore it with your CI cache; without it every run is a first run. `--no-baseline` turns both sides off.
 
 Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered.
 
@@ -157,7 +161,7 @@ Drop the GitHub Action into your workflow:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Or call the CLI directly: `checkpoint gate scenarios/ --harness "python my_agent.py" -n 20`. Either way, exit code 1 blocks the pipeline on BLOCK (add `strict: true` / `--strict` to also block on CONDITIONAL). The gate reports **pass^k** — the unbiased estimate that k independent runs all pass — so a 90%-pass agent reads honestly as pass^10 ≈ 35%, not a reassuring "90%". Run records land in `.checkpoint/cache/runs/*.json`.
+Or call the CLI directly: `checkpoint gate scenarios/ --harness "python my_agent.py" -n 20`. Either way only a SHIP exits 0, so the pipeline fails on BLOCK, CONDITIONAL, INCONCLUSIVE and ERROR alike (add `allow-conditional: true` / `--allow-conditional` if a flaky-but-not-failing run should still pass). The gate reports **pass^k** — the unbiased estimate that k independent runs all pass — so a 90%-pass agent reads honestly as pass^10 ≈ 35%, not a reassuring "90%". Run records land in `.checkpoint/cache/runs/*.json`.
 
 ## Reference
 
