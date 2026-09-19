@@ -5,9 +5,14 @@
     "messages": {},
     "members": {},
     "roles": {},
+    "bans": {},
     "webhooks": {},
     "users": {},
-    "_counters": {"snowflake_seq": 0, "requests": 0}
+    "commands": {},
+    "_counters": {
+      "snowflake_seq": 0,
+      "last_snowflake": ""
+    }
   },
   "config": {}
 }
