@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from ..engine import Agent, RunOptions, Sandbox, SandboxError, scenario_setups, scenario_twins
+from ..llm import DEFAULT_MODEL
 from ..runner import RunResult, _evaluate, _merge_state_for_clones
 from .calibration import compute_calibration
 from .persona import Persona, UserTurn
@@ -41,7 +42,7 @@ def simulate(
     persona: Persona,
     *,
     max_turns: int = 6,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     user=None,
     cwd: str | None = None,
     agent: Agent | None = None,

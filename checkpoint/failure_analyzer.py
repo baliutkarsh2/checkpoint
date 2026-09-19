@@ -13,6 +13,8 @@ import json
 import logging
 from typing import Any
 
+from .llm import DEFAULT_MODEL
+
 log = logging.getLogger("checkpoint.failure_analyzer")
 
 
@@ -57,7 +59,7 @@ def analyze(
     final_answer: str,
     trace: list,
     state: dict,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_MODEL,
     _client_factory=None,
 ) -> dict[str, str]:
     """Return ``{criterion_text: paragraph}``.

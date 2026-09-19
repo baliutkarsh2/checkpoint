@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from .llm import DEFAULT_MODEL
 from .run_record import build_record, write_record
 from .runner import RunResult, run_once
 from .scenario import Criterion, Scenario
@@ -73,7 +74,7 @@ class RunConfig:
     harness_cmd: list[str] = field(
         default_factory=lambda: [sys.executable, "harness.py"]
     )
-    evaluator_model: str = "gpt-4o-mini"
+    evaluator_model: str = DEFAULT_MODEL
     timeout: int = 120
     cwd: str | Path | None = None
 

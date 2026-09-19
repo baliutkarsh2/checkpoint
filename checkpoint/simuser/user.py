@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from ..llm import DEFAULT_MODEL
 from .persona import Persona, UserTurn
 
 _SYSTEM = """You are role-playing a human USER talking to an AI agent to get something done.
@@ -42,7 +43,7 @@ class ScriptedUser:
 class LLMSimulatedUser:
     """An LLM role-plays the persona. Uses the vendor-neutral client layer."""
 
-    def __init__(self, model: str = "gpt-4o-mini", *, client_factory=None):
+    def __init__(self, model: str = DEFAULT_MODEL, *, client_factory=None):
         self.model = model
         self._factory = client_factory
 

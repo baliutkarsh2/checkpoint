@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from checkpoint.fake_credentials import FAKE_TOKENS
 
 from .engine.agent import extract_answer
+from .llm import DEFAULT_MODEL
 from .scenario import Scenario
 from .twins import registry as twin_registry
 
@@ -105,7 +106,7 @@ def run_once(
     scenario: Scenario,
     harness_cmd: Sequence[str] | str,
     cwd: str | None = None,
-    judge_model: str = "gpt-4o-mini",
+    judge_model: str = DEFAULT_MODEL,
     *,
     agent: Agent | None = None,
     options: RunOptions | None = None,

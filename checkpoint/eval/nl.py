@@ -25,10 +25,17 @@ class Collection:
     name: str
     nouns: tuple[str, ...] = ()
     fields: frozenset[str] = frozenset()
+    tombstone: str | None = None
+    """Field a soft delete sets; records that carry it no longer "exist"."""
 
     @property
     def path(self) -> str:
         return f"{self.twin}.{self.name}"
+
+    @property
+    def live(self) -> str:
+        """The collection as "the records that still exist", excluding soft-deleted ones."""
+        return f"{self.path}[{self.tombstone} == null]" if self.tombstone else self.path
 
 
 @dataclass
@@ -46,7 +53,8 @@ class Schema:
                 for item in view.get("items", [])[:200]:
                     if isinstance(item, dict):
                         fields.update(item)
-                out.append(Collection(twin, name, tuple(view.get("nouns") or ()), frozenset(fields)))
+                out.append(Collection(twin, name, tuple(view.get("nouns") or ()),
+                                      frozenset(fields), view.get("tombstone")))
         return cls(tuple(out))
 
     def resolve(self, noun: str) -> Collection | None:
@@ -139,12 +147,15 @@ def _count(match: re.Match, schema: Schema, source: str) -> str | None:
     if not word and (match.group("n") or "").lower() in ("no", "zero"):
         word = "no"
     op = _COMPARATORS.get(word, "==")
-    return f"count({source}{coll.path}) {op} {n}"
+    # "exist" means the records that are still there: a soft-deleted record
+    # (Linear archives instead of deleting) must not count towards it.
+    target = coll.live if source == "" else f"{source}{coll.path}"
+    return f"count({target}) {op} {n}"
 
 
 # -- state of the world -------------------------------------------------------
 
-@pattern(rf"{_CMP}{_N}\s+{_NOUN}\s+(?:currently\s+)?exists?")
+@pattern(rf"{_CMP}{_N}\s+{_NOUN}\s+(?:still\s+|currently\s+)?exists?")
 def _exists_count(match: re.Match, schema: Schema) -> str | None:
     return _count(match, schema, "")
 
@@ -169,7 +180,7 @@ def _titled_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
     if coll is None or (coll.fields and "title" not in coll.fields):
         return None
-    return f'exists({coll.path}[title == "{_escape(match.group("value"))}"])'
+    return f"exists({_live_with(coll, _equals('title', match.group('value')))})"
 
 
 @pattern(rf"(?:an?|one|the)\s+{_NOUN}\s+named\s+{_QUOTED}\s+(?:exists|was created|is present)")
@@ -177,7 +188,7 @@ def _named_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
     if coll is None or (coll.fields and "name" not in coll.fields):
         return None
-    return f'exists({coll.path}[name == "{_escape(match.group("value"))}"])'
+    return f"exists({_live_with(coll, _equals('name', match.group('value')))})"
 
 
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+is\s+{_STATE}")
@@ -188,12 +199,12 @@ def _numbered_state(match: re.Match, schema: Schema) -> str | None:
     return f'{coll.path}[number == {match.group("number")}].state == "{match.group("state").lower()}"'
 
 
-@pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+(?:still\s+)?exists")
+@pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+(?:still\s+|currently\s+)?exists")
 def _numbered_exists(match: re.Match, schema: Schema) -> str | None:
     coll = _collection(match, schema)
     if coll is None or (coll.fields and "number" not in coll.fields):
         return None
-    return f'exists({coll.path}[number == {match.group("number")}])'
+    return f"exists({_live_with(coll, 'number == ' + match.group('number'))})"
 
 
 # -- the agent's answer ---------------------------------------------------------
@@ -242,6 +253,17 @@ def _no_call_to(match: re.Match, schema: Schema) -> str:
 @pattern(r"(?:the agent\s+)?(?:made\s+)?no (?:calls|requests) (?:to|outside) (?:hosts outside )?the sandbox")
 def _no_egress(match: re.Match, schema: Schema) -> str:
     return "count(egress) == 0"
+
+
+def _equals(field: str, value: str) -> str:
+    return f'{field} == "{_escape(value)}"'
+
+
+def _live_with(coll: Collection, condition: str) -> str:
+    """``collection[condition]``, excluding soft-deleted records."""
+    if coll.tombstone:
+        return f"{coll.path}[{coll.tombstone} == null && {condition}]"
+    return f"{coll.path}[{condition}]"
 
 
 def _escape(value: str) -> str:
