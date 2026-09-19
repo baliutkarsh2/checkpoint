@@ -266,3 +266,36 @@ def test_public_paths_skip_authentication():
     client = TestClient(app)
     assert client.get("/webhooks/abc").status_code == 200
     assert client.get("/private").status_code == 401
+
+
+def test_current_request_is_available_while_serving():
+    # A twin fronting several APIs at one origin shapes injected faults per
+    # surface; the error factory has no request argument, so the kit publishes it.
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    from checkpoint.twins import kit
+
+    seen: list[str] = []
+
+    def error(kind: str, status: int, message: str):
+        request = kit.current_request()
+        seen.append(request.url.path if request else "<none>")
+        return JSONResponse(status_code=status, content={"surface": seen[-1]})
+
+    app = FastAPI()
+    kit.install(app, kit.Twin(name="multi", state={}, trace=[], fresh_state=dict, error=error))
+
+    @app.get("/rest/thing")
+    def _thing() -> dict:
+        return {"ok": True}
+
+    client = TestClient(app)
+    client.post("/_config", json={"rate_limit": 0})
+    assert client.get("/rest/thing").json() == {"surface": "/rest/thing"}
+
+
+def test_graphql_endpoints_are_left_to_the_twin_to_classify():
+    from checkpoint.twins.kit import default_classify
+
+    assert default_classify("POST", "/graphql") == ("other", "graphql")
