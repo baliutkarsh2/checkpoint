@@ -1,16 +1,12 @@
-"""Slack twin: stateful in-memory clone of Slack Web API.
+"""Slack twin: a stateful, in-memory Slack Web API.
 
-Phase 3 plan 01 (+F2): 10 MCP-tool-equivalent REST endpoints (incl.
-conversations.create / conversations.info), bootstrap-token auth,
-Slack-shape `{ok: false, error: "..."}` envelope, introspection endpoints.
-
-The Slack Web API uses HTTP 200 even for application errors — clients
-check the `ok` boolean. We mirror that exactly so any unmodified Slack SDK
-(`slack_sdk`, `@slack/web-api`) reads our twin as if it were Slack.
+The Slack Web API answers application errors with HTTP 200 and
+``{"ok": false, "error": "..."}``; clients check ``ok``. The twin mirrors that
+exactly so unmodified SDKs (``slack_sdk``, ``@slack/web-api``) read it as Slack.
+The control plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
@@ -23,12 +19,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from checkpoint.fake_credentials import FAKE_SLACK_TOKEN
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint slack twin")
 
-# Per SCOPE §3.4 / REQUIREMENTS.md SL-02.
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_SLACK_TOKEN
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "slack_seeds"
 
@@ -53,7 +48,6 @@ def _fresh_state() -> dict:
             "channel_id": 0,
             "user_id": 0,
             "ts_seq": 0,
-            "requests": 0,
         },
         "_config": {
             "page_size": 100,
@@ -107,148 +101,95 @@ def _slack_headers() -> dict:
     }
 
 
-# --- middlewares ---------------------------------------------------------
+# --- runtime: auth, faults, trace, control plane --------------------------
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # Introspection and the mounted MCP transport bypass token auth.
-    # MCP tool bodies stamp the bootstrap token back on when shimming
-    # into the REST surface.
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
+def _request_token(request: Request) -> str | None:
+    """Slack accepts the token as a Bearer header, a query param, or a form field."""
+    token = _extract_token(request.headers.get("authorization")) or request.query_params.get("token")
+    if token:
+        return token
+    body = getattr(request, "_body", b"") or b""
+    if b"token=" in body:
+        from urllib.parse import parse_qs
+        values = parse_qs(body.decode("utf-8", errors="replace")).get("token")
+        return values[0] if values else None
+    return None
 
-    token = _extract_token(request.headers.get("authorization"))
+
+def _authenticate(request: Request) -> Response | None:
+    token = _request_token(request)
     if not token:
         return slack_error("not_authed")
-    if token != _bootstrap_token():
+    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
         return slack_error("invalid_auth")
+    return None
 
-    STATE["_counters"]["requests"] += 1
-    response = await call_next(request)
+
+_FAULT_ERRORS = {
+    "forbidden": "missing_scope",
+    "read_only": "restricted_action",
+    "server_error": "internal_error",
+    "unauthorized": "invalid_auth",
+}
+
+
+def _error(kind: str, status: int, message: str) -> Response:
+    if kind == "rate_limited":
+        return JSONResponse(status_code=429, content={"ok": False, "error": "ratelimited"},
+                            headers={"Retry-After": "30"})
+    if kind in ("forbidden", "read_only"):
+        # Slack reports permission problems as application errors on HTTP 200.
+        return slack_error(_FAULT_ERRORS[kind])
+    code = _FAULT_ERRORS.get(kind, "service_unavailable" if status >= 500 else "fatal_error")
+    return slack_error(code, status=status)
+
+
+def _stamp_headers(request: Request, response: Response) -> None:
     for k, v in _slack_headers().items():
-        response.headers[k] = v
-    return response
+        response.headers.setdefault(k, v)
 
 
-@app.middleware("http")
-async def trace_middleware(request: Request, call_next):
-    path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
-    body_bytes = await request.body()
-    try:
-        body = json.loads(body_bytes) if body_bytes else None
-    except Exception:
-        # Slack also accepts form-encoded — record raw.
-        body = body_bytes.decode("utf-8", errors="replace") if body_bytes else None
-
-    async def receive():
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    request._receive = receive  # type: ignore[attr-defined]
-    response = await call_next(request)
-
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk)
-    resp_bytes = b"".join(chunks)
-    try:
-        resp_body = json.loads(resp_bytes) if resp_bytes else None
-    except Exception:
-        resp_body = resp_bytes.decode("utf-8", errors="replace") if resp_bytes else None
-
-    TRACE.append({
-        "ts": _now_iso(),
-        "method": request.method,
-        "path": path,
-        "query": dict(request.query_params),
-        "body": body,
-        "status": response.status_code,
-        "response": resp_body,
-    })
-
-    return Response(
-        content=resp_bytes,
-        status_code=response.status_code,
-        headers={k: v for k, v in response.headers.items() if k.lower() != "content-length"},
-        media_type=response.media_type,
-    )
+_SLACK_FAMILIES = {"chat": "messages", "conversations": "channels", "reactions": "reactions",
+                   "users": "users", "files": "files", "pins": "pins", "bookmarks": "bookmarks"}
+_READ_VERBS = ("list", "info", "history", "replies", "get", "lookup", "test", "members", "search")
+_DELETE_VERBS = ("delete", "remove", "kick", "leave", "archive")
+_UPDATE_VERBS = ("update", "set", "rename", "unarchive", "mark")
 
 
-# --- introspection -------------------------------------------------------
-
-@app.get("/_health")
-def health():
-    return {"ok": True}
-
-
-@app.get("/_trace")
-def get_trace():
-    return TRACE
-
-
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
-
-
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
+def _classify(method: str, path: str, body: object) -> tuple[kit.Op, str] | None:
+    """Slack is RPC over HTTP: the method name, not the HTTP verb, says what happened."""
+    name = path.rsplit("/", 1)[-1]
+    family, _, verb = name.partition(".")
+    if not verb:
+        return None
+    resource = _SLACK_FAMILIES.get(family, family)
+    verb = verb.lower()
+    if verb.startswith(_READ_VERBS):
+        return "read", resource
+    if verb.startswith(_DELETE_VERBS):
+        return "delete", resource
+    if verb.startswith(_UPDATE_VERBS):
+        return "update", resource
+    return "create", resource
 
 
-@app.post("/_config")
-async def set_config(request: Request):
-    body = await request.json()
-    cfg = STATE["_config"]
-    if "page_size" in body:
-        cfg["page_size"] = int(body["page_size"])
-    return {"ok": True, "config": cfg}
+def _failed(status: int, body: object) -> bool:
+    # Slack answers application errors with HTTP 200 and {"ok": false}.
+    return status >= 400 or (isinstance(body, dict) and body.get("ok") is False)
 
 
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "seed": name, "config": STATE["_config"]}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    """Apply an inline JSON seed payload (same shape as slack_seeds/*.json)."""
-    data = await request.json()
-    if not isinstance(data, dict):
-        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "config": STATE["_config"]}
+TWIN = kit.install(app, kit.Twin(
+    name="slack",
+    classify=_classify,
+    failed=_failed,
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+    on_response=_stamp_headers,
+))
 
 
 # --- chat.postMessage / reply_to_thread ---------------------------------

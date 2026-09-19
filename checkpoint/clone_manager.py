@@ -36,38 +36,12 @@ from pathlib import Path
 
 import httpx
 
-from checkpoint.fake_credentials import (
-    FAKE_DISCORD_TOKEN,
-    FAKE_GITHUB_TOKEN,
-    FAKE_GOOGLE_WORKSPACE_TOKEN,
-    FAKE_LINEAR_TOKEN,
-    FAKE_SLACK_TOKEN,
-    FAKE_STRIPE_KEY,
-    FAKE_SUPABASE_TOKEN,
-)
+from checkpoint.twins import registry as twin_registry
 
 DEFAULT_REGISTRY = Path(".checkpoint/cache/clones.json")
 
-# Source of truth for which clones we can start, mirroring runner.TWIN_APPS.
-TWIN_APPS = {
-    "github": "checkpoint.twins.github:app",
-    "slack": "checkpoint.twins.slack:app",
-    "stripe": "checkpoint.twins.stripe:app",
-    "linear": "checkpoint.twins.linear:app",
-    "supabase": "checkpoint.twins.supabase:app",
-    "discord": "checkpoint.twins.discord:app",
-    "google-workspace": "checkpoint.twins.google_workspace:app",
-}
-
-_CLONE_TOKEN = {
-    "github": FAKE_GITHUB_TOKEN,
-    "slack": FAKE_SLACK_TOKEN,
-    "stripe": FAKE_STRIPE_KEY,
-    "linear": FAKE_LINEAR_TOKEN,
-    "supabase": FAKE_SUPABASE_TOKEN,
-    "discord": FAKE_DISCORD_TOKEN,
-    "google-workspace": FAKE_GOOGLE_WORKSPACE_TOKEN,
-}
+TWIN_APPS = {spec.name: spec.app for spec in twin_registry.all_specs()}
+_CLONE_TOKEN = {spec.name: spec.token for spec in twin_registry.all_specs()}
 
 
 def _utc_iso() -> str:

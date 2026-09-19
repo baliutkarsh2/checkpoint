@@ -31,17 +31,23 @@ def test_missing_token_returns_401(client):
     assert r.status_code == 401
 
 
-def test_wrong_token_returns_401(client):
+def test_wrong_token_returns_401_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/issues", headers={"Authorization": "Bearer bad_token"})
     assert r.status_code == 401
 
 
 def test_env_override_token(monkeypatch, client):
     monkeypatch.setenv("LINEAR_BOOTSTRAP_TOKEN", "lin_api_override")
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/issues", headers=H)
     assert r.status_code == 401
     r = client.get("/v1/issues", headers={"Authorization": "Bearer lin_api_override"})
     assert r.status_code == 200
+
+
+def test_missing_credentials_return_401(client):
+    assert client.get('/v1/issues').status_code == 401
 
 
 def test_introspection_bypasses_auth(client):

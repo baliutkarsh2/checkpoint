@@ -618,8 +618,9 @@ def create_app(
     @app.get("/api/clones/supported", tags=["clones"])
     def api_clones_supported():
         """Static list of clones the system knows how to spawn."""
-        from ..clone_manager import TWIN_APPS
-        return [{"id": k, "module": v} for k, v in sorted(TWIN_APPS.items())]
+        from ..twins import registry
+        return [{"id": s.name, "title": s.title, "module": s.app, "seeds": s.seed_names()}
+                for s in registry.all_specs()]
 
     # -----------------------------------------------------------------------
     # CLI-parity endpoints: doctor, config, validate, anonymized export.

@@ -1,4 +1,4 @@
-"""Discord twin: stateful in-memory clone of the Discord REST API v10.
+"""Discord twin: a stateful, in-memory Discord REST API (v10).
 
 Implements the primary Discord REST surfaces used by agents:
   Guilds      — metadata, members, roles
@@ -9,11 +9,10 @@ Implements the primary Discord REST surfaces used by agents:
 Authentication mirrors Discord bot token format:
   Authorization: Bot <token>
 
-Introspection at /_health, /_trace, /_state, /_reset, /_seed/<name>, /_seed-file.
+The control plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
-import json
 import os
 import time
 import uuid
@@ -25,11 +24,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from checkpoint.fake_credentials import FAKE_DISCORD_TOKEN
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint discord twin")
 
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_DISCORD_TOKEN
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "discord_seeds"
 
@@ -55,7 +54,6 @@ def _fresh_state() -> dict:
         "users": {},     # user_id -> user dict
         "_counters": {
             "snowflake_seq": 0,
-            "requests": 0,
         },
         "_config": {
             "rate_limit": None,
@@ -87,14 +85,6 @@ def _extract_token(auth_header: str | None) -> str | None:
     return auth_header.strip()
 
 
-def _check_auth(request: Request) -> bool:
-    if request.url.path.startswith(INTROSPECTION_PREFIX):
-        return True
-    expected = _bootstrap_token()
-    raw = expected[4:] if expected.startswith("Bot ") else expected
-    token = _extract_token(request.headers.get("Authorization"))
-    return token == raw or f"Bot {token}" == expected or token == expected
-
 
 def _build_bot_user() -> dict:
     return {
@@ -106,96 +96,38 @@ def _build_bot_user() -> dict:
     }
 
 
-# --- middleware / tracing ----------------------------------------------------
+# --- runtime: auth, faults, trace, control plane ----------------------------
 
-@app.middleware("http")
-async def _middleware(request: Request, call_next):
-    path = request.url.path
-    is_introspection = path.startswith(INTROSPECTION_PREFIX)
-    is_mcp = path.startswith("/mcp")
-    if not is_introspection and not is_mcp:
-        STATE["_counters"]["requests"] += 1
-        if not _check_auth(request):
-            return JSONResponse(status_code=401, content={"code": 0, "message": "401: Unauthorized"})
-    response = await call_next(request)
-    if not is_introspection and not is_mcp:
-        TRACE.append({
-            "method": request.method,
-            "path": path,
-            "status": response.status_code,
-            "ts": _now(),
-        })
-    return response
+def _authenticate(request: Request) -> Response | None:
+    token = _extract_token(request.headers.get("authorization"))
+    if not token:
+        return discord_error(401, 0, "401: Unauthorized")
+    if TWIN.config.get("strict_auth") and token != _extract_token(_bootstrap_token()):
+        return discord_error(401, 0, "401: Unauthorized")
+    return None
 
 
-# --- introspection -----------------------------------------------------------
-
-@app.get("/_health")
-def health():
-    return {"ok": True, "twin": "discord"}
-
-
-@app.get("/_trace")
-def get_trace():
-    return TRACE
-
-
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
+def _error(kind: str, status: int, message: str) -> Response:
+    if kind == "rate_limited":
+        return JSONResponse(
+            status_code=429,
+            content={"message": "You are being rate limited.", "retry_after": 1.0, "global": False},
+            headers={"Retry-After": "1", "X-RateLimit-Remaining": "0", "X-RateLimit-Scope": "user"},
+        )
+    if kind in ("forbidden", "read_only"):
+        return discord_error(403, 50013, "Missing Permissions")
+    return discord_error(status, 0, f"{status}: {message}")
 
 
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
-
-
-@app.post("/_config")
-async def configure(request: Request):
-    body = await request.json()
-    if "rate_limit" in body:
-        STATE["_config"]["rate_limit"] = body["rate_limit"]
-    return {"ok": True, "config": STATE["_config"]}
-
-
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    for ck, cv in (data.get("config") or {}).items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "seed": name}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    data = await request.json()
-    if not isinstance(data, dict):
-        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    for ck, cv in (data.get("config") or {}).items():
-        STATE["_config"][ck] = cv
-    return {"ok": True}
+TWIN = kit.install(app, kit.Twin(
+    name="discord",
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+))
 
 
 # --- Gateway / current user --------------------------------------------------

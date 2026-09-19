@@ -1,17 +1,13 @@
-"""Stripe twin: stateful in-memory clone of Stripe REST API.
+"""Stripe twin: a stateful, in-memory Stripe API.
 
-Phase 3 plan 03 (strict mode + auth + idempotency).
-Phase 3 plan 04 adds extended-mode endpoints behind STRIPE_STRICT=false +
-rate-limit middleware + seeds.
+Accepts both ``application/x-www-form-urlencoded`` (Stripe's canonical encoding,
+including the SDKs' nested ``a[b][0]=v`` bracket paths) and JSON. Errors use
+Stripe's ``{"error": {"type", "message", "code", "param"}}`` envelope.
 
-Real Stripe accepts both application/x-www-form-urlencoded (canonical) and
-application/json. We accept both and normalize to a dict.
+Idempotency: a POST with ``Idempotency-Key: <k>`` caches its response; a retry
+with the same key replays it without mutating state, as Stripe does.
 
-Idempotency: when a POST request includes `Idempotency-Key: <k>`, we cache
-(key, path, body-hash) -> (status, body). A retry with the same key & body
-returns the cached response and skips mutation. Different body with same key
-returns the cached response anyway (matches Stripe's behaviour — the key is
-the contract).
+The control plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
@@ -27,11 +23,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from checkpoint.fake_credentials import FAKE_STRIPE_KEY
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint stripe twin")
 
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_STRIPE_KEY
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "stripe_seeds"
 
@@ -43,10 +39,6 @@ def _now_iso() -> str:
 def _now_unix() -> int:
     return int(time.time())
 
-
-def _strict_default() -> bool:
-    val = os.environ.get("STRIPE_STRICT", "true").lower()
-    return val not in ("false", "0", "no")
 
 
 def _fresh_state() -> dict:
@@ -80,13 +72,8 @@ def _fresh_state() -> dict:
             "customer": 0, "product": 0, "price": 0, "payment_intent": 0,
             "refund": 0, "invoice": 0, "invoice_item": 0, "subscription": 0,
             "coupon": 0, "payment_link": 0, "dispute": 0,
-            "requests": 0,
         },
-        "_idempotency": {},   # key -> {"path": ..., "body_hash": ..., "status": ..., "body": ...}
-        "_config": {
-            "rate_limit": None,
-            "strict": _strict_default(),
-        },
+        "_idempotency": {},   # key -> {"path": ..., "status": ..., "body": ...}
     }
 
 
@@ -206,84 +193,44 @@ async def _parse_body(request: Request) -> dict:
             return {}
 
 
-# --- middlewares ---------------------------------------------------------
+# --- runtime: auth, faults, trace, control plane --------------------------
 
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # Introspection and the mounted MCP transport bypass token auth.
-    # MCP tool bodies stamp the bootstrap token back on when shimming
-    # into the REST surface.
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
+def _authenticate(request: Request) -> Response | None:
     token = _extract_token(request.headers.get("authorization"))
     if not token:
         return stripe_error(
-            401, "Did not provide API key.",
-        )
-    if token != _bootstrap_token():
-        return stripe_error(
             401,
-            "Invalid API Key provided: " + (token[:7] + "...") if len(token) > 10 else token,
-            type_="invalid_request_error",
+            "You did not provide an API key. You need to provide your API key in the "
+            "Authorization header, using Bearer auth.",
         )
+    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
+        shown = token[:7] + "..." if len(token) > 10 else token
+        return stripe_error(401, f"Invalid API Key provided: {shown}")
+    return None
 
-    # Rate-limit gate: count then check.
-    STATE["_counters"]["requests"] += 1
-    rl = STATE["_config"].get("rate_limit")
-    if rl is not None and STATE["_counters"]["requests"] > rl:
+
+def _error(kind: str, status: int, message: str) -> Response:
+    if kind == "rate_limited":
         return JSONResponse(
             status_code=429,
-            content={"error": {"type": "rate_limit_error",
-                               "message": "Too many requests"}},
+            content={"error": {"type": "invalid_request_error", "code": "rate_limit",
+                               "message": "Request rate limit exceeded."}},
             headers={"Stripe-Should-Retry": "true"},
         )
+    if kind in ("forbidden", "read_only"):
+        return stripe_error(403, message, type_="invalid_request_error", code="secret_key_required")
+    return stripe_error(status, message, type_="api_error")
 
-    return await call_next(request)
 
-
-@app.middleware("http")
-async def trace_middleware(request: Request, call_next):
-    path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
-    body_bytes = await request.body()
-    try:
-        body = json.loads(body_bytes) if body_bytes else None
-    except Exception:
-        body = body_bytes.decode("utf-8", errors="replace") if body_bytes else None
-
-    async def receive():
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-    request._receive = receive  # type: ignore[attr-defined]
-
-    response = await call_next(request)
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk)
-    resp_bytes = b"".join(chunks)
-    try:
-        resp_body = json.loads(resp_bytes) if resp_bytes else None
-    except Exception:
-        resp_body = resp_bytes.decode("utf-8", errors="replace") if resp_bytes else None
-
-    TRACE.append({
-        "ts": _now_iso(),
-        "method": request.method,
-        "path": path,
-        "query": dict(request.query_params),
-        "body": body,
-        "status": response.status_code,
-        "response": resp_body,
-    })
-    return Response(
-        content=resp_bytes,
-        status_code=response.status_code,
-        headers={k: v for k, v in response.headers.items() if k.lower() != "content-length"},
-        media_type=response.media_type,
-    )
+TWIN = kit.install(app, kit.Twin(
+    name="stripe",
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+))
 
 
 def _idempotency_serve(request: Request, body_bytes: bytes) -> JSONResponse | None:
@@ -309,87 +256,7 @@ def _idempotency_store(request: Request, status: int, body: dict) -> None:
     }
 
 
-# --- introspection -------------------------------------------------------
-
-@app.get("/_health")
-def health():
-    return {"ok": True}
-
-
-@app.get("/_trace")
-def get_trace():
-    return TRACE
-
-
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
-
-
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
-
-
-@app.post("/_config")
-async def set_config(request: Request):
-    body = await request.json()
-    cfg = STATE["_config"]
-    if "rate_limit" in body:
-        cfg["rate_limit"] = body["rate_limit"]
-    if "strict" in body:
-        cfg["strict"] = bool(body["strict"])
-    return {"ok": True, "config": cfg}
-
-
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "seed": name, "config": STATE["_config"]}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    """Apply an inline JSON seed payload (same shape as stripe_seeds/*.json)."""
-    data = await request.json()
-    if not isinstance(data, dict):
-        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    for ck, cv in cfg.items():
-        STATE["_config"][ck] = cv
-    return {"ok": True, "config": STATE["_config"]}
-
-
 # --- customers ----------------------------------------------------------
-
-def _strict() -> bool:
-    return bool(STATE["_config"].get("strict", True))
-
 
 @app.post("/v1/customers")
 async def create_customer(request: Request):
@@ -503,7 +370,7 @@ def list_prices(limit: int = 10, product: str | None = None):
     return {"object": "list", "url": "/v1/prices", "has_more": False, "data": items[:limit]}
 
 
-# --- payment_intents (strict: list only) --------------------------------
+# --- payment_intents  --------------------------------
 
 @app.get("/v1/payment_intents")
 def list_payment_intents(limit: int = 10, customer: str | None = None):
@@ -808,20 +675,8 @@ def get_account_info():
     return STATE["account"]
 
 
-# --- extended-mode endpoints (STRIPE_STRICT=false) ----------------------
-#
-# All extended endpoints return 404 Stripe-shape when strict mode is on.
-# This mirrors the real Stripe MCP server which gates this surface behind
-# `--strict=false`.
-
-def _strict_404() -> JSONResponse:
-    return stripe_error(404, "Unrecognized endpoint", code="endpoint_unknown")
-
-
 @app.get("/v1/customers/{customer_id}")
 def retrieve_customer(customer_id: str):
-    if _strict():
-        return _strict_404()
     cust = STATE["customers"].get(customer_id)
     if cust is None:
         return stripe_error(404, f"No such customer: {customer_id}", code="resource_missing")
@@ -830,8 +685,6 @@ def retrieve_customer(customer_id: str):
 
 @app.post("/v1/payment_intents")
 async def create_payment_intent(request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -869,8 +722,6 @@ def _pi_or_404(pi_id: str):
 
 @app.post("/v1/payment_intents/{pi_id}/confirm")
 async def confirm_payment_intent(pi_id: str, request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -887,8 +738,6 @@ async def confirm_payment_intent(pi_id: str, request: Request):
 
 @app.post("/v1/payment_intents/{pi_id}/capture")
 async def capture_payment_intent(pi_id: str, request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -905,8 +754,6 @@ async def capture_payment_intent(pi_id: str, request: Request):
 
 @app.post("/v1/payment_intents/{pi_id}/cancel")
 async def cancel_payment_intent(pi_id: str, request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -922,8 +769,6 @@ async def cancel_payment_intent(pi_id: str, request: Request):
 @app.post("/v1/payment_intents/{pi_id}")
 async def update_payment_intent(pi_id: str, request: Request):
     """Update/handle_next_action for payment_intent (extended mode)."""
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -947,8 +792,6 @@ async def update_payment_intent(pi_id: str, request: Request):
 
 @app.get("/v1/refunds/{refund_id}")
 def retrieve_refund(refund_id: str):
-    if _strict():
-        return _strict_404()
     refund = STATE["refunds"].get(refund_id)
     if refund is None:
         return stripe_error(404, f"No such refund: {refund_id}", code="resource_missing")
@@ -957,8 +800,6 @@ def retrieve_refund(refund_id: str):
 
 @app.post("/v1/invoices/{invoice_id}/pay")
 async def pay_invoice(invoice_id: str, request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -973,8 +814,6 @@ async def pay_invoice(invoice_id: str, request: Request):
 
 @app.post("/v1/invoices/{invoice_id}/void")
 async def void_invoice(invoice_id: str, request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -988,8 +827,6 @@ async def void_invoice(invoice_id: str, request: Request):
 
 @app.post("/v1/subscriptions")
 async def create_subscription(request: Request):
-    if _strict():
-        return _strict_404()
     cached = _idempotency_serve(request, await request.body())
     if cached is not None:
         return cached
@@ -1017,8 +854,6 @@ async def create_subscription(request: Request):
 
 @app.get("/v1/payment_links")
 def list_payment_links(limit: int = 10):
-    if _strict():
-        return _strict_404()
     items = list(STATE["payment_links"].values())
     return {"object": "list", "url": "/v1/payment_links", "has_more": False, "data": items[:limit]}
 

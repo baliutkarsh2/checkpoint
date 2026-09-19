@@ -1,4 +1,4 @@
-"""Phase 3 Plan 04: Stripe extended-mode endpoints + rate-limit + seeds."""
+"""Stripe twin: customers/payment intents/subscriptions/invoices/coupons/links, rate limits, seeds."""
 from __future__ import annotations
 
 import json
@@ -19,9 +19,7 @@ EXPECTED_SEEDS = {
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    st.STATE.clear()
-    st.STATE.update(st._fresh_state())
-    st.TRACE.clear()
+    st.TWIN.reset()
     yield
 
 
@@ -34,54 +32,22 @@ TOKEN = st.DEFAULT_BOOTSTRAP_TOKEN
 H = {"Authorization": f"Bearer {TOKEN}"}
 
 
-def _set_extended(client):
-    client.post("/_config", json={"strict": False})
+# --- full API surface --------------------------------------------------
 
-
-# --- strict-mode 404s on extended endpoints -----------------------------
-
-def test_retrieve_customer_404_in_strict(client):
-    st.STATE["customers"]["cus_1"] = {"id": "cus_1", "object": "customer"}
-    r = client.get("/v1/customers/cus_1", headers=H)
-    assert r.status_code == 404
-    assert r.json()["error"]["code"] == "endpoint_unknown"
-
-
-def test_create_payment_intent_404_in_strict(client):
-    r = client.post("/v1/payment_intents", headers=H, json={"amount": 100})
-    assert r.status_code == 404
-    assert r.json()["error"]["code"] == "endpoint_unknown"
-
-
-def test_create_subscription_404_in_strict(client):
-    r = client.post("/v1/subscriptions", headers=H, json={"customer": "cus_1"})
-    assert r.status_code == 404
-
-
-def test_list_payment_links_404_in_strict(client):
-    r = client.get("/v1/payment_links", headers=H)
-    assert r.status_code == 404
-
-
-# --- extended-mode happy path ------------------------------------------
-
-def test_retrieve_customer_extended(client):
-    _set_extended(client)
+def test_retrieve_customer(client):
     st.STATE["customers"]["cus_1"] = {"id": "cus_1", "object": "customer", "email": "a@b.com"}
     r = client.get("/v1/customers/cus_1", headers=H)
     assert r.status_code == 200
     assert r.json()["email"] == "a@b.com"
 
 
-def test_retrieve_customer_not_found_extended(client):
-    _set_extended(client)
+def test_retrieve_customer_not_found(client):
     r = client.get("/v1/customers/cus_nope", headers=H)
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "resource_missing"
 
 
 def test_create_and_confirm_payment_intent(client):
-    _set_extended(client)
     r = client.post("/v1/payment_intents", headers=H, json={"amount": 1500, "currency": "usd"})
     assert r.status_code == 200
     pi = r.json()
@@ -91,7 +57,6 @@ def test_create_and_confirm_payment_intent(client):
 
 
 def test_create_payment_intent_manual_capture(client):
-    _set_extended(client)
     pi = client.post("/v1/payment_intents", headers=H,
                      json={"amount": 1000, "capture_method": "manual"}).json()
     client.post(f"/v1/payment_intents/{pi['id']}/confirm", headers=H, json={})
@@ -101,22 +66,19 @@ def test_create_payment_intent_manual_capture(client):
 
 
 def test_cancel_payment_intent(client):
-    _set_extended(client)
     pi = client.post("/v1/payment_intents", headers=H, json={"amount": 200}).json()
     r = client.post(f"/v1/payment_intents/{pi['id']}/cancel", headers=H, json={})
     assert r.json()["status"] == "canceled"
 
 
 def test_handle_next_action_via_update(client):
-    _set_extended(client)
     pi = client.post("/v1/payment_intents", headers=H, json={"amount": 200}).json()
     st.STATE["payment_intents"][pi["id"]]["status"] = "requires_action"
     r = client.post(f"/v1/payment_intents/{pi['id']}", headers=H, json={})
     assert r.json()["status"] == "succeeded"
 
 
-def test_retrieve_refund_extended(client):
-    _set_extended(client)
+def test_retrieve_refund(client):
     st.STATE["refunds"]["re_1"] = {"id": "re_1", "object": "refund", "amount": 100}
     r = client.get("/v1/refunds/re_1", headers=H)
     assert r.status_code == 200
@@ -124,7 +86,6 @@ def test_retrieve_refund_extended(client):
 
 
 def test_pay_and_void_invoice(client):
-    _set_extended(client)
     inv = client.post("/v1/invoices", headers=H, json={"customer": "cus_1"}).json()
     client.post("/v1/invoiceitems", headers=H,
                 json={"customer": "cus_1", "amount": 500, "invoice": inv["id"]})
@@ -134,14 +95,12 @@ def test_pay_and_void_invoice(client):
 
 
 def test_void_invoice(client):
-    _set_extended(client)
     inv = client.post("/v1/invoices", headers=H, json={"customer": "cus_1"}).json()
     r = client.post(f"/v1/invoices/{inv['id']}/void", headers=H, json={})
     assert r.json()["status"] == "void"
 
 
-def test_create_subscription_extended(client):
-    _set_extended(client)
+def test_create_subscription(client):
     r = client.post("/v1/subscriptions", headers=H, json={
         "customer": "cus_1",
         "items": [{"price": "price_test", "quantity": 1}],
@@ -154,13 +113,11 @@ def test_create_subscription_extended(client):
 
 
 def test_create_subscription_requires_customer(client):
-    _set_extended(client)
     r = client.post("/v1/subscriptions", headers=H, json={})
     assert r.status_code == 400
 
 
-def test_list_payment_links_extended(client):
-    _set_extended(client)
+def test_list_payment_links(client):
     client.post("/v1/payment_links", headers=H,
                 json={"line_items": [{"price": "p", "quantity": 1}]})
     r = client.get("/v1/payment_links", headers=H)
@@ -178,8 +135,8 @@ def test_rate_limit_triggers_429(client):
     r = client.get("/v1/balance", headers=H)
     assert r.status_code == 429
     body = r.json()
-    assert body["error"]["type"] == "rate_limit_error"
-    assert body["error"]["message"] == "Too many requests"
+    # stripe-python raises RateLimitError on HTTP 429 / code "rate_limit".
+    assert body["error"]["code"] == "rate_limit"
     assert r.headers.get("stripe-should-retry") == "true"
 
 
@@ -242,20 +199,3 @@ def test_all_seeds_parse_as_valid_json():
     for seed in EXPECTED_SEEDS:
         data = json.loads((SEEDS_DIR / f"{seed}.json").read_text())
         assert "state" in data
-
-
-# --- env override of strict ---------------------------------------------
-
-def test_env_disables_strict(monkeypatch):
-    monkeypatch.setenv("STRIPE_STRICT", "false")
-    # Reset state so fresh _config picks up env.
-    st.STATE.clear()
-    st.STATE.update(st._fresh_state())
-    assert st.STATE["_config"]["strict"] is False
-
-
-def test_env_default_is_strict(monkeypatch):
-    monkeypatch.delenv("STRIPE_STRICT", raising=False)
-    st.STATE.clear()
-    st.STATE.update(st._fresh_state())
-    assert st.STATE["_config"]["strict"] is True

@@ -32,7 +32,19 @@ def test_missing_token_returns_not_authed(client):
     assert r.json() == {"ok": False, "error": "not_authed"}
 
 
-def test_wrong_token_returns_invalid_auth(client):
+def test_any_token_accepted_by_default(client):
+    r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-CHECKPOINTFAKE-agents-own"})
+    assert r.json()["ok"] is True
+
+
+def test_token_accepted_as_form_field(client):
+    r = client.post("/api/chat.postMessage", data={"token": "xoxb-CHECKPOINTFAKE-form", "channel": "C404", "text": "hi"})
+    # Authenticated: the failure is about the channel, not the credential.
+    assert r.json()["error"] not in ("not_authed", "invalid_auth")
+
+
+def test_wrong_token_returns_invalid_auth_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-CHECKPOINTFAKE-wrong"})
     assert r.status_code == 200
     assert r.json() == {"ok": False, "error": "invalid_auth"}
@@ -40,6 +52,7 @@ def test_wrong_token_returns_invalid_auth(client):
 
 def test_env_override(monkeypatch, client):
     monkeypatch.setenv("SLACK_BOOTSTRAP_TOKEN", "xoxb-CHECKPOINTFAKE-env-override")
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/api/conversations.list", headers=H)
     assert r.json() == {"ok": False, "error": "invalid_auth"}
     r = client.get("/api/conversations.list", headers={"Authorization": "Bearer xoxb-CHECKPOINTFAKE-env-override"})

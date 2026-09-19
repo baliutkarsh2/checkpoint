@@ -25,6 +25,7 @@ from .checker import check
 from .checker_llm import try_stage2
 from .judge import judge
 from .scenario import Criterion, Scenario
+from .twins import registry as twin_registry
 
 
 @dataclass
@@ -65,15 +66,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-TWIN_APPS = {
-    "github": "checkpoint.twins.github:app",
-    "slack": "checkpoint.twins.slack:app",
-    "stripe": "checkpoint.twins.stripe:app",
-    "linear": "checkpoint.twins.linear:app",
-    "supabase": "checkpoint.twins.supabase:app",
-    "discord": "checkpoint.twins.discord:app",
-    "google-workspace": "checkpoint.twins.google_workspace:app",
-}
+TWIN_APPS = {spec.name: spec.app for spec in twin_registry.all_specs()}
 
 
 def _start_twin(clone: str, port: int) -> subprocess.Popen:

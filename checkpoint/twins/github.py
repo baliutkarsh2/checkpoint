@@ -1,16 +1,13 @@
-"""GitHub twin: stateful in-memory clone of GitHub REST API.
+"""GitHub twin: a stateful, in-memory GitHub REST API.
 
-Phase 1 covered: repos, issues, comments, labels.
-Phase 2 adds: bootstrap-token auth, GitHub-shape error envelopes,
-`X-GitHub-*` response headers, full repos/branches/files/commits/PRs/
-workflows/search surface, named seeds, rate-limit + permissions-denied.
-
-Introspection at /_health, /_trace, /_state, /_reset, /_seed/<name>, /_config.
+Covers repos, branches, file contents, commits, issues, comments, labels, pull
+requests (reviews, files, merges), workflow runs and search, with GitHub-shaped
+errors, ``X-GitHub-*``/rate-limit headers and ``Link`` pagination. The control
+plane and fault model come from :mod:`checkpoint.twins.kit`.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -21,16 +18,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+from checkpoint.twins import kit
 
 app = FastAPI(title="checkpoint github twin")
 
-# Per SCOPE §3.2 / REQUIREMENTS.md GH-02.
 DEFAULT_BOOTSTRAP_TOKEN = FAKE_GITHUB_TOKEN
 DOC_URL = "https://docs.github.com/rest"
 RATE_DOC_URL = (
     "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
 )
-INTROSPECTION_PREFIX = "/_"
 
 SEEDS_DIR = Path(__file__).parent / "github_seeds"
 
@@ -58,11 +54,6 @@ def _fresh_state() -> dict:
             "repo_id": 0,
             "run_id": 0,
             "sha_seq_per_repo": {},
-            "requests": 0,
-        },
-        "_config": {
-            "rate_limit": None,         # None = unlimited
-            "permissions_denied": False,
         },
     }
 
@@ -183,8 +174,8 @@ def _ensure_repo(owner: str, name: str) -> dict:
 
 
 def _gh_headers(extra: dict | None = None) -> dict:
-    rate_limit = STATE["_config"].get("rate_limit")
-    used = STATE["_counters"]["requests"]
+    rate_limit = TWIN.config.get("rate_limit")
+    used = TWIN.requests
     if rate_limit is None:
         limit = 5000
         remaining = 5000
@@ -203,200 +194,78 @@ def _gh_headers(extra: dict | None = None) -> dict:
     return headers
 
 
-# --- middlewares ---------------------------------------------------------
+# --- runtime: auth, faults, trace, control plane --------------------------
 
-@app.middleware("http")
-async def auth_and_limits_middleware(request: Request, call_next):
-    path = request.url.path
-    method = request.method
-
-    # Introspection bypasses all auth/limits/headers logic.
-    # The mounted MCP transport also bypasses — MCP clients don't speak
-    # the bootstrap-token contract; the MCP tool bodies stamp the token
-    # back on when they shim into the REST surface.
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
-    # 1. Auth gate
+def _authenticate(request: Request) -> Response | None:
     token = _extract_token(request.headers.get("authorization"))
-    if token != _bootstrap_token():
-        return gh_error(
-            401,
-            "Bad credentials",
-            documentation_url="https://docs.github.com/rest",
-        )
+    if token is None:
+        return gh_error(401, "Requires authentication")
+    if TWIN.config.get("strict_auth") and token != _bootstrap_token():
+        return gh_error(401, "Bad credentials")
+    return None
 
-    # 2. Permissions-denied gate (writes only)
-    if STATE["_config"].get("permissions_denied") and method in (
-        "POST", "PATCH", "PUT", "DELETE",
-    ):
-        return gh_error(
-            403,
-            "Resource not accessible by integration",
-            documentation_url="https://docs.github.com/rest",
-        )
 
-    # 2b. Read-only gate: any mutating method is rejected outright.
-    if STATE["_config"].get("read_only") and method in (
-        "POST", "PATCH", "PUT", "DELETE",
-    ):
-        return gh_error(
-            403,
-            "Read-only mode: writes are blocked by --read-only.",
-            documentation_url="https://docs.github.com/rest",
-        )
-
-    # 3. Rate-limit gate (count BEFORE running handler so /repos GET counts)
-    STATE["_counters"]["requests"] += 1
-    rl = STATE["_config"].get("rate_limit")
-    if rl is not None and STATE["_counters"]["requests"] > rl:
-        # Build a deterministic message in real-GitHub shape.
+def _error(kind: str, status: int, message: str) -> Response:
+    if kind == "rate_limited":
         return JSONResponse(
-            status_code=429,
-            content={
-                "message": "API rate limit exceeded for 127.0.0.1.",
-                "documentation_url": RATE_DOC_URL,
-            },
-            headers=_gh_headers({"Retry-After": "60"}),
+            status_code=status,
+            content={"message": "API rate limit exceeded for 127.0.0.1.", "documentation_url": RATE_DOC_URL},
+            headers=_gh_headers({"Retry-After": "60", "X-RateLimit-Remaining": "0"}),
         )
+    if kind == "forbidden":
+        message = "Resource not accessible by integration"
+    return gh_error(status, message)
 
-    response = await call_next(request)
-    # Stamp headers (don't override Content-Length).
+
+def _stamp_headers(request: Request, response: Response) -> None:
     for k, v in _gh_headers().items():
-        response.headers[k] = v
-    return response
+        response.headers.setdefault(k, v)
 
 
-@app.middleware("http")
-async def trace_middleware(request: Request, call_next):
-    path = request.url.path
-    if path.startswith(INTROSPECTION_PREFIX) or path.startswith("/mcp"):
-        return await call_next(request)
-
-    body_bytes = await request.body()
-    try:
-        body = json.loads(body_bytes) if body_bytes else None
-    except Exception:
-        body = body_bytes.decode("utf-8", errors="replace") if body_bytes else None
-
-    async def receive():
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    request._receive = receive  # type: ignore[attr-defined]
-
-    response = await call_next(request)
-
-    chunks = []
-    async for chunk in response.body_iterator:
-        chunks.append(chunk)
-    resp_bytes = b"".join(chunks)
-    try:
-        resp_body = json.loads(resp_bytes) if resp_bytes else None
-    except Exception:
-        resp_body = resp_bytes.decode("utf-8", errors="replace") if resp_bytes else None
-
-    TRACE.append({
-        "ts": _now(),
-        "method": request.method,
-        "path": path,
-        "query": dict(request.query_params),
-        "body": body,
-        "status": response.status_code,
-        "response": resp_body,
-    })
-
-    return Response(
-        content=resp_bytes,
-        status_code=response.status_code,
-        headers={k: v for k, v in response.headers.items() if k.lower() != "content-length"},
-        media_type=response.media_type,
-    )
+TWIN = kit.install(app, kit.Twin(
+    name="github",
+    state=STATE,
+    trace=TRACE,
+    fresh_state=_fresh_state,
+    seeds_dir=SEEDS_DIR,
+    error=_error,
+    authenticate=_authenticate,
+    on_response=_stamp_headers,
+))
 
 
-# --- introspection endpoints (not traced, not authed) -------------------
+# --- users ---------------------------------------------------------------
 
-@app.get("/_health")
-def health():
-    return {"ok": True}
-
-
-@app.get("/_trace")
-def get_trace():
-    return TRACE
-
-
-@app.get("/_state")
-def get_state():
-    return {k: v for k, v in STATE.items() if not k.startswith("_") or k == "_config"}
+def _user_view(user: dict) -> dict:
+    login = user["login"]
+    return {
+        **user,
+        "node_id": f"U_{user['id']}",
+        "site_admin": False,
+        "html_url": f"https://github.com/{login}",
+        "url": f"https://api.github.com/users/{login}",
+        "repos_url": f"https://api.github.com/users/{login}/repos",
+    }
 
 
-@app.post("/_reset")
-def reset():
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    return {"ok": True}
+@app.get("/user")
+def get_authenticated_user():
+    """The token's owner. SDKs call this first (PyGithub ``get_user()``, ``gh auth status``)."""
+    return _user_view(_user("default-user"))
 
 
-@app.post("/_config")
-async def set_config(request: Request):
-    body = await request.json()
-    cfg = STATE["_config"]
-    if "rate_limit" in body:
-        cfg["rate_limit"] = body["rate_limit"]
-    if "permissions_denied" in body:
-        cfg["permissions_denied"] = bool(body["permissions_denied"])
-    if "read_only" in body:
-        cfg["read_only"] = bool(body["read_only"])
-    return {"ok": True, "config": cfg}
+@app.get("/users/{login}")
+def get_user(login: str):
+    user = STATE["users"].get(login)
+    if user is None:
+        return gh_error(404, "Not Found")
+    return _user_view(user)
 
 
-@app.post("/_seed/{name}")
-def load_seed(name: str):
-    path = SEEDS_DIR / f"{name}.json"
-    if not path.exists():
-        return JSONResponse(status_code=404, content={"ok": False, "error": f"seed {name!r} not found"})
-    data = json.loads(path.read_text())
-    # Reset first.
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    # Deep-merge seed state.
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    # Apply config.
-    cfg = data.get("config") or {}
-    if "rate_limit" in cfg:
-        STATE["_config"]["rate_limit"] = cfg["rate_limit"]
-    if "permissions_denied" in cfg:
-        STATE["_config"]["permissions_denied"] = bool(cfg["permissions_denied"])
-    return {"ok": True, "seed": name, "config": STATE["_config"]}
-
-
-@app.post("/_seed-file")
-async def load_seed_file(request: Request):
-    """Apply an inline JSON seed payload (same shape as the named seed files
-    under github_seeds/). Used by `seed-file:` in scenario config."""
-    data = await request.json()
-    if not isinstance(data, dict):
-        return JSONResponse(status_code=400, content={"ok": False, "error": "body must be a JSON object"})
-    STATE.clear()
-    STATE.update(_fresh_state())
-    TRACE.clear()
-    for k, v in (data.get("state") or {}).items():
-        if isinstance(v, dict) and isinstance(STATE.get(k), dict):
-            STATE[k].update(v)
-        else:
-            STATE[k] = v
-    cfg = data.get("config") or {}
-    if "rate_limit" in cfg:
-        STATE["_config"]["rate_limit"] = cfg["rate_limit"]
-    if "permissions_denied" in cfg:
-        STATE["_config"]["permissions_denied"] = bool(cfg["permissions_denied"])
-    return {"ok": True, "config": STATE["_config"]}
+@app.get("/user/repos")
+def list_authenticated_user_repos(request: Request, per_page: int = 30, page: int = 1):
+    repos = [r for r in STATE["repos"].values() if r["owner"]["login"] == "default-user"]
+    return _paginated(repos, request, per_page, page)
 
 
 # --- repos ---------------------------------------------------------------
