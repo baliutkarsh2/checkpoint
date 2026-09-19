@@ -41,6 +41,7 @@ import random
 import re
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatch
@@ -113,6 +114,20 @@ _METHOD_OPS: dict[str, Op] = {
 }
 _ID_SEGMENT = re.compile(r"^(?:\d+|[0-9a-f-]{16,}|[A-Za-z]{1,4}_[A-Za-z0-9]+|@me|[A-Z]+-\d+)$")
 _VERSION_SEGMENT = re.compile(r"^(?:v\d+(?:\.\d+)?|api|rest|graphql)$")
+
+
+_CURRENT_REQUEST: ContextVar[Request | None] = ContextVar("checkpoint_twin_request", default=None)
+
+
+def current_request() -> Request | None:
+    """The request being served, for twins that shape errors per surface.
+
+    A twin can front several APIs at one origin (Supabase serves PostgREST, Auth
+    and Storage; Linear serves GraphQL and REST), and an injected fault has to
+    come back in the envelope the calling SDK parses. The error factory takes no
+    request, so the kit publishes it here for the duration of the call.
+    """
+    return _CURRENT_REQUEST.get()
 
 
 def _now_iso() -> str:
@@ -354,6 +369,13 @@ class Twin:
         return None
 
     async def handle(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        token = _CURRENT_REQUEST.set(request)
+        try:
+            return await self._handle(request, call_next)
+        finally:
+            _CURRENT_REQUEST.reset(token)
+
+    async def _handle(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         started = time.perf_counter()
         body_bytes = await request.body()
 
@@ -505,6 +527,9 @@ def default_views(state: dict) -> dict[str, View]:
 
 def default_classify(method: str, path: str) -> tuple[Op, str]:
     """HTTP-semantics classification: the verb decides the op, the path the resource."""
+    if path.rstrip("/").endswith("/graphql"):
+        # One endpoint for every operation: only the twin can say what a query did.
+        return "other", "graphql"
     segments = [s for s in path.split("/") if s and not _VERSION_SEGMENT.match(s)]
     resource = next((s for s in reversed(segments) if not _ID_SEGMENT.match(s)),
                     segments[-1] if segments else "")
