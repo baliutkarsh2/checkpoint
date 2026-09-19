@@ -138,9 +138,15 @@ class Scenario:
         return bool(self.prompt.strip())
 
 
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
 def parse(text: str, source: str | None = None) -> Scenario:
     """Read a scenario. Never raises: problems are collected on the scenario."""
     scenario = Scenario(source_path=source)
+    # Authors annotate scenarios; an HTML comment is a note, not a criterion.
+    # Keep the line count so reported line numbers still point at the file.
+    text = _COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
     body, front_matter = _split_front_matter(text, scenario)
     scenario.config.update(front_matter)
 
