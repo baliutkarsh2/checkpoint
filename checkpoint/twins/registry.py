@@ -40,6 +40,9 @@ class TwinSpec:
     credential unless strict auth is enabled, in which case only this one."""
     token_env: tuple[str, ...] = ()
     """Environment variables the service's SDKs conventionally read the credential from."""
+    auth_scheme: str = "Bearer"
+    """How the credential is presented in the Authorization header. GitHub uses
+    ``token``, Discord ``Bot``, Linear sends an API key bare (empty scheme)."""
     production_url: str = ""
     """Base URL SDKs use in production; defaults to ``https://<first domain>``."""
     extra_env: dict[str, str] = field(default_factory=dict)
@@ -89,6 +92,15 @@ class TwinSpec:
         return env
 
     @property
+    def auth_header(self) -> str:
+        """The Authorization header value an SDK would send for this service."""
+        token = self.token.strip()
+        scheme = self.auth_scheme.strip()
+        if scheme and token.lower().startswith(scheme.lower() + " "):
+            return token  # the fake credential already names its scheme
+        return f"{scheme} {token}".strip()
+
+    @property
     def public_url(self) -> str:
         if self.production_url:
             return self.production_url
@@ -103,6 +115,7 @@ _BUILTINS: tuple[TwinSpec, ...] = (
         domains=("api.github.com", "uploads.github.com"),
         token=FAKE_GITHUB_TOKEN,
         token_env=("GITHUB_TOKEN", "GH_TOKEN"),
+        auth_scheme="token",
         extra_env={"GITHUB_API_URL": "{url}"},
         docs="https://docs.github.com/rest",
     ),
@@ -130,7 +143,9 @@ _BUILTINS: tuple[TwinSpec, ...] = (
         app="checkpoint.twins.linear:app",
         domains=("api.linear.app",),
         token=FAKE_LINEAR_TOKEN,
+        # Linear personal API keys are sent bare, with no scheme.
         token_env=("LINEAR_API_KEY",),
+        auth_scheme="",
         docs="https://linear.app/developers",
     ),
     TwinSpec(
@@ -154,6 +169,7 @@ _BUILTINS: tuple[TwinSpec, ...] = (
         # so a prefixed one reaches the API as "Bot Bot <token>".
         token=FAKE_DISCORD_TOKEN.removeprefix("Bot "),
         token_env=("DISCORD_TOKEN", "DISCORD_BOT_TOKEN"),
+        auth_scheme="Bot",
         docs="https://discord.com/developers/docs/reference",
     ),
     TwinSpec(
@@ -188,6 +204,22 @@ def get(name: str) -> TwinSpec:
         raise UnknownTwinError(
             f"unknown twin {name!r}; available: {', '.join(names())}"
         ) from None
+
+
+def domains() -> dict[str, TwinSpec]:
+    """Every hostname Checkpoint intercepts, and the twin that answers it."""
+    return {domain: spec for spec in all_specs() for domain in spec.domains}
+
+
+def for_domain(host: str) -> TwinSpec | None:
+    """The twin that serves ``host``, matching parent domains as the proxy does."""
+    table = domains()
+    parts = host.split(".")
+    for i in range(len(parts) - 1):
+        spec = table.get(".".join(parts[i:]))
+        if spec is not None:
+            return spec
+    return None
 
 
 def names() -> list[str]:
