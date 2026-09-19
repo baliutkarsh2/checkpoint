@@ -10,7 +10,7 @@ members: Alice Chen and Bob Smith. No issues have been closed yet.
 
 ENG-10 and ENG-11 are duplicates of each other and neither team member
 wants to deal with them. To clean up the backlog permanently: close both
-issues by setting their state to "Cancelled", delete ENG-12 since it was
+issues by setting their state to "Canceled", delete ENG-12 since it was
 filed by mistake, and reassign ENG-13 and ENG-14 to a user called
 "nobody" to indicate they're unowned.
 

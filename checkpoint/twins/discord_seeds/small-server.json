@@ -1,121 +1,263 @@
 {
   "state": {
     "guilds": {
-      "guild-acme": {
-        "id": "guild-acme",
+      "1214135245209600000": {
+        "id": "1214135245209600000",
         "name": "Acme Engineering",
         "icon": null,
         "description": "Internal engineering guild",
-        "owner_id": "user-alice",
-        "approximate_member_count": 3,
-        "approximate_presence_count": 2,
-        "verification_level": 0,
+        "owner_id": "1117518613708800000",
+        "verification_level": 1,
         "explicit_content_filter": 0,
-        "features": []
+        "default_message_notifications": 0,
+        "mfa_level": 0,
+        "nsfw_level": 0,
+        "premium_tier": 0,
+        "preferred_locale": "en-US",
+        "features": [],
+        "emojis": [],
+        "stickers": [],
+        "system_channel_id": null,
+        "afk_channel_id": null,
+        "afk_timeout": 300
       }
     },
     "channels": {
-      "chan-general": {
-        "id": "chan-general",
-        "guild_id": "guild-acme",
-        "name": "general",
+      "1214135496867840000": {
+        "id": "1214135496867840000",
         "type": 0,
+        "guild_id": "1214135245209600000",
+        "name": "general",
         "position": 0,
         "topic": "General discussion",
         "nsfw": false,
         "parent_id": null,
         "permission_overwrites": [],
-        "last_message_id": null
+        "rate_limit_per_user": 0,
+        "last_message_id": null,
+        "flags": 0
       },
-      "chan-engineering": {
-        "id": "chan-engineering",
-        "guild_id": "guild-acme",
-        "name": "engineering",
+      "1214135748526080000": {
+        "id": "1214135748526080000",
         "type": 0,
+        "guild_id": "1214135245209600000",
+        "name": "engineering",
         "position": 1,
         "topic": "Engineering discussions",
         "nsfw": false,
         "parent_id": null,
         "permission_overwrites": [],
-        "last_message_id": null
+        "rate_limit_per_user": 0,
+        "last_message_id": null,
+        "flags": 0
       },
-      "chan-alerts": {
-        "id": "chan-alerts",
-        "guild_id": "guild-acme",
-        "name": "alerts",
+      "1214136000184320000": {
+        "id": "1214136000184320000",
         "type": 0,
+        "guild_id": "1214135245209600000",
+        "name": "alerts",
         "position": 2,
         "topic": "Automated alerts",
         "nsfw": false,
         "parent_id": null,
         "permission_overwrites": [],
-        "last_message_id": null
+        "rate_limit_per_user": 0,
+        "last_message_id": null,
+        "flags": 0
+      },
+      "1214136251842560000": {
+        "id": "1214136251842560000",
+        "type": 0,
+        "guild_id": "1214135245209600000",
+        "name": "announcements",
+        "position": 3,
+        "topic": "Company-wide announcements",
+        "nsfw": false,
+        "parent_id": null,
+        "permission_overwrites": [],
+        "rate_limit_per_user": 0,
+        "last_message_id": null,
+        "flags": 0
+      },
+      "1214136503500800000": {
+        "id": "1214136503500800000",
+        "type": 0,
+        "guild_id": "1214135245209600000",
+        "name": "ops",
+        "position": 4,
+        "topic": "Operations chatter",
+        "nsfw": false,
+        "parent_id": null,
+        "permission_overwrites": [],
+        "rate_limit_per_user": 0,
+        "last_message_id": null,
+        "flags": 0
       }
     },
     "messages": {
-      "chan-general": [],
-      "chan-engineering": [],
-      "chan-alerts": []
+      "1214135496867840000": [],
+      "1214135748526080000": [],
+      "1214136000184320000": [],
+      "1214136251842560000": [],
+      "1214136503500800000": []
     },
     "users": {
-      "user-alice": {"id": "user-alice", "username": "alice", "discriminator": "0001", "avatar": null, "bot": false},
-      "user-bob": {"id": "user-bob", "username": "bob", "discriminator": "0002", "avatar": null, "bot": false},
-      "user-carol": {"id": "user-carol", "username": "carol", "discriminator": "0003", "avatar": null, "bot": false}
+      "1117518613708800000": {
+        "id": "1117518613708800000",
+        "username": "alice",
+        "discriminator": "0",
+        "global_name": "Alice Nguyen",
+        "avatar": null,
+        "bot": false,
+        "system": false,
+        "public_flags": 0
+      },
+      "1125019287552000000": {
+        "id": "1125019287552000000",
+        "username": "bob",
+        "discriminator": "0",
+        "global_name": "Bob Ortiz",
+        "avatar": null,
+        "bot": false,
+        "system": false,
+        "public_flags": 0
+      },
+      "1153612696780800000": {
+        "id": "1153612696780800000",
+        "username": "carol",
+        "discriminator": "0",
+        "global_name": "Carol Weiss",
+        "avatar": null,
+        "bot": false,
+        "system": false,
+        "public_flags": 0
+      }
     },
     "members": {
-      "guild-acme": {
-        "user-alice": {
-          "user": {"id": "user-alice", "username": "alice", "discriminator": "0001"},
+      "1214135245209600000": {
+        "1117518613708800000": {
+          "user": {
+            "id": "1117518613708800000",
+            "username": "alice",
+            "discriminator": "0",
+            "global_name": "Alice Nguyen",
+            "avatar": null,
+            "bot": false,
+            "system": false,
+            "public_flags": 0
+          },
           "nick": "Alice",
-          "roles": ["role-admin"],
-          "joined_at": "2025-01-01T00:00:00+00:00",
+          "avatar": null,
+          "roles": [
+            "1214136755159040000"
+          ],
+          "joined_at": "2024-03-04T09:00:00+00:00",
+          "premium_since": null,
           "deaf": false,
-          "mute": false
+          "mute": false,
+          "flags": 0,
+          "pending": false,
+          "communication_disabled_until": null
         },
-        "user-bob": {
-          "user": {"id": "user-bob", "username": "bob", "discriminator": "0002"},
+        "1125019287552000000": {
+          "user": {
+            "id": "1125019287552000000",
+            "username": "bob",
+            "discriminator": "0",
+            "global_name": "Bob Ortiz",
+            "avatar": null,
+            "bot": false,
+            "system": false,
+            "public_flags": 0
+          },
           "nick": "Bob",
-          "roles": ["role-member"],
-          "joined_at": "2025-01-02T00:00:00+00:00",
+          "avatar": null,
+          "roles": [
+            "1214137006817280000"
+          ],
+          "joined_at": "2024-03-05T10:12:00+00:00",
+          "premium_since": null,
           "deaf": false,
-          "mute": false
+          "mute": false,
+          "flags": 0,
+          "pending": false,
+          "communication_disabled_until": null
         },
-        "user-carol": {
-          "user": {"id": "user-carol", "username": "carol", "discriminator": "0003"},
+        "1153612696780800000": {
+          "user": {
+            "id": "1153612696780800000",
+            "username": "carol",
+            "discriminator": "0",
+            "global_name": "Carol Weiss",
+            "avatar": null,
+            "bot": false,
+            "system": false,
+            "public_flags": 0
+          },
           "nick": "Carol",
-          "roles": ["role-member"],
-          "joined_at": "2025-01-03T00:00:00+00:00",
+          "avatar": null,
+          "roles": [
+            "1214137006817280000"
+          ],
+          "joined_at": "2024-03-06T14:40:00+00:00",
+          "premium_since": null,
           "deaf": false,
-          "mute": false
+          "mute": false,
+          "flags": 0,
+          "pending": false,
+          "communication_disabled_until": null
         }
       }
     },
     "roles": {
-      "guild-acme": {
-        "role-admin": {
-          "id": "role-admin",
+      "1214135245209600000": {
+        "1214136755159040000": {
+          "id": "1214136755159040000",
           "name": "Admin",
+          "description": null,
           "color": 16711680,
+          "colors": {
+            "primary_color": 16711680,
+            "secondary_color": null,
+            "tertiary_color": null
+          },
           "hoist": true,
-          "permissions": "8",
-          "mentionable": true,
+          "icon": null,
+          "unicode_emoji": null,
           "position": 2,
-          "managed": false
+          "permissions": "8",
+          "managed": false,
+          "mentionable": true,
+          "flags": 0
         },
-        "role-member": {
-          "id": "role-member",
+        "1214137006817280000": {
+          "id": "1214137006817280000",
           "name": "Member",
+          "description": null,
           "color": 3447003,
+          "colors": {
+            "primary_color": 3447003,
+            "secondary_color": null,
+            "tertiary_color": null
+          },
           "hoist": false,
-          "permissions": "104188992",
-          "mentionable": false,
+          "icon": null,
+          "unicode_emoji": null,
           "position": 1,
-          "managed": false
+          "permissions": "104188992",
+          "managed": false,
+          "mentionable": false,
+          "flags": 0
         }
       }
     },
+    "bans": {},
     "webhooks": {},
-    "_counters": {"snowflake_seq": 1000, "requests": 0}
+    "commands": {},
+    "_counters": {
+      "snowflake_seq": 0,
+      "last_snowflake": ""
+    }
   },
   "config": {}
 }

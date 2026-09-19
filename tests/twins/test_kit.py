@@ -16,8 +16,10 @@ PROBES = {
               ("POST", "/api/conversations.create", {"name": "kit-probe"})),
     "stripe": (("GET", "/v1/balance", None), ("POST", "/v1/customers", {"email": "k@x.io"})),
     "linear": (("GET", "/v1/issues", None), ("POST", "/v1/teams", {"name": "Kit", "key": "KIT"})),
-    "supabase": (("GET", "/rest/v1/products", None),
-                 ("POST", "/rest/v1/products", {"name": "kit-probe"})),
+    # A fresh Supabase project has only the tables its seed declares, so the
+    # probe uses auth, which exists in every project.
+    "supabase": (("GET", "/auth/v1/admin/users", None),
+                 ("POST", "/auth/v1/admin/users", {"email": "kit-probe@acme.test"})),
     "discord": (("GET", "/api/v10/users/@me", None),
                 ("POST", "/api/v10/guilds", {"name": "kit-probe"})),
     "google-workspace": (("GET", "/gmail/v1/users/me/profile", None),

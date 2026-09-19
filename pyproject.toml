@@ -55,6 +55,9 @@ dependencies = [
     "sse-starlette>=2.1",
     # Scenario front matter and settings are YAML.
     "pyyaml>=6.0.2",
+    # The Linear twin serves Linear's own published GraphQL schema, because
+    # Linear has no REST API: every official client speaks GraphQL.
+    "graphql-core>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -90,6 +93,9 @@ twin-conformance = [
     "google-api-python-client>=2.160",
     "google-auth>=2.38",
     "discord.py>=2.5",
+    # Linear publishes no Python SDK; `gql` is what Python agents drive its
+    # GraphQL API with (tests/sdk/test_linear_ts_sdk.py covers @linear/sdk).
+    "gql[httpx]>=3.5",
 ]
 
 [project.urls]
@@ -125,7 +131,8 @@ include = ["checkpoint*"]
 # Named twin seeds (`seed: small-project`) are read at runtime from
 # checkpoint/twins/<twin>_seeds/<name>.json — they must ship in the wheel or
 # every seeded scenario 404s on a pip-only install.
-"checkpoint.twins" = ["*_seeds/*.json"]
+# Vendored vendor API schemas (Linear's GraphQL SDL) are read at runtime too.
+"checkpoint.twins" = ["*_seeds/*.json", "*_schema.graphql"]
 
 [tool.ruff]
 target-version = "py311"
