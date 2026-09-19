@@ -63,7 +63,7 @@ Checkpoint is a loop with four moving parts:
 3. **Scenario** — a markdown file: a `## Setup` seed, a `## Prompt` task, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged).
 4. **Gate** — run each scenario N times, score every run 0–100, and exit non-zero if the average falls below your `--pass-threshold`. That exit code is the whole point: it blocks a bad build in CI.
 
-Your agent talks to production URLs; in Docker mode a mitmproxy sidecar transparently routes those calls to the twins, so real SDKs work unmodified. In `--no-docker` mode the twins run as local processes and your agent reads their URLs from env vars.
+Your agent talks to production URLs; in Docker mode Checkpoint's own TLS-intercepting proxy (a sidecar container) transparently routes those calls to the twins, so real SDKs work unmodified. In `--no-docker` mode the twins run as local processes and your agent reads their URLs from env vars.
 
 ## Test your own agent
 
