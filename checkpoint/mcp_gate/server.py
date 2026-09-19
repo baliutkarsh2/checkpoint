@@ -28,8 +28,10 @@ def build_server() -> FastMCP:
     def gate(target: str, harness: str, runs: int = 10,
              pass_threshold: float = 80.0) -> dict:
         """Statistically gate a scenario or directory: run each `runs` times and
-        return a SHIP / CONDITIONAL / BLOCK verdict with per-scenario pass-rate
-        confidence intervals. Use before shipping an agent change."""
+        return a SHIP / CONDITIONAL / INCONCLUSIVE / BLOCK / ERROR verdict with
+        per-scenario pass-rate confidence intervals. Only SHIP means the evidence
+        supports a release; INCONCLUSIVE means `runs` was too small to decide and
+        the reply says how many runs would. Use before shipping an agent change."""
         return gate_tool(target, harness, runs, pass_threshold)
 
     return mcp
