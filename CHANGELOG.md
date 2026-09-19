@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The Docker sidecar no longer uses mitmproxy.** TLS interception is now done
+  by Checkpoint's own proxy (`checkpoint/proxy/`, `python -m checkpoint.proxy`):
+  forward-proxy (CONNECT) and transparent (SNI) modes, per-host certificates
+  from a per-run CA, an egress allowlist for non-routed hosts, and an event log
+  of every request. mitmproxy pinned exact `h11`/`h2` versions and capped
+  `typing-extensions`, so installing it silently downgraded other packages; the
+  `proxy` extra is gone and the proxy's own dependencies (`h11`,
+  `cryptography`, `certifi`) are core. `checkpoint doctor` now self-tests the
+  proxy instead of checking that mitmproxy imports.
+
 ## [0.1.0] - 2026-08-31
 
 First public release.
