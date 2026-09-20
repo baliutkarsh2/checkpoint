@@ -12,6 +12,7 @@ from a live one share a single twin.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from click.testing import CliRunner
@@ -53,12 +54,46 @@ def test_inspecting_a_running_twin_reports_what_it_holds(running_twin):
     assert info["request_count"] >= 0
 
 
-def test_a_twin_cannot_be_started_twice(running_twin):
-    """Two twins on two ports would leave the second one holding all the state."""
-    _, sessions_file = running_twin
+def test_a_twin_cannot_be_started_twice(tmp_path):
+    """Two twins on two ports would leave the second one holding all the state.
+
+    The recorded process is this one, which is certainly alive, so the refusal
+    is reached without depending on a second twin having survived. That matters:
+    if the check ever reads "not running" the call falls through to spawning a
+    real server, and this test would then be measuring process startup on
+    whatever machine it happens to run on instead of the rule it is about.
+    """
+    sessions_file = tmp_path / "twins.json"
+    sessions_file.write_text(json.dumps({"github": {
+        "pid": os.getpid(),
+        "port": 9999,
+        "host": "127.0.0.1",
+        "started_at": "2020-01-01T00:00:00Z",
+        "url": "http://127.0.0.1:9999",
+        "mcp_url": "http://127.0.0.1:9999/mcp/",
+        "token": FAKE_GITHUB_TOKEN,
+    }}), encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="already running"):
         sessions.start("github", sessions_file=sessions_file)
+
+
+def test_a_live_process_reads_as_alive_and_a_dead_one_does_not():
+    """The check the refusal rests on, and it must never disturb what it asks about."""
+    import subprocess
+    import sys
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert sessions._alive(child.pid) is True
+        assert sessions._alive(os.getpid()) is True
+        # Asking did not kill it — on Windows os.kill(pid, 0) would have.
+        assert child.poll() is None
+    finally:
+        child.kill()
+        child.wait(timeout=30)
+    assert sessions._alive(child.pid) is False
+    assert sessions._alive(-1) is False
 
 
 def test_starting_an_unknown_twin_names_the_ones_that_exist(tmp_path):

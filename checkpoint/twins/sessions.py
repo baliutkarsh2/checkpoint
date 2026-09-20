@@ -79,15 +79,38 @@ def _wait_healthy(port: int, host: str = "127.0.0.1", timeout: float = 15.0) -> 
 
 
 def _alive(pid: int) -> bool:
+    """Whether a recorded twin process is still there. Never disturbs it."""
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        # `os.kill(pid, 0)` is the POSIX way to ask, and on Windows it is not a
+        # question: os.kill documents that any signal other than CTRL_C_EVENT
+        # and CTRL_BREAK_EVENT calls TerminateProcess. CPython happens to spare
+        # signal 0 today, but "asking whether the twin is alive" must not rest
+        # on that, so ask the OS for the process instead of signalling it.
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False  # gone, or not ours to look at
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
     except PermissionError:
         return True  # it exists; this process just may not signal it
+    except ProcessLookupError:
+        return False
     except OSError:
-        # ProcessLookupError on Unix, WinError 87 on Windows — either way, gone.
         return False
 
 
