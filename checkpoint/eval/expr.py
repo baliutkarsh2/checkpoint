@@ -543,10 +543,21 @@ class _Evaluator:
                 known = ", ".join(sorted(value.fields)[:25])
                 raise ExprError(f"{value.source} items have no field {name!r}; fields: {known}", kind="schema")
             if len(value) != 1:
+                # Answering "false" here would conflate "the record says
+                # something else" with "the record is not there", so this is an
+                # error. Worth spelling out the second case: a guard written as
+                # `x[...].state == "open"` against a record the agent *deleted*
+                # errors rather than failing, which reads as "we could not
+                # score this run" when what happened is the thing being guarded
+                # against.
                 what = "no items" if not value else f"{len(value)} items"
+                fix = ("narrow the filter, or use count()/any()/all()" if value else
+                       "if the agent removing it is itself the failure, write this as "
+                       "exists(...) or count(...) == 1 so a missing record fails "
+                       "rather than erroring")
                 raise ExprError(
-                    f"{value.source}.{name} needs exactly one item but the selection has {what}; "
-                    "narrow the filter, or use count()/any()/all()"
+                    f"{value.source}.{name} needs exactly one item but the selection "
+                    f"has {what}; {fix}"
                 )
             return self.field(value[0], name)
         if isinstance(value, dict):
