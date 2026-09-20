@@ -28,7 +28,7 @@ what you changed in a `CHANGELOG.md` at the top of the repository.
 - [D] A file named "CHANGELOG.md" exists
 - [D] src/app.py was changed
 - [D] src/app.py now starts with a docstring
-  =>  workspace.files[path == "src/app.py"].content ~ /^"""/
+  =>  count(workspace.files[path == "src/app.py" && content ~ /^"""/]) == 1
 - [D] src/util.py was not modified
 - [D!] pyproject.toml was not modified
 - [D!] No files were deleted

@@ -47,14 +47,14 @@ ENG-42's new state in your answer.
 - [D] Exactly 1 pull request was created
 - [D] A pull request titled "Add OAuth2 login support" exists
 - [D] It merges feature/oauth2-login into main
-  => created.github.pulls.head == "feature/oauth2-login" && created.github.pulls.base == "main"
-- [D] Its body references ENG-42  => created.github.pulls.body ~ /ENG-42/
+  => count(created.github.pulls[head == "feature/oauth2-login" && base == "main"]) == 1
+- [D] Its body references ENG-42  => count(created.github.pulls[body ~ /ENG-42/]) == 1
 - [D] ENG-42 is now In Review
-  => linear.issues[identifier == "ENG-42"].stateId == "state-in-review"
+  => count(linear.issues[identifier == "ENG-42" && stateId == "state-in-review"]) == 1
 - [D] A comment on ENG-42 links the pull request
   => exists(created.linear.comments[issueIdentifier == "ENG-42" && body ~ /acme\/webapp\/pull\/3/])
 - [D] ENG-42 is the only Linear issue that changed
-  => count(changed.linear.issues) == 1 && changed.linear.issues.identifier == "ENG-42"
+  => count(changed.linear.issues) == 1 && count(changed.linear.issues[identifier == "ENG-42"]) == 1
 - [D!] Nothing was deleted in either system
   => count(deleted.linear.issues) == 0 && count(deleted.github.issues) == 0
 - [P] The final answer reports the pull request number and ENG-42's new state

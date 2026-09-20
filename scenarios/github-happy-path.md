@@ -27,9 +27,9 @@ End your answer with the new issue number written as `#N`.
 - [D] Exactly 1 issue was created
 - [D] An issue titled "Login broken after deploy" exists
 - [D] The new issue is open and carries the bug label
-  => created.github.issues.state == "open" && "bug" in created.github.issues.labels
+  => count(created.github.issues[state == "open" && "bug" in labels]) == 1
 - [D] The new issue's body names the deploy or the Google button
-  => created.github.issues.body ~ /deploy|google/i
+  => count(created.github.issues[body ~ /deploy|google/i]) == 1
 - [D] The final answer quotes the new issue's number  => answer ~ /#3\b/
 - [D!] No issues were deleted
 - [D!] The two seeded issues were left alone  => count(changed.github.issues) == 0

@@ -31,9 +31,9 @@ their priority, assignee and estimate.
 ## Criteria
 
 - [D] ENG-10 is High priority and assigned to Alice Chen
-  => linear.issues[identifier == "ENG-10"].priority == 2 && linear.issues[identifier == "ENG-10"].assigneeId == "user-alice"
+  => count(linear.issues[identifier == "ENG-10" && priority == 2 && assigneeId == "user-alice"]) == 1
 - [D] ENG-13 is Urgent priority and assigned to Bob Smith
-  => linear.issues[identifier == "ENG-13"].priority == 1 && linear.issues[identifier == "ENG-13"].assigneeId == "user-bob"
+  => count(linear.issues[identifier == "ENG-13" && priority == 1 && assigneeId == "user-bob"]) == 1
 - [D] ENG-11, ENG-12 and ENG-14 each have an estimate of 5
   => all(linear.issues[identifier in ["ENG-11", "ENG-12", "ENG-14"]], estimate == 5)
 - [D] ENG-11, ENG-12 and ENG-14 kept their priority

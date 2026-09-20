@@ -169,7 +169,7 @@ works on it — there is nothing new to learn.
 count(created.workspace.files) == 1
 count(deleted.workspace.files) == 0
 exists(changed.workspace.files[path == "src/app.py"])
-workspace.files[path == "src/app.py"].content ~ /def main/
+count(workspace.files[path == "src/app.py" && content ~ /def main/]) == 1
 count(workspace.files[binary]) == 0
 ```
 
@@ -260,13 +260,19 @@ One trap, and it bites exactly where it hurts. `list.field` reads a field from a
 selection that must hold **exactly one** item, so the assertion above *errors*
 rather than failing if the agent deleted that issue — and an error reads as "we
 could not score this run", not as "the thing you were guarding against
-happened". Where the record going missing is itself the failure, say so:
+happened". Move the field test inside the filter and count instead: a missing
+record then makes the count zero, which fails, and a second matching record
+makes it two, which fails too.
 
 ```
 - [D!] The issue is still open
-  =>  count(github.issues[title == "Add login button"]) == 1
-      && github.issues[title == "Add login button"].state == "open"
+  =>  count(github.issues[title == "Add login button" && state == "open"]) == 1
 ```
+
+Every bundled scenario is written this way, and a test enforces it
+(`tests/eval/test_fragile_accessors.py`). Keep `list.field` for a selection you
+have already established holds exactly one item — a criterion that *guards* a
+record is not one of those.
 
 ## The assertion language
 
@@ -332,8 +338,8 @@ expose; `checkpoint runs show` prints the final state of each twin.
 count(created.github.issues) == 1
 exists(github.issues[title == "Login broken"])
 count(github.issues[state == "open"]) == 2
-github.issues[number == 1].state == "closed"
-"enhancement" in github.issues[number == 1].labels
+count(github.issues[number == 1 && state == "closed"]) == 1
+count(github.issues[number == 1 && "enhancement" in labels]) == 1
 "/repos/acme/webapp/issues" in trace[*].path
 count(trace[method == "DELETE"]) == 0
 count(trace[twin == "github" && op == "create"]) <= 1
@@ -341,7 +347,7 @@ count(deleted.slack.messages) == 0
 all(created.github.issues, body ~ /repro/i)
 count(created.workspace.files) == 1
 exists(changed.workspace.files[path == "src/app.py"])
-workspace.files[path == "src/app.py"].content ~ /def main/
+count(workspace.files[path == "src/app.py" && content ~ /def main/]) == 1
 answer ~ /issue #\d+/i
 count(egress[allowed == false]) == 0
 duration < 60

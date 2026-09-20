@@ -18,7 +18,7 @@ run produced, every root the language already has works on it unchanged::
 
     count(created.workspace.files) == 1
     exists(workspace.files[path == "README.md"])
-    workspace.files[path == "src/app.py"].content ~ /def main/
+    count(workspace.files[path == "src/app.py" && content ~ /def main/]) == 1
 
 One record per file::
 

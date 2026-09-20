@@ -44,7 +44,8 @@ asks for one of them to be commented on and closed. The criteria are pinned
 assertions over what changed:
 
 ```
-- [D] The Safari issue is closed  =>  github.issues[key == "acme/webapp#2"].state == "closed"
+- [D] The Safari issue is closed
+  =>  count(github.issues[key == "acme/webapp#2" && state == "closed"]) == 1
 - [D] Only that one issue changed  =>  count(changed.github.issues) == 1
 ```
 

@@ -34,7 +34,7 @@ the assertion language already had works on it:
 ```
 count(created.workspace.files) == 1
 exists(changed.workspace.files[path == "src/app.py"])
-workspace.files[path == "src/app.py"].content ~ /^"""/
+count(workspace.files[path == "src/app.py" && content ~ /^"""/]) == 1
 count(changed.workspace.files[path == "pyproject.toml"]) == 0
 ```
 

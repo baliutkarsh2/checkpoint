@@ -27,10 +27,10 @@ as `#N`.
 - [D] Exactly 1 pull request was created
 - [D] A pull request titled "Fix login bug" exists
 - [D] It merges fix-login-bug into main
-  => created.github.pulls.head == "fix-login-bug" && created.github.pulls.base == "main"
+  => count(created.github.pulls[head == "fix-login-bug" && base == "main"]) == 1
 - [D] reviewer1 is a requested reviewer on it
-  => "reviewer1" in created.github.pulls.requested_reviewers
-- [D] It carries the bug label  => "bug" in created.github.pulls.labels
+  => count(created.github.pulls["reviewer1" in requested_reviewers]) == 1
+- [D] It carries the bug label  => count(created.github.pulls["bug" in labels]) == 1
 - [D] The final answer quotes the pull request number  => answer ~ /#3\b/
 - [D!] No issues or pull requests were deleted
   => count(deleted.github.issues) == 0 && count(deleted.github.pulls) == 0
