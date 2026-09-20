@@ -7,7 +7,8 @@ proof-of-concept if you have one. Please do not open a public issue for security
 reports. We aim to acknowledge within 48 hours.
 
 Checkpoint is a testing tool that intercepts TLS and runs agent code; if you find a
-way for a scenario, harness, or dashboard request to escape its intended boundary,
+way for a scenario, an agent under test, or a dashboard request to escape its
+intended boundary,
 that is in scope and we want to hear about it.
 
 ---
@@ -47,8 +48,8 @@ add new hardcoded token strings elsewhere; import the constant instead.
 
 ## Running the dashboard safely
 
-`checkpoint serve` binds to loopback (`127.0.0.1`) by default and needs no auth there.
+`checkpoint view` binds to loopback (`127.0.0.1`) by default and needs no auth there.
 If you bind it to any other interface, you **must** set `CHECKPOINT_DASHBOARD_API_KEY`
 (the server refuses to start on a non-loopback bind without it). `POST /api/jobs`
-executes agent harnesses; only run the dashboard against code you trust, and use
+starts the agent under test; only run the dashboard against code you trust, and use
 `CHECKPOINT_DASHBOARD_READ_ONLY=1` for viewer-only instances.

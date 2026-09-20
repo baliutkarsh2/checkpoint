@@ -3,21 +3,23 @@
 Architecture:
   /            -> SPA (Vite-built React bundle in static/)
   /api/*       -> JSON
+  /api/gates/* -> past `checkpoint gate` verdicts, read from the run store
   /api/events  -> SSE event stream
   /api/jobs/*  -> background `checkpoint run` jobs
   /api/docs    -> OpenAPI Swagger UI
   /healthz     -> liveness probe
   /metrics     -> Prometheus exposition format
 
-Jinja2 page rendering is gone — the SPA owns all UI. The JSON API stays
-backwards-compatible with the previous one (same field names) so external
-scripts that called /api/* still work.
+Jinja2 page rendering is gone — the SPA owns all UI. Field names that the JSON
+API has always used are kept even where the vocabulary has moved on, so
+external scripts that called /api/* still work.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -35,7 +37,6 @@ from ..compare_diff import build_compare_diff
 from ..llm import DEFAULT_MODEL
 from ..scenario import parse_file
 from ..telemetry import build_telemetry_report
-from . import agents as agent_discovery
 from .events import EventBus, FilesystemWatcher
 from .jobs import JobManager
 from .metrics import Metrics
@@ -66,14 +67,27 @@ def _load_record(runs_dir: Path, run_id: str) -> dict | None:
         return None
 
 
+def _agent_of(rec: dict) -> dict:
+    """What ran, from a record of any age.
+
+    ``agent`` is the current key; ``harness`` is what records written before the
+    rename used, with the same shape.
+    """
+    return rec.get("agent") or rec.get("harness") or {}
+
+
 def _record_summary(rec: dict) -> dict:
     """Project a full record to the lighter summary shape used by /api/runs.
 
     Keeps responses small: a 100-run page is ~10kb instead of ~10mb if
     every record's full trace+state were inlined.
+
+    The ``harness_*`` and ``mode`` field names predate the agent rename and are
+    kept so scripts already reading this endpoint keep working. ``dir`` and
+    ``mode`` only ever appear on records written before the rename to ``agent``.
     """
     crits = rec.get("criteria") or []
-    h = rec.get("harness") or {}
+    a = _agent_of(rec)
     return {
         "run_id": rec.get("run_id", ""),
         "scenario": rec.get("scenario"),
@@ -84,10 +98,9 @@ def _record_summary(rec: dict) -> dict:
         "evaluator_model": rec.get("evaluator_model"),
         "timestamp": (rec.get("env") or {}).get("timestamp"),
         "exit_code": rec.get("exit_code"),
-        # Agent / mode / duration — added v0.2. Older records will have None.
-        "harness_name": h.get("name"),
-        "harness_dir": h.get("dir"),
-        "mode": h.get("mode"),
+        "harness_name": a.get("name"),
+        "harness_dir": a.get("dir"),
+        "mode": a.get("mode"),
         "duration_ms": rec.get("duration_ms"),
     }
 
@@ -120,42 +133,18 @@ def _list_runs(
         if scn_pattern and scn_pattern not in (rec.get("scenario") or "").lower():
             continue
         if agent_pattern:
-            h = rec.get("harness") or {}
-            blob = f"{h.get('name', '')} {h.get('dir', '')}".lower()
+            a = _agent_of(rec)
+            blob = f"{a.get('name', '')} {a.get('cmd', '')} {a.get('dir', '')}".lower()
             if agent_pattern not in blob:
                 continue
         if mode_pattern:
-            h = rec.get("harness") or {}
-            if (h.get("mode") or "").lower() != mode_pattern:
+            if (_agent_of(rec).get("mode") or "").lower() != mode_pattern:
                 continue
         rows.append(rec)
     total = len(rows)
     start = (page - 1) * per_page
     sliced = rows[start : start + per_page]
     return [_record_summary(r) for r in sliced], total
-
-
-def _runs_for_agent(runs_dir: Path, agent: dict) -> list[dict]:
-    """All run summaries that this agent produced.
-
-    We match by the absolute or relative `dir` of the harness — that's stable
-    across re-renames of the friendly `name`.
-    """
-    if not runs_dir.exists():
-        return []
-    abs_path = (agent or {}).get("abs_path") or ""
-    rel_path = (agent or {}).get("path") or ""
-    out: list[dict] = []
-    for f in sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        try:
-            rec = json.loads(f.read_text(encoding="utf-8", errors="replace"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        h = rec.get("harness") or {}
-        d = h.get("dir") or ""
-        if d and (d == rel_path or d == abs_path or d.endswith("/" + rel_path)):
-            out.append(_record_summary(rec))
-    return out
 
 
 def _runs_for_scenario(runs_dir: Path, scenario_name: str) -> list[dict]:
@@ -173,29 +162,7 @@ def _runs_for_scenario(runs_dir: Path, scenario_name: str) -> list[dict]:
     return out
 
 
-def _runs_grouped_by_scenario(rows: list[dict]) -> dict[str, dict]:
-    """{scenario: {runs:int, avg:float, last_score:float, last_at:str}}."""
-    out: dict[str, dict] = {}
-    for r in rows:
-        key = r.get("scenario") or "(unknown)"
-        bucket = out.setdefault(key, {"runs": 0, "scores": [], "last_score": None, "last_at": None})
-        bucket["runs"] += 1
-        bucket["scores"].append(float(r.get("satisfaction") or 0))
-        if bucket["last_at"] is None:
-            bucket["last_at"] = r.get("timestamp")
-            bucket["last_score"] = float(r.get("satisfaction") or 0)
-    return {
-        k: {
-            "runs": v["runs"],
-            "avg_score": round(sum(v["scores"]) / len(v["scores"]), 1) if v["scores"] else 0,
-            "last_score": v["last_score"],
-            "last_at": v["last_at"],
-        }
-        for k, v in out.items()
-    }
-
-
-def _agent_stats(rows: list[dict]) -> dict:
+def _scenario_stats(rows: list[dict]) -> dict:
     if not rows:
         return {"total_runs": 0, "avg_score": 0.0, "pass_rate": 0.0, "last_at": None}
     scores = [float(r.get("satisfaction") or 0) for r in rows]
@@ -205,10 +172,6 @@ def _agent_stats(rows: list[dict]) -> dict:
         "pass_rate": round(100 * sum(1 for s in scores if s >= 100) / len(scores), 1),
         "last_at": rows[0].get("timestamp"),
     }
-
-
-def _scenario_stats(rows: list[dict]) -> dict:
-    return _agent_stats(rows)
 
 
 def _build_summary(runs_dir: Path) -> dict:
@@ -254,11 +217,11 @@ def _build_summary(runs_dir: Path) -> dict:
     }
 
 
-def _load_clones(registry_path: Path | None) -> list[dict]:
-    if not registry_path or not registry_path.exists():
+def _load_twin_sessions(sessions_path: Path | None) -> list[dict]:
+    if not sessions_path or not sessions_path.exists():
         return []
     try:
-        data = json.loads(registry_path.read_text(encoding="utf-8", errors="replace"))
+        data = json.loads(sessions_path.read_text(encoding="utf-8", errors="replace"))
         return [{"id": k, **v} for k, v in data.items()]
     except (json.JSONDecodeError, OSError):
         return []
@@ -306,7 +269,7 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
             {
                 "title": scn.title or md.stem,
                 "path": str(md.relative_to(scenarios_dir)),
-                "clones": ", ".join(scn.twins),
+                "twins": ", ".join(scn.twins),
                 "tags": ", ".join(scn.tags),
                 "d_count": len(d_crits),
                 "p_count": len(p_crits),
@@ -327,34 +290,39 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 class StartJobBody(BaseModel):
+    """Every field here is one option of ``checkpoint run``, and nothing else is.
+
+    The agent itself is deliberately absent: it comes from ``[agent]`` in
+    checkpoint.toml, so no caller — not even one reaching a dashboard bound off
+    loopback — can name the command that gets executed.
+    """
+
     scenario: str = Field(..., description="Path to a scenario .md file (confined to the project).")
-    docker: bool = False
-    harness: str | None = Field(
-        default=None,
-        description=(
-            "A discovered agent's id or path (see GET /api/agents). Resolved "
-            "server-side against the discovery allowlist to that agent's "
-            "directory — never a raw command string."
-        ),
-    )
-    model: str | None = Field(default=None, description="Evaluator model passed as --model.")
-    timeout: int | None = Field(default=None, ge=1, description="Harness timeout seconds.")
-    clone: str | None = Field(default=None, description="Clone override passed as --clone.")
-    runs: int | None = Field(default=None, ge=1, le=100, description="Number of runs.")
+    model: str | None = Field(default=None, description="Judge model passed as --model.")
+    timeout: int | None = Field(default=None, ge=1, description="Agent timeout in seconds.")
+    runs: int | None = Field(default=None, ge=1, le=100, description="Times to run the scenario.")
     rate_limit: int | None = Field(default=None, ge=1, description="Twin request cap.")
-    read_only: bool = Field(default=False, description="Fail if twin state changes.")
-    no_failure_analysis: bool = Field(default=False, description="Skip LLM failure analysis.")
-    seed_file: str | None = Field(default=None, description="Seed file override.")
-    setup_file: str | None = Field(default=None, description="Setup prose file override.")
-    keep_state: bool = Field(default=False, description="Do not re-apply scenario seeds.")
-    fresh_seed: bool = Field(default=False, description="Force seed re-application.")
-    docker_logs: bool = Field(default=False, description="Stream docker harness logs to stderr.")
+    read_only: bool = Field(default=False, description="Refuse every write to a twin.")
+    keep_state: bool = Field(default=False, description="Do not reseed the twins.")
+    explain: bool = Field(default=False, description="Ask the judge why failed criteria failed.")
 
     # No extra_args / passthrough flags here on purpose. The dashboard is
     # local-dev tooling and we keep the public API surface minimal so a
     # `--host 0.0.0.0` developer cannot turn this into a flag-injection
     # vector against the spawned `checkpoint run` subprocess.
     model_config = {"extra": "forbid"}
+
+
+def _gate_store_path(project_dir: Path) -> Path:
+    """Where ``checkpoint gate`` wrote its verdicts for this project.
+
+    The CLI resolves this against the working directory; the dashboard knows the
+    project root outright, so the two agree whichever directory `checkpoint
+    view` was started from.
+    """
+    override = os.environ.get("CHECKPOINT_HOME")
+    base = Path(override) if override else project_dir / ".checkpoint"
+    return base / "checkpoint.db"
 
 
 # ---------------------------------------------------------------------------
@@ -364,12 +332,12 @@ class StartJobBody(BaseModel):
 def create_app(
     runs_dir: Path,
     scenarios_dir: Path,
-    clone_registry_path: Path | None = None,
+    twin_sessions_file: Path | None = None,
     project_dir: Path | None = None,
     judge_model_default: str = DEFAULT_MODEL,
 ) -> FastAPI:
     bus = EventBus()
-    watcher = FilesystemWatcher(bus, runs_dir, clone_registry_path)
+    watcher = FilesystemWatcher(bus, runs_dir, twin_sessions_file)
     project_dir = project_dir or scenarios_dir.parent
     jobs = JobManager(bus, project_dir=project_dir)
     metrics = Metrics()
@@ -505,46 +473,53 @@ def create_app(
         return {"rec_a": rec_a, "rec_b": rec_b, "diff": build_compare_diff(rec_a, rec_b)}
 
     # -----------------------------------------------------------------------
-    # Live clones
+    # Twins running right now
     # -----------------------------------------------------------------------
 
-    @app.get("/api/clones", tags=["clones"])
-    def api_clones():
-        return _load_clones(clone_registry_path)
+    @app.get("/api/clones", tags=["twins"])
+    def api_twin_sessions():
+        """Twins running right now, from the session file `checkpoint twins` writes."""
+        return _load_twin_sessions(twin_sessions_file)
 
-    @app.get("/api/agents", tags=["agents"])
-    def api_agents():
-        """Auto-discovered harness directories the RunLauncher can pick from.
+    # -----------------------------------------------------------------------
+    # Gate verdicts
+    # -----------------------------------------------------------------------
 
-        Scans examples/agents/, harness/, and agents/ under project_dir for
-        any directory containing both a Dockerfile and a harness.py. Result
-        is cached for 5s to avoid hammering the FS on dropdown re-renders.
+    @app.get("/api/gates", tags=["gate"])
+    def api_gates(target: str = "", limit: int = Query(50, ge=1, le=500)):
+        """Past `checkpoint gate` verdicts, newest first.
+
+        An empty list means no gate has run here yet — not an error. The gate
+        writes to the store as it finishes, so there is nothing to read until
+        then.
         """
-        return agent_discovery.discover(project_dir or Path.cwd())
+        db = _gate_store_path(project_dir or Path.cwd())
+        if not db.is_file():
+            return {"rows": [], "store": str(db)}
+        from ..store import SqliteRunStore
+        store = SqliteRunStore(db)
+        try:
+            rows = store.list_gates(target=target or None, limit=limit)
+        finally:
+            store.close()
+        return {"rows": rows, "store": str(db)}
 
-    @app.get("/api/agents/{agent_id}", tags=["agents"])
-    def api_agent_detail(agent_id: str):
-        """One agent + its full README + a roll-up of every run it produced.
-
-        We accept the agent's slug (e.g. ``examples--agents--openai-tools``)
-        and resolve it back to a discovered entry.
-        """
-        agents_list = agent_discovery.discover(project_dir or Path.cwd())
-        agent = next((a for a in agents_list if a["id"] == agent_id), None)
-        if agent is None:
-            raise HTTPException(404, f"agent {agent_id!r} not found")
-        readme_path = Path(agent["abs_path"]) / "README.md"
-        readme = readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
-        # Roll up every run that mentions this agent.
-        runs = _runs_for_agent(runs_dir, agent)
-        scenarios = _runs_grouped_by_scenario(runs)
-        return {
-            "agent": agent,
-            "readme": readme,
-            "runs": runs,
-            "by_scenario": scenarios,
-            "stats": _agent_stats(runs),
-        }
+    @app.get("/api/gates/{gate_id}", tags=["gate"])
+    def api_gate_detail(gate_id: str):
+        """One verdict in full: the policy, every scenario's statistics, what
+        was skipped, and the runs that errored."""
+        db = _gate_store_path(project_dir or Path.cwd())
+        if not db.is_file():
+            raise HTTPException(404, "no gate results recorded yet")
+        from ..store import SqliteRunStore
+        store = SqliteRunStore(db)
+        try:
+            gate = store.get_gate(gate_id)
+        finally:
+            store.close()
+        if gate is None:
+            raise HTTPException(404, f"gate {gate_id!r} not found")
+        return gate
 
     @app.get("/api/scenarios/file", tags=["scenarios"])
     def api_scenario_detail(path: str):
@@ -577,58 +552,62 @@ def create_app(
                 {"text": c.text, "kind": c.kind} for c in scn.criteria
             ],
             "config": scn.config,
-            "clones": scn.clones,
+            "twins": scn.twins,
             "raw": target.read_text(encoding="utf-8"),
             "runs": runs,
             "stats": _scenario_stats(runs),
         }
 
     # -----------------------------------------------------------------------
-    # Clones (live registry + management proxies)
+    # Twin sessions: start, stop, seed, reset, inspect
     # -----------------------------------------------------------------------
 
-    @app.post("/api/clones/{clone_id}", tags=["clones"], status_code=201)
-    def api_clone_start(clone_id: str):
-        from .. import clone_manager
+    def _sessions_kw() -> dict:
+        """Keep every session call on the same file the listing reads."""
+        return {"sessions_file": twin_sessions_file} if twin_sessions_file else {}
+
+    @app.post("/api/clones/{clone_id}", tags=["twins"], status_code=201)
+    def api_twin_start(clone_id: str):
+        from ..twins import sessions
         try:
-            entry = clone_manager.start(clone_id)
+            entry = sessions.start(clone_id, **_sessions_kw())
         except (ValueError, RuntimeError) as e:
             raise HTTPException(400, str(e)) from None
         return {"id": clone_id, **entry}
 
-    @app.delete("/api/clones/{clone_id}", tags=["clones"])
-    def api_clone_stop(clone_id: str):
-        from .. import clone_manager
-        was_running = clone_manager.stop(clone_id)
+    @app.delete("/api/clones/{clone_id}", tags=["twins"])
+    def api_twin_stop(clone_id: str):
+        from ..twins import sessions
+        was_running = sessions.stop(clone_id, **_sessions_kw())
         return {"id": clone_id, "was_running": was_running}
 
-    @app.post("/api/clones/{clone_id}/seed/{seed_name}", tags=["clones"])
-    def api_clone_seed(clone_id: str, seed_name: str):
-        from .. import clone_manager
+    @app.post("/api/clones/{clone_id}/seed/{seed_name}", tags=["twins"])
+    def api_twin_seed(clone_id: str, seed_name: str):
+        from ..twins import sessions
         try:
-            return clone_manager.seed(clone_id, seed_name)
+            return sessions.seed(clone_id, seed_name, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.post("/api/clones/{clone_id}/reset", tags=["clones"])
-    def api_clone_reset(clone_id: str):
-        from .. import clone_manager
+    @app.post("/api/clones/{clone_id}/reset", tags=["twins"])
+    def api_twin_reset(clone_id: str):
+        from ..twins import sessions
         try:
-            return clone_manager.reset(clone_id)
+            return sessions.reset(clone_id, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.get("/api/clones/{clone_id}/tools", tags=["clones"])
-    def api_clone_tools(clone_id: str):
-        from .. import clone_manager
+    @app.get("/api/clones/{clone_id}/tools", tags=["twins"])
+    def api_twin_tools(clone_id: str):
+        from ..twins import sessions
         try:
-            return clone_manager.tools(clone_id)
+            return sessions.tools(clone_id, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.get("/api/clones/supported", tags=["clones"])
-    def api_clones_supported():
-        """Static list of clones the system knows how to spawn."""
+    @app.get("/api/clones/supported", tags=["twins"])
+    def api_twins_supported():
+        """Every twin this installation knows how to start."""
         from ..twins import registry
         return [{"id": s.name, "title": s.title, "module": s.app, "seeds": s.seed_names()}
                 for s in registry.all_specs()]
@@ -656,36 +635,27 @@ def create_app(
         }
 
     @app.get("/api/config", tags=["system"])
-    def api_config(reveal_env: bool = False):
-        """Read the user's ~/.checkpoint/config.json + known-keys catalog."""
-        from ..user_config import KNOWN_KEYS, UserConfig
-        cfg = UserConfig.load()
+    def api_config():
+        """The project's checkpoint.toml, as the CLI reads it.
+
+        Read-only on purpose: the config is a file in the repository that
+        belongs in version control next to the scenarios it configures, not
+        state a web page edits behind the team's back.
+        """
+        from ..project import CONFIG_NAME, ConfigError, Project
+        try:
+            proj = Project.load(project_dir)
+        except ConfigError as e:
+            return {"path": str(project_dir / CONFIG_NAME), "exists": True,
+                    "problem": str(e), "sections": {}}
         return {
-            "path": str(cfg.path),
-            "exists": cfg.path.exists(),
-            "values": (
-                {k: cfg.get(k, resolve_env=True) for k in cfg.flatten()}
-                if reveal_env else cfg.flatten()
-            ),
-            "known_keys": KNOWN_KEYS,
+            "path": str(proj.path) if proj.path else str(project_dir / CONFIG_NAME),
+            "exists": proj.path is not None,
+            "sections": {
+                "agent": proj.agent, "judge": proj.judge, "sandbox": proj.sandbox,
+                "gate": proj.gate, "scenarios": proj.scenarios,
+            },
         }
-
-    @app.put("/api/config/{key:path}", tags=["system"])
-    def api_config_set(key: str, body: dict):
-        from ..user_config import UserConfig
-        cfg = UserConfig.load()
-        cfg.set(key, body.get("value"))
-        cfg.save()
-        return {"key": key, "value": cfg.get(key, resolve_env=False)}
-
-    @app.delete("/api/config/{key:path}", tags=["system"])
-    def api_config_unset(key: str):
-        from ..user_config import UserConfig
-        cfg = UserConfig.load()
-        removed = cfg.unset(key)
-        if removed:
-            cfg.save()
-        return {"key": key, "removed": removed}
 
     @app.post("/api/scenarios/validate", tags=["scenarios"])
     def api_scenario_validate(body: dict):
@@ -722,8 +692,9 @@ def create_app(
             errors.append("missing `## Prompt` (or `## Task`) section")
         if not scn.criteria:
             warnings.append("no `## Success Criteria` — the run will score 0/0")
-        if scn.config.get("clones") and not scn.clones:
-            warnings.append("`clones:` config value is empty after parsing")
+        declared = scn.config.get("twins", scn.config.get("clones"))
+        if declared and not scn.twins:
+            warnings.append("`twins:` config value is empty after parsing")
         return {
             "ok": len(errors) == 0,
             "errors": errors,
@@ -734,7 +705,7 @@ def create_app(
                 "setup": scn.setup,
                 "expected": scn.expected,
                 "criteria": [{"text": c.text, "kind": c.kind} for c in scn.criteria],
-                "clones": scn.clones,
+                "twins": scn.twins,
                 "config": scn.config,
             },
         }
@@ -746,8 +717,8 @@ def create_app(
         record = _load_record(runs_dir, run_id)
         if record is None:
             raise HTTPException(404, "run not found")
-        from ..cli import _anonymize_record
-        return _anonymize_record(record)
+        from ..cli.runs import _anonymize
+        return _anonymize(record)
 
     # -----------------------------------------------------------------------
     # Jobs (start/list/get/cancel + log SSE)
@@ -787,42 +758,15 @@ def create_app(
                 detail=f"scenario not found or outside the project: {body.scenario!r}",
             )
 
-        # Resolve the harness against the discovery allowlist. A caller can NOT
-        # supply a raw command — only a reference (id / path / abs_path) to a
-        # directory checkpoint already discovered, which we map to its absolute
-        # path. This is what closes the arbitrary-command-execution hole.
-        agent_dir: str | None = None
-        if body.harness:
-            agents_list = agent_discovery.discover(project_dir or Path.cwd())
-            ref = body.harness
-            agent = next(
-                (a for a in agents_list
-                 if ref in (a["id"], a["path"], a["abs_path"])),
-                None,
-            )
-            if agent is None:
-                raise HTTPException(
-                    400,
-                    f"unknown harness {body.harness!r}; pick one from GET /api/agents",
-                )
-            agent_dir = agent["abs_path"]
-
         job = await jobs.start(
             str(resolved),
-            docker=body.docker,
-            harness_dir=agent_dir,
             model=body.model,
             timeout=body.timeout,
-            clone=body.clone,
             runs=body.runs,
             rate_limit=body.rate_limit,
             read_only=body.read_only,
-            no_failure_analysis=body.no_failure_analysis,
-            seed_file=body.seed_file,
-            setup_file=body.setup_file,
             keep_state=body.keep_state,
-            fresh_seed=body.fresh_seed,
-            docker_logs=body.docker_logs,
+            explain=body.explain,
         )
         return job.public()
 
@@ -872,7 +816,7 @@ def create_app(
         return EventSourceResponse(gen())
 
     # -----------------------------------------------------------------------
-    # Global event stream (run/clone updates)
+    # Global event stream (run/twin updates)
     # -----------------------------------------------------------------------
 
     @app.get("/api/events", tags=["events"])
@@ -929,7 +873,7 @@ def create_app(
                     "error": "SPA bundle not built",
                     "hint": (
                         "Run `npm install && npm run build` in checkpoint/dashboard/web/, "
-                        "then restart `checkpoint serve`."
+                        "then restart `checkpoint view`."
                     ),
                 },
                 status_code=503,

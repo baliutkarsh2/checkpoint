@@ -1378,7 +1378,15 @@ def _classify(method: str, path: str, body: object) -> tuple[kit.Op, str] | None
 
 
 def _views(state: dict) -> dict[str, kit.View]:
-    """Every table as its own collection, plus auth users, buckets and objects."""
+    """Every table as its own collection, plus auth users, buckets and objects.
+
+    The names carry no dots. A collection name is half of an assertion's path —
+    ``supabase.auth_users`` — so a dot inside it would read as another level and
+    make the collection unaddressable: criteria about auth users or buckets
+    could not be written at all, and the ones that tried failed as schema
+    errors. The service's own dotted names survive in the request trace, where
+    they are strings rather than paths.
+    """
     views: dict[str, kit.View] = {}
     schema = pgrst.Schema(state.get("tables") or {})
     for name in schema.names():
@@ -1390,7 +1398,7 @@ def _views(state: dict) -> dict[str, kit.View]:
                    else f"{name}#{index}")
             items.append({"_key": key, **row})
         views[name] = kit.View(items, key="_key", nouns=(pgrst.singular(name), name))
-    views["auth.users"] = kit.View(
+    views["auth_users"] = kit.View(
         [{**_auth_user_json(user),
           "provider": (user.get("app_metadata") or {}).get("provider", "email"),
           "confirmed": bool(user.get("email_confirmed_at") or user.get("phone_confirmed_at")),
@@ -1398,13 +1406,13 @@ def _views(state: dict) -> dict[str, kit.View]:
          for user in (state.get("auth_users") or {}).values()],
         key="id", tombstone="deleted_at", nouns=("auth user", "auth users"))
     storage = state.get("storage") or {}
-    views["storage.buckets"] = kit.View(
+    views["storage_buckets"] = kit.View(
         [{**_bucket_json(bucket),
           "object_count": sum(1 for k in (storage.get("objects") or {})
                               if k.startswith(f"{bucket.get('id', '')}/"))}
          for bucket in (storage.get("buckets") or {}).values()],
         key="id", nouns=("storage bucket", "storage buckets"))
-    views["storage.objects"] = kit.View(
+    views["storage_objects"] = kit.View(
         [{"key": key,
           "bucket": obj.get("bucket_id") or key.split("/", 1)[0],
           "name": obj.get("name") or key.split("/", 1)[-1],

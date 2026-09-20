@@ -86,7 +86,7 @@ def github_twin():
 
 
 @pytest.mark.asyncio
-async def test_github_mcp_lists_checkpoint_tool_set(github_twin):
+async def test_github_mcp_exposes_the_documented_tool_set(github_twin):
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams

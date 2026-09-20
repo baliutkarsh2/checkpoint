@@ -503,11 +503,11 @@ def test_views_expose_tables_users_buckets_and_objects(client):
     collections = client.get("/_views").json()["collections"]
     assert collections["products"]["nouns"] == ["product", "products"]
     assert [item["_key"] for item in collections["products"]["items"]][0] == "prod-001"
-    assert len(collections["auth.users"]["items"]) == 3
-    assert collections["auth.users"]["tombstone"] == "deleted_at"
-    media = next(b for b in collections["storage.buckets"]["items"] if b["id"] == "media")
+    assert len(collections["auth_users"]["items"]) == 3
+    assert collections["auth_users"]["tombstone"] == "deleted_at"
+    media = next(b for b in collections["storage_buckets"]["items"] if b["id"] == "media")
     assert media["object_count"] == 2
-    assert collections["storage.objects"]["items"][0]["bucket"] == "product-images"
+    assert collections["storage_objects"]["items"][0]["bucket"] == "product-images"
 
 
 # --- Seed loading -----------------------------------------------------------

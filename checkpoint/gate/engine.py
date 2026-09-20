@@ -118,7 +118,7 @@ def judge_credential_error(judge_model: str, scenarios: Sequence[Scenario]) -> s
 
 def run_gate(
     target: Path,
-    harness_cmd: Sequence[str] | str | None,
+    command: Sequence[str] | str | None,
     policy: GatePolicy,
     *,
     judge_model: str = DEFAULT_MODEL,
@@ -139,7 +139,7 @@ def run_gate(
     scenario whose every run died in the sandbox all come back as ERROR.
     """
     baselines = baselines or {}
-    agent = agent or Agent(command=harness_cmd or ())
+    agent = agent or Agent(command=command or ())
     opts = options or RunOptions(judge_model=judge_model)
 
     loaded, skipped = collect_scenarios(target)
@@ -273,6 +273,13 @@ def _run_scenario_n(
         broken = _infrastructure_error(result) if error is None else error
         complete = result is not None and result.complete and broken is None
         score = result.score if complete and result is not None else 0.0
+        # A must-pass criterion is a floor, not a weighting. An agent that
+        # deleted what the scenario said never to delete has failed that run
+        # whatever else it got right, and scoring it on the average would let a
+        # high enough score carry a breach past the gate.
+        violated = list(result.failed_must_pass) if complete and result is not None else []
+        if violated:
+            score = 0.0
         with lock:
             scores[i], completes[i], infra[i] = score, complete, broken
             if broken is not None:
@@ -280,6 +287,9 @@ def _run_scenario_n(
             elif not complete:
                 agent_error = (result.error if result is not None else None) or "no result"
                 messages.append(f"{name}: run {i + 1} did not complete — {agent_error}")
+            elif violated:
+                messages.append(
+                    f"{name}: run {i + 1} failed a must-pass criterion — {violated[0].text}")
             done += 1
             finished = done
         if result is not None and on_result is not None:

@@ -1,184 +1,143 @@
-"""pytest plugin for Checkpoint — auto-registered via the ``pytest11`` entry point.
+"""Checkpoint's pytest plugin — twins and scenario runs as ordinary fixtures.
 
-After ``pip install checkpoint-agents[dev]``, this plugin is discovered automatically.
-It provides two fixtures and one marker:
+Registered automatically through the ``pytest11`` entry point, so after
+``pip install checkpoint-agents`` these are available with no conftest:
 
-Marker
-------
-``@pytest.mark.checkpoint(clones=["github"], seed="small-project")``
-    Declares which twin clones a test needs and an optional named seed.
+``checkpoint_sandbox``
+    Twins for one test, started from the ``@pytest.mark.checkpoint`` marker and
+    torn down afterwards. Gives you the real :class:`checkpoint.Sandbox` — URLs,
+    credentials, request traces, and the state the twins ended in::
 
-Fixtures
---------
-``checkpoint_twin``
-    Function-scoped. Starts one twin process per clone declared in the
-    ``@pytest.mark.checkpoint`` marker, yields a ``{clone_id: TwinHandle}``
-    dict, then stops all twins. Each test gets a fresh process.
+        @pytest.mark.checkpoint(twins=["github"], seed="small-project")
+        def test_twin_serves_the_seeded_repository(checkpoint_sandbox):
+            url = checkpoint_sandbox.twin_url("github")
+            response = httpx.get(f"{url}/repos/acme/webapp")
+            assert response.status_code == 200
 
-``checkpoint_session``
-    Session-scoped factory.  Call it with a clone list to start twins that
-    persist for the whole test session::
+``checkpoint_run``
+    Runs a scenario against your agent and returns the scored result, so a
+    scenario can be asserted on like any other test. The command comes from
+    ``checkpoint.toml`` unless you pass one::
 
-        @pytest.fixture(scope="session")
-        def gh_twin(checkpoint_session):
-            return checkpoint_session(["github"])
+        def test_refund_scenario(checkpoint_run):
+            result = checkpoint_run("scenarios/refund.md")
+            assert result.score == 100, [c.text for c in result.criteria if not c.passed]
 
-Example
--------
-::
+``checkpoint_twins``
+    A session-scoped factory for suites that would rather pay the startup cost
+    once. Twins are reset between tests that ask for it, not restarted.
 
-    import pytest
-
-    @pytest.mark.checkpoint(clones=["github"], seed="small-project")
-    def test_agent_opens_issue(checkpoint_twin):
-        gh = checkpoint_twin["github"]
-        # gh.url, gh.mcp_url, gh.token
-        import httpx, json
-        r = httpx.post(
-            f"{gh.url}/repos/acme/webapp/issues",
-            json={"title": "oncall", "body": ""},
-            headers={"Authorization": f"token {gh.token}"},
-        )
-        assert r.status_code == 201
+Everything heavy is imported inside the fixtures: this module is loaded at
+startup in every environment where Checkpoint is installed, including suites
+that never touch it.
 """
 from __future__ import annotations
 
-import tempfile
-from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
-# httpx and clone_manager are imported lazily inside the fixtures. This module is
-# loaded by pytest at startup in EVERY environment where checkpoint-agents is
-# installed (it registers a pytest11 entry point), including suites that never
-# touch Checkpoint — so its import cost is paid by unrelated projects.
+if TYPE_CHECKING:
+    from checkpoint import RunResult, Sandbox
 
-
-@dataclass
-class TwinHandle:
-    """Live reference to a running twin process."""
-    clone_id: str
-    url: str
-    mcp_url: str
-    token: str
+MARKER = "checkpoint"
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "checkpoint(clones, seed): declare checkpoint twin clones needed by the test",
+        "checkpoint(twins, seed, intercept, egress): the twins a test needs, the "
+        "named dataset they start from, and how the sandbox exposes them",
     )
 
 
+def _marker_options(request: pytest.FixtureRequest) -> dict[str, Any]:
+    marker = request.node.get_closest_marker(MARKER)
+    options = dict(marker.kwargs) if marker else {}
+    # `clones` is what twins were called before; scenarios still accept it.
+    twins = options.pop("twins", None) or options.pop("clones", None) or ["github"]
+    options["twins"] = [twins] if isinstance(twins, str) else list(twins)
+    return options
+
+
 @pytest.fixture
-def checkpoint_twin(request: pytest.FixtureRequest, tmp_path: Path) -> dict[str, TwinHandle]:  # type: ignore[return]
-    """Function-scoped fixture: starts twins for clones in @pytest.mark.checkpoint."""
-    import httpx
+def checkpoint_sandbox(request: pytest.FixtureRequest) -> Sandbox:
+    """Twins for this test, seeded as the marker asks, stopped afterwards."""
+    from checkpoint import Sandbox
+    from checkpoint.engine import TwinSetup
 
-    from checkpoint import clone_manager
+    options = _marker_options(request)
+    seed = options.pop("seed", None)
+    sandbox = Sandbox(
+        options["twins"],
+        intercept=options.get("intercept", False),
+        egress=options.get("egress", "none"),
+    )
+    with sandbox:
+        if seed:
+            sandbox.prepare({name: TwinSetup(seed=seed) for name in sandbox.twins})
+        yield sandbox
 
-    marker = request.node.get_closest_marker("checkpoint")
-    clones: list[str] = marker.kwargs.get("clones", ["github"]) if marker else ["github"]
-    seed: str | None = marker.kwargs.get("seed") if marker else None
 
-    registry_path = tmp_path / "clones.json"
-    started: list[str] = []
-    handles: dict[str, TwinHandle] = {}
+@pytest.fixture
+def checkpoint_run(request: pytest.FixtureRequest):
+    """Run a scenario against your agent and hand back the scored result.
 
-    try:
-        for clone_id in clones:
-            entry = clone_manager.start(clone_id, registry_path=registry_path)
-            started.append(clone_id)
-            handles[clone_id] = TwinHandle(
-                clone_id=clone_id,
-                url=entry["url"],
-                mcp_url=entry["mcp_url"],
-                token=entry["token"],
+    ``checkpoint_run(path, command=None, **options)`` — ``command`` defaults to
+    ``[agent]`` in the nearest ``checkpoint.toml``, and any other keyword is a
+    :class:`checkpoint.RunOptions` field.
+    """
+    from checkpoint import Project, RunOptions, parse_file, run_scenario
+
+    def run(scenario_path: str, command: str | None = None, **options: Any) -> RunResult:
+        project = Project.load()
+        agent = project.build_agent(command)
+        if agent is None:
+            raise pytest.UsageError(
+                "checkpoint_run needs to know how to start your agent: pass "
+                'command="python my_agent.py", or add [agent] to checkpoint.toml'
             )
-            if seed:
-                try:
-                    httpx.post(f"{entry['url']}/_seed/{seed}", timeout=5)
-                except Exception:
-                    pass
-    except Exception:
-        for cid in started:
-            try:
-                clone_manager.stop(cid, registry_path=registry_path)
-            except Exception:
-                pass
-        raise
+        judge_model = options.pop("judge_model", None) or project.judge_model()
+        return run_scenario(parse_file(scenario_path), agent,
+                            options=RunOptions(judge_model=judge_model, **options))
 
-    yield handles  # type: ignore[misc]
-
-    for cid in started:
-        try:
-            clone_manager.stop(cid, registry_path=registry_path)
-        except Exception:
-            pass
+    return run
 
 
-class _SessionFactory:
-    """Helper returned by checkpoint_session — call with a clone list."""
+class _TwinFactory:
+    """Keeps one sandbox per twin combination alive for the whole session."""
 
     def __init__(self) -> None:
-        self._registry: Path = Path(tempfile.mkdtemp(prefix="checkpoint_pytest_")) / "clones.json"
-        self._started: list[str] = []
-        self._handles: dict[str, TwinHandle] = {}
+        self._sandboxes: dict[tuple[str, ...], Sandbox] = {}
 
-    def __call__(self, clones: list[str], *, seed: str | None = None) -> dict[str, TwinHandle]:
-        import httpx
+    def __call__(self, twins: list[str] | str, *, seed: str | None = None,
+                 reset: bool = True) -> Sandbox:
+        from checkpoint import Sandbox
+        from checkpoint.engine import TwinSetup
 
-        from checkpoint import clone_manager
+        names = tuple(sorted([twins] if isinstance(twins, str) else twins))
+        sandbox = self._sandboxes.get(names)
+        if sandbox is None:
+            sandbox = Sandbox(list(names), intercept=False, egress="none")
+            sandbox.start()
+            self._sandboxes[names] = sandbox
+        elif reset:
+            # A shared sandbox that keeps the previous test's writes makes the
+            # next test's assertions depend on execution order.
+            sandbox.reset()
+        if seed:
+            sandbox.prepare({name: TwinSetup(seed=seed) for name in names})
+        return sandbox
 
-        for clone_id in clones:
-            if clone_id in self._handles:
-                continue
-            entry = clone_manager.start(clone_id, registry_path=self._registry)
-            self._started.append(clone_id)
-            self._handles[clone_id] = TwinHandle(
-                clone_id=clone_id,
-                url=entry["url"],
-                mcp_url=entry["mcp_url"],
-                token=entry["token"],
-            )
-            if seed:
-                try:
-                    httpx.post(f"{entry['url']}/_seed/{seed}", timeout=5)
-                except Exception:
-                    pass
-        return self._handles
-
-    def teardown(self) -> None:
-        from checkpoint import clone_manager
-
-        for cid in self._started:
-            try:
-                clone_manager.stop(cid, registry_path=self._registry)
-            except Exception:
-                pass
-        import shutil
-        shutil.rmtree(self._registry.parent, ignore_errors=True)
+    def close(self) -> None:
+        for sandbox in self._sandboxes.values():
+            sandbox.stop()
+        self._sandboxes.clear()
 
 
 @pytest.fixture(scope="session")
-def checkpoint_session() -> _SessionFactory:  # type: ignore[return]
-    """Session-scoped factory fixture.
-
-    Twins started via this factory persist for the whole pytest session.
-    Use this when you want to share one twin across many tests to avoid the
-    startup overhead of a new uvicorn process per test.
-
-    Example::
-
-        @pytest.fixture(scope="session")
-        def gh(checkpoint_session):
-            return checkpoint_session(["github"], seed="small-project")["github"]
-
-        def test_list_repos(gh):
-            r = httpx.get(f"{gh.url}/user/repos", ...)
-            assert r.status_code == 200
-    """
-    factory = _SessionFactory()
-    yield factory  # type: ignore[misc]
-    factory.teardown()
+def checkpoint_twins() -> _TwinFactory:
+    """Session-scoped twins: ``checkpoint_twins(["github"], seed="small-project")``."""
+    factory = _TwinFactory()
+    yield factory
+    factory.close()

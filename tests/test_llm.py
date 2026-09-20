@@ -83,7 +83,8 @@ def test_missing_credential_says_what_to_do(monkeypatch):
         get_client("gpt-5.6-luna")
     message = str(excinfo.value)
     assert "OPENAI_API_KEY" in message
-    assert "--judge-model" in message
+    assert "--model" in message            # the flag that judges with another provider
+    assert "checkpoint.toml" in message    # ...and where to set it for good
     assert "CHECKPOINT_LLM_BASE_URL" in message
 
 

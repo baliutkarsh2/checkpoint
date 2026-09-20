@@ -9,6 +9,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One config file: `checkpoint.toml`.** Settings used to live in
+  `.checkpoint.json`, `harness.json` and `~/.checkpoint/config.json`, each read
+  by a different command — and an audit found keys in them that nothing read at
+  all. There is now one file, found by walking up from the working directory,
+  with one precedence rule everywhere: flag > environment > file > default.
+  Unknown keys and wrong types are errors rather than silence. `checkpoint init`
+  writes it; the three old files, and the modules behind them, are gone.
+- **The CLI is 15 commands instead of ~40.** `checkpoint --help` opened with an
+  alphabetical wall of commands, several of which were aliases of each other
+  (`clone status` invoked `clone inspect`; `debug inspect` invoked
+  `traces detail`). The surface is now grouped by what you are trying to do, and
+  each command lives in its own module, loaded only when it runs. Renames:
+  `validate`→`check`, `serve`→`view`, `clone`→`twins`, `compliance`→`report`,
+  `scenario generate`→`new`, `gen-attacks`→`redteam generate`,
+  `redteam-mcp`→`redteam serve-poisoned`, and `traces`/`replay`/`compare`/
+  `report`/`db`/`debug export` all folded into `runs`. Removed: `config` and
+  `whoami` (superseded by `checkpoint.toml` and `doctor`), `badge`, `ci init`
+  (now `init --ci`), `scenario list`, and the `--harness` flag (now `--command`,
+  and usually unnecessary).
+- **`checkpoint run` takes 19 options instead of 33**, and `--pass-threshold` is
+  gone from it: deciding whether a build ships from one run is what `gate`
+  exists to prevent.
+- **Red-team runs default to 16, not 5.** At five runs a clean sweep cannot
+  clear the confidence bar, so *every* attack was reported as a vulnerability
+  and labelled "flaky (attack lands sometimes)" — which is false for 5/5. The
+  report now separates "resisted" from "nothing landed, but the evidence cannot
+  prove it", and exits 2 rather than 1 for the latter. `run_redteam` also
+  accepts the resolved agent and sandbox options, which it previously dropped.
+- **`checkpoint doctor` no longer fails when Docker is absent**, and its checks
+  earn their place: it starts a twin and reads its state back, and self-tests the
+  intercept proxy, rather than probing ports nothing binds.
+- `checkpoint/clone_manager.py` is now `checkpoint/twins/sessions.py`, and it
+  resolves twins through the registry per call, so a twin declared in
+  `checkpoint.toml` can be started like a built-in one.
+
+### Added
+
+- **Your own twins.** `[twins.<name>]` in `checkpoint.toml` points Checkpoint at
+  any ASGI app in your repository; it is then a twin like the built-in seven —
+  scenarios name it, the sandbox starts it, the proxy routes its production
+  hostnames into it.
+- **`checkpoint check` shows the assertion behind every criterion** before a run
+  is spent, which is where a criterion an idle agent would pass gives itself
+  away.
+- **The pytest plugin runs scenarios.** `checkpoint_run("scenarios/refund.md")`
+  returns a scored `RunResult`, and `checkpoint_sandbox` hands a test the real
+  `Sandbox`. The old `checkpoint_twin` fixture and its `TwinHandle` are gone.
+- `checkpoint.toml`'s `[twins]`, and a public API on the package itself:
+  `from checkpoint import Agent, RunOptions, Sandbox, parse_file, run_scenario`.
+  Names resolve on first use, so `import checkpoint` stays cheap.
+
+### Removed
+
+- **Docker run mode**, in full: `checkpoint/docker/`, the TLS sidecar image, the
+  generated harness images, `--docker`, `--docker-logs`, `--harness-dir` and the
+  `docker` dependency. It existed because interception used to require a
+  container; interception now runs in-process on any platform, and the container
+  path had become a second, worse copy of the engine — it honoured neither the
+  fault injection nor the egress policy, and its hard-coded domain table had
+  drifted from the twin registry, so a Google Workspace agent's token refresh
+  went to the real Google. Container isolation, if it returns, belongs on the
+  engine rather than beside it. The repository's own `Dockerfile`,
+  `docker-compose.yml`, `fly.toml` and `render.yaml` are unaffected: they deploy
+  the dashboard.
+- `checkpoint/sdk.py`. The package itself is the API now, in the same vocabulary
+  the CLI uses, rather than a second one with its own names for the same things.
+
+### Fixed
+
+- **`twins: [github]` in YAML front matter started no twins.** The engine
+  re-parsed the setting with `str(...).split(",")`, so a YAML list arrived as the
+  literal string `"['github']"` and the run failed to set up — the documented
+  front-matter syntax, and the one the starter scenario uses.
+- **Assertions were being eaten by the terminal renderer.** Rich reads `[...]`
+  as a style tag, so `github.issues[title == "x"]` printed as `github.issues`,
+  quietly showing a precise check as a vague one.
+- **`schema_for` described every collection as having no fields**, because it
+  read them from a twin at rest, which holds nothing. It now pools fields across
+  the twin's bundled seeds, so `checkpoint check` and the scenario generator
+  know that an issue has a `title` and a `state`.
+- `replay --clone` matched nothing: trace events carry a `twin` key, and the
+  filter looked for `clone`.
+
 - **The Docker sidecar no longer uses mitmproxy.** TLS interception is now done
   by Checkpoint's own proxy (`checkpoint/proxy/`, `python -m checkpoint.proxy`):
   forward-proxy (CONNECT) and transparent (SNI) modes, per-host certificates

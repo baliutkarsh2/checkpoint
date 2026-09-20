@@ -24,9 +24,8 @@ class LLMResponseError(LLMError):
 def missing_credential(env_var: str, model: str | None, example: str) -> LLMCredentialError:
     """The error a user sees when a judged run has nowhere to send its prompt."""
     return LLMCredentialError(
-        f"No API key for model {model or '(default)'!r}: set {env_var} in your environment.\n"
-        f"  - to judge with a different provider instead, pass --judge-model "
-        f"(e.g. --judge-model {example});\n"
-        f"  - to use a local or other OpenAI-compatible server, set "
-        f"CHECKPOINT_LLM_BASE_URL (e.g. http://localhost:1234/v1)."
+        f"No API key for model {model or '(default)'!r}: set {env_var} in your environment. "
+        f"Or judge with another provider — pass --model {example}, or set model = "
+        f'"{example}" under [judge] in checkpoint.toml. Or point at a local or other '
+        f"OpenAI-compatible server with CHECKPOINT_LLM_BASE_URL=http://localhost:1234/v1."
     )

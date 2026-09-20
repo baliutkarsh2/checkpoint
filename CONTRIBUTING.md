@@ -15,8 +15,8 @@ checkpoint doctor
 ```
 
 Node 22+ is needed to build the dashboard SPA (the bundler ships native bindings
-built for current Node). The built bundle is not committed — build it once so
-`checkpoint serve` has a dashboard to serve from a source checkout:
+built for current Node). The built bundle is committed, so this is only needed
+if you change the SPA:
 
 ```bash
 cd checkpoint/dashboard/web && npm ci && npm run build
@@ -48,13 +48,14 @@ pytest -q --cov                # with a coverage report
 pytest -q -m "not integration" # skip tests that spawn twin subprocesses
 ```
 
-Markers (`slow`, `integration`, `docker`) are declared in `pyproject.toml` and
+Markers (`slow`, `integration`, `sdk`) are declared in `pyproject.toml` and
 enforced with `--strict-markers`, so a typo fails rather than silently matching
 nothing. Every test is bounded by a 300s timeout.
 
-The suite runs offline: LLM calls are behind injectable client factories, and each
-test isolates state via `tmp_path` / `CHECKPOINT_HOME`. Docker-mode tests mock the
-docker client, so a running daemon is not required to run the suite.
+The suite runs offline and needs no API key: LLM calls go through injectable
+client factories, and each test isolates its state under `tmp_path` or
+`CHECKPOINT_HOME`. A test that would reach the network is a bug — the whole
+point of this project is that you should not have to.
 
 ## Changing the dashboard
 
@@ -66,20 +67,18 @@ committed copy is stale:
 
 ```bash
 cd checkpoint/dashboard/web && npm ci && npm run build   # outputs ../static
-checkpoint serve                                          # serves the fresh bundle
+checkpoint view                                           # serves the fresh bundle
 ```
-
-CI (and the release workflow) run this same build on Node 22, so what ships is
-always a clean build from source — there is no committed artifact to keep in sync.
 
 ## Adding a twin or scenario
 
 - **Twins** live in `checkpoint/twins/` with a matching MCP wrapper in
   `checkpoint/mcp_servers/`. Keep the wire shape faithful to the real SDK and add
   seeds + tests under `tests/twins/`.
-- **Scenarios** are markdown under `scenarios/` (`## Setup`, `## Prompt`,
-  `## Success Criteria`, `## Config`). Prefer `[D]` criteria the deterministic
-  catalog can check; run `checkpoint validate` before submitting.
+- **Scenarios** are markdown under `scenarios/`: front matter, `## Task`,
+  `## Criteria`. Run `checkpoint check` before submitting — it prints the
+  assertion behind every criterion, which is where a criterion that an idle
+  agent would pass gives itself away.
 
 ## Ground rules
 
@@ -87,8 +86,10 @@ always a clean build from source — there is no committed artifact to keep in s
   `checkpoint/fake_credentials.py` and carry the `CHECKPOINTFAKE` marker. The secret
   tripwire (`tests/test_no_tracked_secrets.py`) and the gitleaks CI job enforce this.
 - Line endings are normalized by `.gitattributes` (shell scripts stay LF).
-- Keep `README.md` under 200 lines and honest — document what ships, label roadmap
-  items as roadmap.
+- Keep the README honest. `tests/test_readme.py` checks that every command it
+  names exists and that retired vocabulary stays retired; it cannot check that a
+  claim is true, so that part is on you. Document what ships, and label a
+  roadmap item as one.
 - Open an issue before a large change so we can align on approach.
 
 ## Reporting security issues
@@ -99,8 +100,3 @@ See `SECURITY.md`. Please do not open public issues for vulnerabilities.
 
 Participation in this project is governed by the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 Report unacceptable behavior to hello@usecheckpoint.dev.
-
-## Security
-
-Please do not open public issues for vulnerabilities — see [SECURITY.md](./SECURITY.md)
-for the private reporting channel.

@@ -1,4 +1,10 @@
-"""Agent Assurance Report: verdict logic, rendering, and the CLI."""
+"""The assurance report must grade the evidence, not the headline verdict.
+
+A SHIP with a confirmed vulnerability behind it is not approved, and a
+certificate whose signature does not verify proves nothing however good its
+numbers read. These tests pin both, plus the framework cross-references a
+reviewer looks for.
+"""
 from __future__ import annotations
 
 import json
@@ -63,8 +69,8 @@ def test_render_markdown_sections():
     assert "Art. 12" in md  # audit-trail obligation
 
 
-def test_compliance_cli_end_to_end(tmp_path):
-    # A real signed certificate so the signature verifies.
+def _signed_certificate(tmp_path, monkeypatch):
+    """A real signed certificate, so the signature genuinely verifies."""
     from checkpoint.gate import certificate as cert_mod
     from checkpoint.gate.verdict import (
         GatePolicy,
@@ -73,27 +79,45 @@ def test_compliance_cli_end_to_end(tmp_path):
         summarize_scenario,
     )
 
-    stat = summarize_scenario("happy.md", [100.0] * 20, [True] * 20, GatePolicy(runs=20))
-    verdict, code = decide_verdict([stat], GatePolicy(runs=20))
-    gr = GateResult(verdict=verdict, scenarios=[stat], policy=GatePolicy(runs=20), exit_code=code)
-    import os
-    os.environ["CHECKPOINT_HOME"] = str(tmp_path)
-    signed = cert_mod.LocalSigner().sign(
-        cert_mod.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"], model="gpt-4o-mini")
-    )
-    cert_file = tmp_path / "cert.json"
-    cert_file.write_text(json.dumps(signed))
+    monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))  # isolate the signing key
+    policy = GatePolicy(runs=20)
+    stat = summarize_scenario("happy.md", [100.0] * 20, [True] * 20, policy)
+    verdict, code = decide_verdict([stat], policy)
+    result = GateResult(verdict=verdict, scenarios=[stat], policy=policy, exit_code=code)
+    signed = cert_mod.LocalSigner().sign(cert_mod.build_certificate(
+        result, agent="bot", command=["python", "a.py"], model="gpt-4o-mini"))
+    path = tmp_path / "cert.json"
+    path.write_text(json.dumps(signed))
+    return path
+
+
+def test_report_cli_end_to_end(tmp_path, monkeypatch):
+    cert_file = _signed_certificate(tmp_path, monkeypatch)
     rt_file = tmp_path / "rt.json"
     rt_file.write_text(json.dumps(_redteam([
         {"scenario": "atk", "category": "ASI04", "classification": "stable_pass", "resisted": True}])))
     out = tmp_path / "report.md"
 
     result = CliRunner().invoke(main, [
-        "compliance", "--certificate", str(cert_file), "--redteam", str(rt_file),
-        "--out", str(out), "-o", "json",
+        "report", "--certificate", str(cert_file), "--redteam", str(rt_file),
+        "--out", str(out), "--json",
     ])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["overall"] == APPROVED
     assert payload["gate"]["signature_valid"] is True
     assert out.is_file() and "Agent Assurance Report" in out.read_text()
+
+
+def test_report_rejects_a_certificate_that_was_edited_after_signing(tmp_path, monkeypatch):
+    """Good numbers in an unverifiable certificate may not be the signed ones."""
+    cert_file = _signed_certificate(tmp_path, monkeypatch)
+    tampered = json.loads(cert_file.read_text())
+    tampered["subject"]["agent"] = "some-other-bot"
+    cert_file.write_text(json.dumps(tampered))
+
+    result = CliRunner().invoke(main, ["report", "--certificate", str(cert_file), "--json"])
+    payload = json.loads(result.output)
+    assert payload["gate"]["signature_valid"] is False
+    assert payload["overall"] == REJECTED
+    assert result.exit_code == 1

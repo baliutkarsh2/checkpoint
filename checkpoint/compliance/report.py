@@ -93,7 +93,7 @@ def render_markdown(report: dict) -> str:
         "",
         "## Subject",
         f"- Agent: `{subj.get('agent', '?')}`",
-        f"- Harness: `{subj.get('harness', '?')}`",
+        f"- Agent command: `{subj.get('command') or subj.get('harness', '?')}`",
         f"- Commit: `{subj.get('commit_sha') or 'n/a'}`",
         f"- Model: `{subj.get('model') or 'n/a'}`",
         "",

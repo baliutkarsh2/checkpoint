@@ -1,24 +1,22 @@
-"""Run results, scoring, and the ``run_once`` entry point.
+"""What a run produced, and how a criterion becomes a verdict on it.
 
-``run_once`` executes one scenario against one agent command. It is a thin
-wrapper over :func:`checkpoint.engine.run_scenario`, which owns the sandbox and
-the agent process; this module keeps the result types and criterion scoring.
+:func:`checkpoint.engine.run_scenario` owns the sandbox and the agent process
+and returns a :class:`RunResult`; this module owns that result type and the
+scoring applied to it.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from checkpoint.fake_credentials import FAKE_TOKENS
 
 from .engine.agent import extract_answer
-from .llm import DEFAULT_MODEL
 from .scenario import Scenario
 from .twins import registry as twin_registry
 
 if TYPE_CHECKING:
-    from .engine import Agent, RunOptions
+    pass
 
 
 @dataclass
@@ -63,6 +61,8 @@ class RunResult:
     timed_out: bool = False
     setup_error: bool = False
     """True when the sandbox (not the agent) failed; such runs carry no verdict."""
+    agent_trace: list = field(default_factory=list)
+    """Events the agent wrote to ``$CHECKPOINT_AGENT_TRACE_FILE``, if any."""
     warnings: list[str] = field(default_factory=list)
     eval_errors: list[str] = field(default_factory=list)
     """Scoring problems (a judge outage, an assertion that cannot be evaluated)."""
@@ -93,31 +93,13 @@ def twin_mcp_url(port: int | str, host: str = "127.0.0.1") -> str:
     return f"http://{host}:{port}/mcp/"
 
 
-# Kept for the Docker runner, which exports each twin's credential under this name.
+# The variable each twin's SDKs read their credential from.
 _CLONE_BOOTSTRAP_TOKEN_ENV = {
     spec.name: (spec.token_env[0], FAKE_TOKENS[spec.name])
     for spec in twin_registry.all_specs() if spec.token_env
 }
 
 _extract_final_answer = extract_answer
-
-
-def run_once(
-    scenario: Scenario,
-    harness_cmd: Sequence[str] | str,
-    cwd: str | None = None,
-    judge_model: str = DEFAULT_MODEL,
-    *,
-    agent: Agent | None = None,
-    options: RunOptions | None = None,
-) -> RunResult:
-    """Run ``scenario`` once against the agent started by ``harness_cmd``."""
-    from .engine import Agent, RunOptions, run_scenario
-
-    agent = agent or Agent(command=harness_cmd if isinstance(harness_cmd, str) else list(harness_cmd),
-                           cwd=cwd)
-    opts = options or RunOptions(judge_model=judge_model)
-    return run_scenario(scenario, agent, options=opts)
 
 
 def _merge_state_for_clones(per_clone_state: dict[str, dict]) -> dict:

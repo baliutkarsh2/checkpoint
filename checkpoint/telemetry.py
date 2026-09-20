@@ -2,9 +2,9 @@
 
 The run record is the durable source of truth. This module builds a stable,
 dashboard-friendly report from records of different ages and harness styles.
-It is deliberately tolerant of arbitrary ``agent_trace`` shapes: harnesses can
-write whatever they know, and Checkpoint will surface the useful chat/tool
-fragments without throwing away the original raw payload.
+It is deliberately tolerant of arbitrary ``agent_trace`` shapes: an agent writes
+whatever it knows to ``$CHECKPOINT_AGENT_TRACE_FILE``, and Checkpoint surfaces
+the chat and tool fragments it recognizes without discarding the raw payload.
 """
 from __future__ import annotations
 
@@ -59,9 +59,9 @@ def build_telemetry_report(record: dict) -> dict:
             "messages": chat_messages,
             "raw": agent_trace,
             "capture_note": (
-                "Agent chat and model reasoning are shown when the harness writes "
-                "CHECKPOINT_AGENT_TRACE_FILE. Hidden provider internals are not present "
-                "unless the agent explicitly emits a summary or trace event."
+                "The agent's own messages and tool calls appear here when it "
+                "writes them to $CHECKPOINT_AGENT_TRACE_FILE. What a provider does "
+                "internally is not visible to Checkpoint and is never inferred."
             ),
         },
         "transcript": {
@@ -112,31 +112,32 @@ def _summary(
         "duration_ms": record.get("duration_ms"),
         "timestamp": (record.get("env") or {}).get("timestamp"),
         "exit_code": record.get("exit_code"),
-        "harness": record.get("harness") or {},
+        "agent": record.get("agent") or record.get("harness") or {},
     }
 
 
 def _cli_commands(record: dict) -> dict:
+    """The commands that take a reader from this record to the next question.
+
+    Rendered in the dashboard next to the run, so each one has to be something
+    they can paste unchanged.
+    """
     run_id = record.get("run_id") or "<run-id>"
     scenario_path = record.get("scenario_path") or "<scenario.md>"
-    harness = record.get("harness") or {}
-    replay_base = f"checkpoint replay {run_id}"
+    agent = record.get("agent") or record.get("harness") or {}
     commands = {
-        "detail": f"checkpoint traces detail {run_id}",
-        "telemetry": f"checkpoint traces telemetry {run_id}",
-        "export": f"checkpoint traces export {run_id} --output {run_id}.json",
-        "replay": replay_base,
-        "replay_json": f"{replay_base} --json",
-        "serve": "checkpoint serve",
+        "detail": f"checkpoint runs show {run_id}",
+        "trace": f"checkpoint runs trace {run_id}",
+        "trace_json": f"checkpoint runs trace {run_id} --json",
+        "export": f"checkpoint runs export {run_id} --output {run_id}.json",
+        "view": "checkpoint view",
     }
-    run_parts = ["checkpoint", "run", scenario_path]
-    if harness.get("mode") == "docker":
-        run_parts.append("--docker")
-        if harness.get("dir"):
-            run_parts.extend(["--harness-dir", str(harness["dir"])])
-    elif harness.get("cmd"):
-        run_parts.extend(["--harness", str(harness["cmd"]), "--no-docker"])
-    commands["rerun"] = " ".join(run_parts)
+    rerun = ["checkpoint", "run", scenario_path]
+    # A recorded command is only worth repeating when it is not the one
+    # checkpoint.toml would supply anyway.
+    if agent.get("cmd"):
+        rerun.extend(["--command", str(agent["cmd"])])
+    commands["rerun"] = " ".join(rerun)
     return commands
 
 

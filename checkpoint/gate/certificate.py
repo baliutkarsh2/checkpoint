@@ -3,7 +3,8 @@
 A gate produces a verdict; a certificate makes that verdict a portable,
 tamper-evident artifact you can attach to a release, hand to a compliance
 reviewer, or show a customer's vendor-review team. It records what was tested
-(the agent, its harness fingerprint, the commit, the model), the statistical
+(the agent, a fingerprint of the command that ran it, the commit, the model),
+the statistical
 evidence per scenario, and the verdict — then signs the whole thing with
 Ed25519 so any later change is detectable.
 
@@ -36,15 +37,22 @@ def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def harness_fingerprint(harness_cmd: list[str]) -> str:
-    return "sha256:" + hashlib.sha256(" ".join(harness_cmd).encode("utf-8")).hexdigest()
+def command_fingerprint(command: list[str] | str) -> str:
+    """A stable identifier for what was run, without publishing the command.
+
+    A certificate travels; the command that produced it may name an internal
+    path or a private module. The hash still proves two certificates describe
+    the same thing.
+    """
+    text = command if isinstance(command, str) else " ".join(command)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def build_certificate(
     gate_result,
     *,
     agent: str,
-    harness_cmd: list[str],
+    command: list[str] | str,
     commit_sha: str | None = None,
     model: str | None = None,
     valid_days: int = 90,
@@ -75,7 +83,7 @@ def build_certificate(
         "schema": SCHEMA,
         "subject": {
             "agent": agent,
-            "harness": harness_fingerprint(harness_cmd),
+            "command": command_fingerprint(command),
             "commit_sha": commit_sha,
             "model": model,
         },

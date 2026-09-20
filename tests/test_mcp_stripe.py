@@ -93,7 +93,7 @@ def stripe_twin():
 
 
 @pytest.mark.asyncio
-async def test_stripe_mcp_lists_checkpoint_tool_set(stripe_twin):
+async def test_stripe_mcp_exposes_the_documented_tool_set(stripe_twin):
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams
@@ -168,7 +168,7 @@ async def test_stripe_mcp_representative_tools_callable(stripe_twin):
 
 @pytest.mark.asyncio
 async def test_stripe_mcp_documented_stubs_return_inert_envelopes(stripe_twin):
-    """The three Checkpoint-documented stubs return ok-but-empty payloads."""
+    """The three documented stubs return ok-but-empty payloads."""
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams

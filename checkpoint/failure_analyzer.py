@@ -1,4 +1,4 @@
-"""EV-05: Per-criterion failure analysis.
+"""Why a criterion failed, in a sentence a reader can act on.
 
 When a run scores <100, for every failed criterion we ask the LLM to produce
 a 3-5 sentence paragraph explaining *why* it failed, citing the offending

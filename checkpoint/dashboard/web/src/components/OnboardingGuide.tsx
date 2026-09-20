@@ -1,31 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  Check,
-  Copy,
-  ExternalLink,
-  FileText,
-  GitBranch,
-  Play,
-  Terminal,
-} from "lucide-react";
+import { Check, Copy, FileText, ShieldCheck, Terminal } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/lib/api";
 
 /**
- * Onboarding guide for new users. Lives both as a Setup tab and as the
- * empty-state on the Runs page so first-time users hit it immediately.
+ * Onboarding for a repository that has an agent but no Checkpoint yet. Lives
+ * both as a Setup tab and as the empty state on the Runs page.
  *
- * Three-step path tailored to the most common case: drop Checkpoint into an
- * existing agent repo. Each step is copy-pasteable and self-contained.
+ * Every step is one command that can be pasted unchanged.
  */
 export default function OnboardingGuide() {
   const meta = useQuery({ queryKey: ["meta"], queryFn: api.meta });
-  const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents });
+  const config = useQuery({ queryKey: ["config"], queryFn: api.config });
   const scenarios = useQuery({ queryKey: ["scenarios"], queryFn: () => api.scenarios() });
 
-  const sampleAgent = agents.data?.find((a) => a.source === "bundled") || agents.data?.[0];
   const sampleScenario = scenarios.data?.scenarios[0];
+  const configured = Boolean(config.data?.exists);
 
   return (
     <div className="space-y-6">
@@ -33,86 +24,86 @@ export default function OnboardingGuide() {
 
       <Step
         n={1}
-        title="Install"
+        title="Point Checkpoint at your agent"
+        done={configured}
         body={
           <>
-            <CodeBlock language="bash">{`pip install checkpoint
-export OPENAI_API_KEY=sk-...   # used by the LLM judge`}</CodeBlock>
+            <CodeBlock language="bash">{`checkpoint init --command "python my_agent.py"`}</CodeBlock>
             <p className="text-sm text-ink-3 dark:text-paper-3 mt-2">
-              You'll also need Docker running — that's the default run mode so
-              your agent's real SDKs (PyGithub, supabase-py, ...) get
-              TLS-intercepted to local twins.
+              This writes <code className="font-mono">checkpoint.toml</code> and
+              a starter scenario. Your agent's code is not touched: Checkpoint
+              runs the command you already run, puts the task in{" "}
+              <code className="font-mono">$CHECKPOINT_TASK</code>, and reads the
+              final answer from stdout.
             </p>
+            {configured && config.data && (
+              <Tip>
+                Already set up — the config is at{" "}
+                <code className="font-mono">{config.data.path}</code>.{" "}
+                <Link to="/setup?tab=config" className="underline font-medium">
+                  See what it says
+                </Link>
+                .
+              </Tip>
+            )}
           </>
         }
       />
 
       <Step
         n={2}
-        title="Wrap your agent in a Checkpoint-compatible harness"
+        title="Run a scenario and read the trajectory"
         body={
           <>
-            <p className="text-sm mb-3">
-              In your existing agent repo, run:
-            </p>
-            <CodeBlock language="bash">{`cd /path/to/your-agent-repo
-checkpoint init --template openai-agents
-# templates: raw, openai-agents, anthropic, langchain`}</CodeBlock>
+            <CodeBlock language="bash">
+              {sampleScenario
+                ? `checkpoint run scenarios/${sampleScenario.path}`
+                : "checkpoint run"}
+            </CodeBlock>
             <p className="text-sm text-ink-3 dark:text-paper-3 mt-2">
-              This creates a <code>harness/</code> directory with a Dockerfile,
-              an <code>entrypoint.sh</code>, and a starter <code>harness.py</code>{" "}
-              shim. Edit <code>harness.py</code> to call into your agent's
-              entry point (it reads <code>CHECKPOINT_TASK</code> from env and
-              prints <code>{"{\"text\": \"...\"}"}</code> to stdout).
+              With no argument it runs every scenario the project declares. Each
+              run lands here with the calls the agent made to the twins, the
+              state it left behind, and the criteria that failed.
             </p>
-            <Tip>
-              Already have a working agent? The fastest path is to make your
-              entry point read <code>CHECKPOINT_TASK</code> and print
-              <code> {"{\"text\": \"final answer\"}"} </code> at the end. The
-              shim does the rest.
-            </Tip>
+            <ul className="text-sm space-y-1 mt-1.5">
+              <li>
+                → Browse{" "}
+                <Link to="/scenarios" className="font-medium underline">
+                  Scenarios
+                </Link>{" "}
+                and hit <strong>Run</strong> on any card
+              </li>
+              <li>
+                → Or <strong>New run</strong> on the{" "}
+                <Link to="/" className="font-medium underline">
+                  Runs
+                </Link>{" "}
+                page
+              </li>
+            </ul>
           </>
         }
       />
 
       <Step
         n={3}
-        title="Pick a scenario and run it"
+        title="Gate the build on the pass rate, not on one run"
         body={
           <>
-            <p className="text-sm mb-3">From the CLI:</p>
-            <CodeBlock language="bash">
-              {sampleScenario
-                ? `checkpoint run scenarios/${sampleScenario.path} --harness-dir harness/`
-                : `checkpoint run scenarios/<your-scenario>.md --harness-dir harness/`}
-            </CodeBlock>
+            <CodeBlock language="bash">{`checkpoint gate`}</CodeBlock>
             <p className="text-sm text-ink-3 dark:text-paper-3 mt-2">
-              Or from this dashboard:
+              Runs every scenario enough times for the result to mean something
+              and exits 0 only on SHIP. Put it in CI; read the verdicts on the{" "}
+              <Link to="/gates" className="font-medium underline">
+                Gate
+              </Link>{" "}
+              page.
             </p>
-            <ul className="text-sm space-y-1 mt-1.5">
-              <li>
-                → Go to{" "}
-                <Link to="/scenarios" className="font-medium underline">
-                  Scenarios
-                </Link>{" "}
-                and click <strong>Run</strong> on any card
-              </li>
-              <li>
-                → Or hit <strong>New run</strong> on the{" "}
-                <Link to="/" className="font-medium underline">
-                  Runs
-                </Link>{" "}
-                page and pick agent + scenario
-              </li>
-            </ul>
-            {sampleAgent && sampleScenario && (
-              <Tip>
-                For instant gratification: the auto-discovered{" "}
-                <strong>{sampleAgent.name}</strong> agent + the bundled{" "}
-                <strong>{sampleScenario.title}</strong> scenario are both ready
-                to go right now. Open Scenarios → click Run.
-              </Tip>
-            )}
+            <Tip>
+              A perfect run of fewer than 16 cannot clear the default ship
+              threshold, so the gate reports INCONCLUSIVE and says how many runs
+              it needs — rather than calling a small sample a pass.
+            </Tip>
           </>
         }
       />
@@ -128,7 +119,7 @@ function Intro({ version }: { version: string | undefined }) {
       <div className="flex items-start gap-3">
         <div>
           <h2 className="font-bold text-lg leading-tight">
-            Welcome to Checkpoint
+            Checkpoint
             {version && (
               <span className="text-ink-3 dark:text-paper-3 text-sm font-mono ml-2">
                 v{version}
@@ -136,9 +127,10 @@ function Intro({ version }: { version: string | undefined }) {
             )}
           </h2>
           <p className="text-sm text-ink-3 dark:text-paper-3 mt-1">
-            Test your AI agent against stateful synthetic copies of GitHub,
-            Slack, Stripe, Linear, Supabase, Discord, and Google Workspace.
-            Your agent uses its real SDKs, unmodified. No real-API spend.
+            Run your real agent, unmodified, against stateful copies of the
+            services it calls — GitHub, Slack, Stripe, Linear, Supabase, Discord
+            and Google Workspace. Check what it actually did, not just what it
+            said.
           </p>
         </div>
       </div>
@@ -150,16 +142,18 @@ function Step({
   n,
   title,
   body,
+  done,
 }: {
   n: number;
   title: string;
   body: React.ReactNode;
+  done?: boolean;
 }) {
   return (
     <div className="card">
       <div className="flex items-center gap-3 mb-3">
         <div className="w-7 h-7 border border-ink bg-accent text-ink font-bold flex items-center justify-center text-sm">
-          {n}
+          {done ? <Check size={14} /> : n}
         </div>
         <h3 className="font-bold">{title}</h3>
       </div>
@@ -224,9 +218,30 @@ function RefCard() {
         <li className="flex items-start gap-2">
           <Terminal size={14} className="mt-0.5 shrink-0" />
           <span>
-            <code className="font-mono">checkpoint --help</code> — every CLI
-            command (run, init, scenario, clone, traces, compare, doctor,
-            config, debug, serve)
+            <code className="font-mono">checkpoint --help</code> — fifteen
+            commands, grouped by what you are trying to do
+          </span>
+        </li>
+        <li className="flex items-start gap-2">
+          <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+          <span>
+            <code className="font-mono">checkpoint check</code> — parse and lint
+            your scenarios before you spend runs on them, or use the{" "}
+            <Link to="/setup?tab=validate" className="font-medium underline">
+              Validate
+            </Link>{" "}
+            tab
+          </span>
+        </li>
+        <li className="flex items-start gap-2">
+          <Terminal size={14} className="mt-0.5 shrink-0" />
+          <span>
+            <code className="font-mono">checkpoint twins</code> — start a twin
+            and poke at it by hand, or use the{" "}
+            <Link to="/twins" className="font-medium underline">
+              Twins
+            </Link>{" "}
+            page
           </span>
         </li>
         <li className="flex items-start gap-2">
@@ -236,31 +251,6 @@ function RefCard() {
               OpenAPI / Swagger
             </a>
             {" "}— every JSON endpoint this dashboard uses, with try-it-out
-          </span>
-        </li>
-        <li className="flex items-start gap-2">
-          <ExternalLink size={14} className="mt-0.5 shrink-0" />
-          <span>
-            See <code className="font-mono">docs/integrate-your-agent.md</code> in the repo for a
-            walk-through of integrating Checkpoint into an existing repo
-          </span>
-        </li>
-        <li className="flex items-start gap-2">
-          <GitBranch size={14} className="mt-0.5 shrink-0" />
-          <span>
-            Four reference agents under{" "}
-            <code className="font-mono">examples/agents/</code> (OpenAI tools,
-            Anthropic tools, LangChain ReAct, MCP client) — these are full
-            Dockerized harnesses ready to run against any scenario
-          </span>
-        </li>
-        <li className="flex items-start gap-2">
-          <Play size={14} className="mt-0.5 shrink-0" />
-          <span>
-            <Link to="/setup?tab=validate" className="font-medium underline">
-              Validate
-            </Link>{" "}
-            tab in Setup — lint a scenario before running it
           </span>
         </li>
       </ul>

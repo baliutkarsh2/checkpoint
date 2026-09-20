@@ -265,8 +265,8 @@ def test_views_and_trace_record_what_the_agent_did(sb, live_twin):
     sb.storage.from_("avatars").upload("u/a.txt", b"x", {"content-type": "text/plain"})
     collections = live_twin.views()
     assert [item["_key"] for item in collections["posts"]["items"]] == ["post-1", "post-2"]
-    assert collections["storage.objects"]["items"][0]["bucket"] == "avatars"
-    assert collections["auth.users"]["tombstone"] == "deleted_at"
+    assert collections["storage_objects"]["items"][0]["bucket"] == "avatars"
+    assert collections["auth_users"]["tombstone"] == "deleted_at"
     ops = [(entry["op"], entry["resource"]) for entry in live_twin.trace()]
     assert ("delete", "posts") in ops
     assert ("create", "storage.objects") in ops

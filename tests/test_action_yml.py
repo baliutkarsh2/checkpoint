@@ -25,11 +25,18 @@ def action() -> dict:
     return yaml.safe_load(ACTION.read_text(encoding="utf-8"))
 
 
-def _gate_option_names() -> set[str]:
-    from checkpoint.cli import gate
+def _gate_command():
+    """The gate command as the CLI resolves it, not as a module import."""
+    import click
 
+    command = main.get_command(click.Context(main), "gate")
+    assert command is not None, "`checkpoint gate` is missing from the command table"
+    return command
+
+
+def _gate_option_names() -> set[str]:
     names: set[str] = set()
-    for param in gate.params:
+    for param in _gate_command().params:
         names.update(getattr(param, "opts", []) or [])
         names.update(getattr(param, "secondary_opts", []) or [])
     return names
@@ -77,6 +84,23 @@ def test_gate_accepts_the_action_invocation_shape():
     """`checkpoint gate --help` works and exposes the options the action needs."""
     result = CliRunner().invoke(main, ["gate", "--help"])
     assert result.exit_code == 0, result.output
-    for flag in ("--harness", "--pass-threshold", "--strict", "--certificate",
-                 "--judge-model", "--agent", "--no-baseline"):
+    for flag in ("--command", "--pass-threshold", "--allow-conditional", "--strict",
+                 "--certificate", "--model", "--name", "--no-baseline", "--json"):
         assert flag in result.output, f"{flag} missing from `checkpoint gate --help`"
+
+
+def test_every_action_input_reaches_the_gate_as_a_flag():
+    """A renamed action input that nothing passes on is a setting that vanishes.
+
+    Each input either names a gate flag the run step builds, or is one of the
+    few that configure the runner itself rather than the gate.
+    """
+    body = ACTION.read_text(encoding="utf-8")
+    action_inputs = set(yaml.safe_load(body)["inputs"])
+    # These set up the job, not the verdict: the scenarios to gate, which
+    # checkpoint to install, and which interpreter to install it with.
+    runner_only = {"target", "version", "python-version"}
+    for name in sorted(action_inputs - runner_only):
+        flag = f"--{name}" if name != "runs" else "-n"
+        assert flag in body, f"input '{name}' never reaches `checkpoint gate` as {flag}"
+        assert flag in _gate_option_names(), f"{flag} is not a `checkpoint gate` option"

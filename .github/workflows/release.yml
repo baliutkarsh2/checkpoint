@@ -92,8 +92,7 @@ jobs:
 
           need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
           need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
-          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
-          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo agent")
           need(lambda n: n.endswith("twins/linear_schema.graphql"),
                "Linear's vendored GraphQL schema")
 

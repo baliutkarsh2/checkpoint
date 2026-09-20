@@ -29,6 +29,10 @@ class RunStore(Protocol):
         """Store a gate result; return its gate_id."""
         ...
 
+    def get_gate(self, gate_id: str) -> dict | None:
+        """Return the full gate result, or None."""
+        ...
+
     def list_gates(self, *, target: str | None = None, limit: int = 50) -> list[dict]:
         """Return newest-first gate summaries (gate_id, target, verdict, created_at)."""
         ...

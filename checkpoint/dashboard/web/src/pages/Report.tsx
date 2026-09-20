@@ -58,7 +58,7 @@ export default function Report() {
         sub={
           scenarioPattern
             ? `Filtered to scenarios matching "${scenarioPattern}"`
-            : "Aggregate health across all scenarios + agents"
+            : "Aggregate health across every scenario this project has run"
         }
       />
 

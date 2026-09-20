@@ -1,11 +1,15 @@
 """``python -m checkpoint.proxy`` — run the intercept proxy as its own process.
 
-This is the Docker sidecar's entrypoint (see entrypoint.sh). It mints a fresh CA
-into ``--ca-dir``, binds the forward-proxy listener (and the transparent TLS
-listener with ``--transparent-port``), then prints exactly one ``ready`` line
-on stdout — the signal checkpoint/docker/runner.py waits for. Diagnostics go
-to stderr. SIGTERM/SIGINT shut it down cleanly, which matters as PID 1 in a
-container: without a handler, ``docker stop`` would wait out its timeout.
+A run does not need this — the sandbox starts the proxy in-process. It exists
+for the cases that are outside a run: pointing a container, a VM or another
+machine's agent at the twins, and debugging interception by hand.
+
+It mints a fresh CA into ``--ca-dir``, binds the forward-proxy listener (and the
+transparent TLS listener with ``--transparent-port``), then prints exactly one
+``ready`` line on stdout so a supervising process knows when to proceed.
+Diagnostics go to stderr. SIGTERM and SIGINT shut it down cleanly, which matters
+when it is PID 1 in a container: without a handler, a stop request waits out its
+full timeout.
 """
 from __future__ import annotations
 

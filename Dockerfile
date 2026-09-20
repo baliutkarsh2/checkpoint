@@ -1,4 +1,4 @@
-# Production image for `checkpoint serve` — the dashboard + JSON API.
+# Production image for `checkpoint view` — the dashboard + JSON API.
 #
 # Two-stage build:
 #   1. node:20 builds the SPA bundle from checkpoint/dashboard/web/.
@@ -28,8 +28,8 @@ FROM python:3.12-slim AS runtime
 
 # Build-time labels for image registries.
 LABEL org.opencontainers.image.title="checkpoint"
-LABEL org.opencontainers.image.description="Local + cloud agent-eval dashboard. Tests AI agents against stateful synthetic SaaS twins."
-LABEL org.opencontainers.image.source="https://github.com/Aaditya2605/checkpoint"
+LABEL org.opencontainers.image.description="The Checkpoint dashboard: runs, traces and gate verdicts for AI agents tested against stateful service twins."
+LABEL org.opencontainers.image.source="https://github.com/baliutkarsh2/checkpoint"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # System deps. tini reaps zombies (uvicorn workers) cleanly. curl powers HEALTHCHECK.
@@ -57,8 +57,8 @@ COPY --from=web-builder /web/../static ./checkpoint/dashboard/static
 # Editable install pulls in fastapi, uvicorn, click, etc. from pyproject.toml.
 RUN pip install --no-cache-dir -e .
 
-# Persistent data lives in /data — mount a volume here so runs + config
-# survive container restarts. CHECKPOINT_HOME points the user-config there too.
+# Persistent data lives in /data — mount a volume here so runs, baselines and
+# signing keys survive container restarts. CHECKPOINT_HOME points them there.
 RUN mkdir -p /data/runs /data/config /data/scenarios \
     && chown -R app:app /data /app
 
@@ -83,4 +83,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # tini = PID 1, then our entrypoint script.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["sh", "-c", "exec python -m checkpoint.cli serve --host 0.0.0.0 --port ${PORT} --scenarios /data/scenarios"]
+CMD ["sh", "-c", "exec python -m checkpoint.cli view --host 0.0.0.0 --port ${PORT} --scenarios /data/scenarios"]

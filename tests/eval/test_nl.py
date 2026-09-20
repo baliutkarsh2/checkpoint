@@ -116,3 +116,51 @@ def test_scenario_comments_are_not_criteria():
     assert [c.text for c in scenario.criteria] == [
         "Exactly 1 issue was created", "The answer is clear"]
     assert scenario.problems == []
+
+
+# -- soft deletes -------------------------------------------------------------
+#
+# Every twin marks a deleted record rather than dropping it, so "how many exist"
+# has to exclude the marked ones. The trap is that the twins disagree about what
+# the mark looks like: GitHub leaves it absent, Slack and Stripe write `false` on
+# a live record and `true` on a dead one, and Linear writes a timestamp. A filter
+# written against any one of those spellings is silently wrong on the others.
+
+TOMBSTONED = Schema((
+    Collection("slack", "messages", ("message", "messages"),
+               frozenset({"id", "text", "deleted"}), tombstone="deleted"),
+))
+
+
+def test_existence_counts_exclude_soft_deleted_records_whatever_the_mark():
+    compiled = compile_criterion("At most 2 messages exist", TOMBSTONED)
+    assert compiled is not None
+    # Not `deleted == null`: that matches neither a live record carrying `false`
+    # nor a dead one carrying `true`, so the count is always zero and every
+    # "at most N" criterion passes without checking anything.
+    assert compiled.assertion == "count(slack.messages[!deleted]) <= 2"
+
+
+def test_a_qualified_existence_check_also_excludes_them():
+    compiled = compile_criterion('A message named "ops" exists', TOMBSTONED)
+    assert compiled is None  # no `name` field; the twin stores `text`
+
+
+def test_the_live_filter_really_counts_live_records():
+    from checkpoint.eval.expr import World, evaluate
+
+    world = World(
+        seed={"slack": {"messages": [{"id": "1", "deleted": False}]}},
+        final={"slack": {"messages": [{"id": "1", "deleted": True},
+                                      {"id": "2", "deleted": False}]}},
+        keys={"slack": {"messages": "id"}},
+        tombstones={"slack": {"messages": "deleted"}},
+        trace=[], egress=[], answer="", task="", exit_code=0, duration=0.0,
+    )
+    compiled = compile_criterion("Exactly 1 message exists", TOMBSTONED)
+    assert compiled is not None
+    assert evaluate(compiled.assertion, world).passed
+    # And the delta roots agree with it, which is what makes the two kinds of
+    # criterion consistent with each other.
+    assert evaluate("count(deleted.slack.messages) == 1", world).passed
+    assert evaluate("count(created.slack.messages) == 1", world).passed

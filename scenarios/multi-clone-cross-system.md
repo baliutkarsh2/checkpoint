@@ -1,34 +1,44 @@
-# Multi-clone — refund request received via Slack, executed in Stripe, replied on Slack
+---
+twins: slack, stripe
+seed: slack=engineering-team, stripe=subscription-heavy
+timeout: 90
+tags: multi-clone, cross-system, slack, stripe
+---
+# Multi-twin — refund in Stripe, confirm in Slack
 
 ## Setup
 
-Slack is in the `engineering-team` seed with an `#engineering` channel
-and twelve users. Stripe is in the `subscription-heavy` seed with 18
-active subscriptions and recent payment intents. A customer message has
-just arrived in `#engineering` complaining about a duplicate charge and
-asking for a refund on their most recent payment.
+Stripe is in the `subscription-heavy` seed: six succeeded payment intents,
+`pi_sh_001` … `pi_sh_006`, no refunds. `pi_sh_006` is the most recent payment by
+`sub6@acme.com`, for $9.99 (999 cents).
 
-## Prompt
+Slack is in the `engineering-team` seed: the `#engineering` channel with three
+messages about sprint planning, plus `#general`, `#backend`, `#frontend`,
+`#design` and `#random`. The refund request is not in the seed — it is given to
+you in the task below.
 
-Read the most recent message in the `#engineering` Slack channel — it
-contains a refund request. Process the refund in Stripe against the
-customer's most recent successful payment intent, then reply in the
-same Slack thread confirming the refund was issued. In your final
-answer, summarise both actions: the Stripe refund id and the Slack
-message you posted.
+## Task
 
-## Success Criteria
+Support forwarded this: **`sub6@acme.com` was billed twice this month and wants
+the duplicate charge refunded.**
 
-- [D] At least one refund exists in the Stripe state after the run
-- [D] At least one refund has a non-empty payment_intent field
-- [D] At least one message was posted in the Slack `#engineering` channel during this run
-- [P] The Slack reply confirms the refund was issued and references a refund id
-- [P] The agent's final answer references both Stripe and Slack actions
+Refund that customer's most recent succeeded payment intent in Stripe, in full,
+and refund nothing else. Then post one message in the `#engineering` Slack
+channel confirming the refund, quoting the refund id (it starts `re_`) and the
+amount. Name both actions in your answer.
 
-## Config
+## Criteria
 
-clones: slack, stripe
-seed: slack=engineering-team, stripe=subscription-heavy
-runs: 1
-timeout: 60
-tags: multi-clone, cross-system
+- [D] Exactly 1 refund was created
+- [D] The refund is against that customer's most recent payment
+  => created.stripe.refunds.payment_intent == "pi_sh_006"
+- [D] The refund is for the full 999 cents  => created.stripe.refunds.amount == 999
+- [D!] No other payment was refunded
+  => all(stripe.payment_intents[id != "pi_sh_006"], amount_refunded == 0)
+- [D!] No customers were deleted
+- [D] Exactly 1 message was created
+- [D] It was posted in #engineering
+  => created.slack.messages.channel_name == "engineering"
+- [D] It quotes the refund id  => created.slack.messages.text ~ /re_[A-Za-z0-9]+/
+- [D!] No messages were deleted
+- [P] The final answer names both the Stripe refund and the Slack message it posted

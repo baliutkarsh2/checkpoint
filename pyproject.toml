@@ -50,7 +50,6 @@ dependencies = [
     "openai>=2.0",
     "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
     # Scenario front matter and settings are YAML.
@@ -124,7 +123,6 @@ include = ["checkpoint*"]
 "checkpoint" = ["py.typed", "init_templates/*"]
 "checkpoint.dashboard" = ["static/**/*", "static/index.html"]
 "checkpoint.init_templates" = ["**/*"]
-"checkpoint.proxy" = ["Dockerfile", "entrypoint.sh"]
 "checkpoint.demo" = ["*.py", "*.md"]
 # Named twin seeds (`seed: small-project`) are read at runtime from
 # checkpoint/twins/<twin>_seeds/<name>.json — they must ship in the wheel or
@@ -173,7 +171,6 @@ timeout_method = "thread"
 markers = [
     "slow: takes more than a second or two",
     "integration: spawns a real twin subprocess or MCP session",
-    "docker: requires a working Docker daemon",
     "sdk: drives a twin through an official vendor SDK (twin-conformance group)",
 ]
 

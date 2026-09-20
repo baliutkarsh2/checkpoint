@@ -74,7 +74,7 @@ def slack_twin():
 
 
 @pytest.mark.asyncio
-async def test_slack_mcp_lists_checkpoint_tool_set(slack_twin):
+async def test_slack_mcp_exposes_the_documented_tool_set(slack_twin):
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams

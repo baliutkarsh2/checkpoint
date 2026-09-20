@@ -18,11 +18,14 @@ from checkpoint.engine import SandboxError
 from checkpoint.gate import EXIT_CODES, GatePolicy, run_gate
 from checkpoint.gate import engine as gate_engine
 from checkpoint.gate.verdict import decide_verdict, summarize_scenario
+from checkpoint.runner import CriterionResult, RunResult
 from checkpoint.stats import classify_stability, runs_needed, wilson_interval, z_for
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SMOKE = REPO_ROOT / "examples" / "smoke" / "smoke-scenario.md"
-FAKE_HARNESS = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"
+# The demo scenario and its dependency-free agent ship inside the package,
+# so the end-to-end tests run against the same pair a new user meets first.
+DEMO_SCENARIO = REPO_ROOT / "checkpoint" / "demo" / "smoke-scenario.md"
+DEMO_AGENT = REPO_ROOT / "checkpoint" / "demo" / "harness_fake.py"
 
 SCENARIO_MD = "# s\n## Prompt\ndo\n## Success Criteria\n- [D] x exists\n## Config\nclones: github\n"
 
@@ -241,21 +244,28 @@ def test_exit_code_table(n, shape):
 
 # --- engine with a stubbed runner (fast, deterministic) ---------------------
 
-class _FakeResult:
-    def __init__(self, score, complete=True, error=None):
-        self._score = score
-        self.complete = complete
-        self.error = error
+def _run_result(score, complete=True, error=None, must_pass_failed=False):
+    """A run that scored ``score``, built from the real RunResult.
 
-    @property
-    def score(self):
-        return self._score
+    Deriving the score from real criteria rather than stubbing the attribute
+    keeps these tests honest about what the gate reads off a run: a hand-rolled
+    stand-in silently stops covering anything the engine starts looking at.
+    """
+    passing = round(score / 100 * 10)
+    result = RunResult(final_answer="done", stderr="", exit_code=0 if complete else 1,
+                       trace=[], state={}, error=error)
+    result.criteria = [
+        CriterionResult(f"c{i}", "D", i < passing, "", "assertion:pinned",
+                        must_pass=must_pass_failed and i >= passing)
+        for i in range(10)
+    ]
+    return result
 
 
 def test_run_gate_ship_with_stubbed_runner(tmp_path, monkeypatch):
     scn = tmp_path / "s.md"
     scn.write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
     assert res.verdict == "SHIP" and res.exit_code == 0
     assert res.scenarios[0].passes == 20
@@ -264,7 +274,7 @@ def test_run_gate_ship_with_stubbed_runner(tmp_path, monkeypatch):
 def test_run_gate_block_with_stubbed_runner(tmp_path, monkeypatch):
     scn = tmp_path / "s.md"
     scn.write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
     assert res.verdict == "BLOCK" and res.exit_code == 1
 
@@ -273,16 +283,32 @@ def test_run_gate_zero_passes_at_small_n_blocks(tmp_path, monkeypatch):
     """0/3 used to be CONDITIONAL, exit 0 — a green build for a dead agent."""
     scn = tmp_path / "s.md"
     scn.write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=3))
     assert res.verdict == "BLOCK" and res.exit_code != 0
+
+
+def test_a_failed_must_pass_criterion_sinks_the_whole_run(tmp_path, monkeypatch):
+    """A must-pass criterion is a floor, not a weighting.
+
+    Nine of ten criteria passing scores 90, comfortably over the pass
+    threshold — so on an average the run that deleted what the scenario said
+    never to delete would still be counted as a pass.
+    """
+    scn = tmp_path / "s.md"
+    scn.write_text(SCENARIO_MD)
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(90.0, must_pass_failed=True))
+    res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
+    assert res.scenarios[0].passes == 0
+    assert res.verdict == "BLOCK" and res.exit_code == EXIT_CODES["BLOCK"]
+    assert any("must-pass" in message for message in res.errors)
 
 
 def test_run_gate_skips_files_that_are_not_scenarios(tmp_path, monkeypatch):
     (tmp_path / "README.md").write_text("# How to use these scenarios\n\nSome prose.\n")
     (tmp_path / "notes.md").write_text("# Notes\n## Prompt\ndo something\n")  # no criteria
     (tmp_path / "a.md").write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
 
     res = run_gate(tmp_path, ["python", "x.py"], GatePolicy(runs=20))
     assert [s.scenario for s in res.scenarios] == ["a.md"]
@@ -295,7 +321,7 @@ def test_run_gate_skips_files_that_are_not_scenarios(tmp_path, monkeypatch):
 
 def test_run_gate_errors_when_target_matches_no_scenario(tmp_path, monkeypatch):
     (tmp_path / "README.md").write_text("# Just docs\n")
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
     res = run_gate(tmp_path, ["python", "x.py"], GatePolicy(runs=5))
     assert res.verdict == "ERROR" and res.exit_code == EXIT_CODES["ERROR"]
     assert any("no runnable scenario" in e for e in res.errors)
@@ -305,7 +331,7 @@ def test_scenarios_are_keyed_by_path_not_file_name(tmp_path, monkeypatch):
     for team in ("github", "slack"):
         (tmp_path / team).mkdir()
         (tmp_path / team / "smoke.md").write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
     res = run_gate(tmp_path, ["python", "x.py"], GatePolicy(runs=20))
     assert sorted(s.scenario for s in res.scenarios) == ["github/smoke.md", "slack/smoke.md"]
 
@@ -345,7 +371,7 @@ def test_sandbox_failure_exits_nonzero_with_an_error_in_the_json(tmp_path, monke
     monkeypatch.setattr(gate_engine, "Sandbox", _BrokenSandbox)
 
     r = CliRunner().invoke(main, [
-        "gate", str(scn_dir), "--harness", "python agent.py", "-n", "3", "-o", "json",
+        "gate", str(scn_dir), "--command", "python agent.py", "-n", "3", "--json",
     ])
     assert r.exit_code != 0
     payload = json.loads(r.output)
@@ -364,10 +390,10 @@ def test_partial_sandbox_failures_do_not_count_as_agent_failures(tmp_path, monke
     def _run(*a, **k):
         calls["n"] += 1
         if calls["n"] % 4 == 0:
-            result = _FakeResult(0.0, complete=False, error="sandbox setup failed: boom")
+            result = _run_result(0.0, complete=False, error="sandbox setup failed: boom")
             result.setup_error = True
             return result
-        return _FakeResult(100.0)
+        return _run_result(100.0)
 
     _stub_runs(monkeypatch, _run)
     res = run_gate(scn, ["python", "x.py"], GatePolicy(runs=20))
@@ -386,7 +412,7 @@ def test_judge_credential_failure_is_an_error(tmp_path, monkeypatch):
 
     def _run(*a, **k):
         ran.append(1)
-        return _FakeResult(100.0)
+        return _run_result(100.0)
 
     _stub_runs(monkeypatch, _run)
 
@@ -401,21 +427,21 @@ def test_judge_credential_check_ignores_deterministic_scenarios(tmp_path, monkey
     scn.write_text(SCENARIO_MD)  # [D] only — no judge needed
     for key in ("OPENAI_API_KEY", "CHECKPOINT_LLM_BASE_URL"):
         monkeypatch.delenv(key, raising=False)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
     assert run_gate(scn, ["python", "x.py"], GatePolicy(runs=20)).verdict == "SHIP"
 
 
 # --- CLI end-to-end (real subprocess runs, deterministic scenario) ----------
 
 def test_gate_cli_end_to_end(tmp_path, monkeypatch):
-    if not SMOKE.is_file() or not FAKE_HARNESS.is_file():
-        pytest.skip("smoke assets missing")
+    if not DEMO_SCENARIO.is_file() or not DEMO_AGENT.is_file():
+        pytest.skip("demo assets missing")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     result = CliRunner().invoke(main, [
-        "gate", str(SMOKE),
-        "--harness", f"{sys.executable} {FAKE_HARNESS}",
-        "-n", "5", "-o", "json",
+        "gate", str(DEMO_SCENARIO),
+        "--command", f"{sys.executable} {DEMO_AGENT}",
+        "-n", "5", "--json",
     ])
     # A flawless 5/5 cannot clear ship_min 0.80: the gate says so and exits
     # non-zero instead of passing the build off as "conditional".
@@ -431,14 +457,14 @@ def test_gate_cli_end_to_end(tmp_path, monkeypatch):
 
 
 def test_gate_cli_confidence_uses_the_exact_z(tmp_path, monkeypatch):
-    if not SMOKE.is_file() or not FAKE_HARNESS.is_file():
-        pytest.skip("smoke assets missing")
+    if not DEMO_SCENARIO.is_file() or not DEMO_AGENT.is_file():
+        pytest.skip("demo assets missing")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     result = CliRunner().invoke(main, [
-        "gate", str(SMOKE),
-        "--harness", f"{sys.executable} {FAKE_HARNESS}",
-        "-n", "3", "--confidence", "0.85", "-o", "json",
+        "gate", str(DEMO_SCENARIO),
+        "--command", f"{sys.executable} {DEMO_AGENT}",
+        "-n", "3", "--confidence", "0.85", "--json",
     ])
     payload = json.loads(result.output)
     low = payload["scenarios"][0]["ci_low"]
@@ -449,7 +475,7 @@ def test_gate_cli_confidence_uses_the_exact_z(tmp_path, monkeypatch):
 
 def test_gate_cli_rejects_an_impossible_policy(tmp_path):
     result = CliRunner().invoke(main, [
-        "gate", str(SMOKE), "--harness", "python a.py", "--ship-min", "1.0",
+        "gate", str(DEMO_SCENARIO), "--command", "python a.py", "--ship-min", "1.0",
     ])
     assert result.exit_code != 0
     assert "ship_min" in (result.output + getattr(result, "stderr", ""))
@@ -462,10 +488,10 @@ def test_gate_cli_readme_in_the_scenario_dir_is_skipped(tmp_path, monkeypatch):
     scn_dir.mkdir()
     (scn_dir / "README.md").write_text("# Scenario library\n\nHow to write these.\n")
     (scn_dir / "a.md").write_text(SCENARIO_MD)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(100.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(100.0))
 
     r = CliRunner().invoke(main, [
-        "gate", str(scn_dir), "--harness", "python agent.py", "-n", "20", "-o", "json",
+        "gate", str(scn_dir), "--command", "python agent.py", "-n", "20", "--json",
     ])
     payload = json.loads(r.output)
     assert [s["scenario"] for s in payload["scenarios"]] == ["a.md"]
@@ -480,9 +506,9 @@ def test_gate_cli_allow_conditional_flag(tmp_path, monkeypatch):
     scn_dir.mkdir()
     (scn_dir / "a.md").write_text(SCENARIO_MD)
     scores = iter([100.0] * 16 + [0.0] * 4)
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(next(scores)))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(next(scores)))
 
-    args = ["gate", str(scn_dir), "--harness", "python agent.py", "-n", "20", "-o", "json"]
+    args = ["gate", str(scn_dir), "--command", "python agent.py", "-n", "20", "--json"]
     r = CliRunner().invoke(main, args)
     assert json.loads(r.output)["verdict"] == "CONDITIONAL"
     assert r.exit_code == EXIT_CODES["CONDITIONAL"]
@@ -497,18 +523,18 @@ def test_gate_cli_allow_conditional_flag(tmp_path, monkeypatch):
 
 
 def test_gate_writes_and_verifies_certificate(tmp_path, monkeypatch):
-    if not SMOKE.is_file() or not FAKE_HARNESS.is_file():
-        pytest.skip("smoke assets missing")
+    if not DEMO_SCENARIO.is_file() or not DEMO_AGENT.is_file():
+        pytest.skip("demo assets missing")
     monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))  # isolate the signing key
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     cert_file = tmp_path / "cert.json"
 
     r = CliRunner().invoke(main, [
-        "gate", str(SMOKE),
-        "--harness", f"{sys.executable} {FAKE_HARNESS}",
-        "-n", "3", "--agent", "smoke-bot",
-        "--certificate", str(cert_file), "-o", "json",
+        "gate", str(DEMO_SCENARIO),
+        "--command", f"{sys.executable} {DEMO_AGENT}",
+        "-n", "3", "--name", "smoke-bot",
+        "--certificate", str(cert_file), "--json",
     ])
     # Three runs cannot support a SHIP, but the evidence is still certifiable:
     # the certificate records the honest verdict, not a convenient one.

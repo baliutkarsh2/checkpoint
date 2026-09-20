@@ -1,4 +1,11 @@
-"""Tests for the checkpoint web dashboard (FastAPI JSON API + SPA serve)."""
+"""The dashboard's JSON API is a contract, not an implementation detail.
+
+The SPA reads it, and so does anyone scripting against a local Checkpoint, so a
+field that quietly changes shape breaks a page nobody is testing. These tests
+pin the response shapes, the paging and filtering, the job lifecycle, the rate
+limit that keeps a runaway page from spawning agents, and the SPA fallback that
+must never swallow a 404 from the API itself.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -234,18 +241,18 @@ def test_api_compare_404(client_with_data):
 
 
 # ---------------------------------------------------------------------------
-# Clones
+# Long-lived twin sessions
 # ---------------------------------------------------------------------------
 
-def test_api_clones_no_registry(client):
+def test_api_clones_without_a_sessions_file(client):
     assert client.get("/api/clones").json() == []
 
 
-def test_api_clones_with_registry(tmp_path):
+def test_api_clones_lists_the_twins_in_the_sessions_file(tmp_path):
     runs_dir = tmp_path / "runs"; runs_dir.mkdir()
     scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
-    registry = tmp_path / "clones.json"
-    registry.write_text(json.dumps({
+    sessions = tmp_path / "sessions.json"
+    sessions.write_text(json.dumps({
         "github": {
             "pid": 1234,
             "url": "http://127.0.0.1:18001",
@@ -256,21 +263,53 @@ def test_api_clones_with_registry(tmp_path):
             "host": "127.0.0.1",
         }
     }))
-    app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, clone_registry_path=registry)
+    app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, twin_sessions_file=sessions)
     c = TestClient(app)
     data = c.get("/api/clones").json()
     assert len(data) == 1
     assert data[0]["id"] == "github"
+    assert data[0]["url"] == "http://127.0.0.1:18001"
 
 
-def test_api_clones_invalid_registry(tmp_path):
+def test_api_clones_survives_a_half_written_sessions_file(tmp_path):
+    """The file is rewritten by another process; a torn read must not 500."""
     runs_dir = tmp_path / "runs"; runs_dir.mkdir()
     scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
-    registry = tmp_path / "clones.json"
-    registry.write_text("not valid json")
-    app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, clone_registry_path=registry)
+    sessions = tmp_path / "sessions.json"
+    sessions.write_text("not valid json")
+    app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, twin_sessions_file=sessions)
     c = TestClient(app)
     assert c.get("/api/clones").json() == []
+
+
+# ---------------------------------------------------------------------------
+# Project config
+# ---------------------------------------------------------------------------
+
+def test_api_config_reports_the_projects_checkpoint_toml(tmp_path):
+    runs_dir = tmp_path / "runs"; runs_dir.mkdir()
+    scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
+    (tmp_path / "checkpoint.toml").write_text(
+        '[agent]\ncommand = "python my_agent.py"\n\n[gate]\nruns = 16\n')
+    c = TestClient(create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, project_dir=tmp_path))
+
+    data = c.get("/api/config").json()
+    assert data["exists"] is True
+    assert data["path"].endswith("checkpoint.toml")
+    assert data["sections"]["agent"]["command"] == "python my_agent.py"
+    assert data["sections"]["gate"]["runs"] == 16
+
+
+def test_api_config_is_read_only(tmp_path):
+    """The config is a file in the repository, not state a web page edits."""
+    runs_dir = tmp_path / "runs"; runs_dir.mkdir()
+    scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
+    (tmp_path / "checkpoint.toml").write_text('[agent]\ncommand = "python my_agent.py"\n')
+    c = TestClient(create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, project_dir=tmp_path))
+
+    assert c.put("/api/config", json={"agent": {"command": "rm -rf /"}}).status_code == 405
+    assert c.delete("/api/config").status_code == 405
+    assert (tmp_path / "checkpoint.toml").read_text() == '[agent]\ncommand = "python my_agent.py"\n'
 
 
 # ---------------------------------------------------------------------------

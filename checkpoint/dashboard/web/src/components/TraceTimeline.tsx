@@ -19,12 +19,12 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
   const [filter, setFilter] = useState({
     method: "" as string,
     status: "" as string,
-    clone: "" as string,
+    twin: "" as string,
     text: "" as string,
   });
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
-  const clones = useMemo(
+  const twins = useMemo(
     () =>
       Array.from(
         new Set(events.map((e) => e._clone || (e as { clone?: string }).clone).filter(Boolean) as string[]),
@@ -41,8 +41,8 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
       .map((e, i) => ({ e, i }))
       .filter(({ e }) => {
         if (filter.method && e.method !== filter.method) return false;
-        const clone = e._clone || (e as { clone?: string }).clone || "";
-        if (filter.clone && clone !== filter.clone) return false;
+        const twin = e._clone || (e as { clone?: string }).clone || "";
+        if (filter.twin && twin !== filter.twin) return false;
         if (filter.status) {
           const klass = String(e.status)[0];
           if (klass !== filter.status) return false;
@@ -97,15 +97,15 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
           <option value="4">4xx</option>
           <option value="5">5xx</option>
         </select>
-        {clones.length > 1 && (
+        {twins.length > 1 && (
           <select
             className="input"
-            value={filter.clone}
-            onChange={(e) => setFilter((f) => ({ ...f, clone: e.target.value }))}
-            aria-label="Filter by clone"
+            value={filter.twin}
+            onChange={(e) => setFilter((f) => ({ ...f, twin: e.target.value }))}
+            aria-label="Filter by twin"
           >
-            <option value="">all clones</option>
-            {clones.map((c) => (
+            <option value="">all twins</option>
+            {twins.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -148,7 +148,7 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
 
 function TraceDetail({ event }: { event: TraceEvent }) {
   // Twins record payloads under `body` / `response`; older records and other
-  // harnesses use `request_body` / `response_body`. Accept both.
+  // agents use `request_body` / `response_body`. Accept both.
   const raw = event as { body?: unknown; response?: unknown };
   const requestBody = event.request_body ?? raw.body;
   const responseBody = event.response_body ?? raw.response;

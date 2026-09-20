@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Bundled demo agent — no LLM, no third-party dependencies.
 
-Reads the task from CHECKPOINT_TASK, creates the requested GitHub issue against
-the local twin (CHECKPOINT_GITHUB_URL, set by `checkpoint demo` in --no-docker
-mode), and prints its final answer as JSON. Uses only the standard library so
-`checkpoint demo` works from a bare `pip install` with nothing else set up.
+Reads the task from CHECKPOINT_TASK, files the requested GitHub issue against
+the local twin, and prints its final answer as JSON. Standard library only, so
+`checkpoint demo` works from a bare `pip install` with nothing else installed.
 """
 from __future__ import annotations
 
@@ -16,8 +15,9 @@ import urllib.error
 import urllib.request
 
 GITHUB_BASE = os.environ.get("CHECKPOINT_GITHUB_URL") or "https://api.github.com"
-TASK = os.environ.get("CHECKPOINT_TASK") or os.environ.get("CHECKPOINT_ENGINE_TASK") or ""
-# Token comes from the runner (non-Docker) or the TLS sidecar swap (Docker).
+TASK = os.environ.get("CHECKPOINT_TASK", "")
+# The sandbox exports the twin's credential; the proxy stamps it on
+# intercepted requests, so either path gives a token that works.
 _TOKEN = os.environ.get("GITHUB_TOKEN", "ignored-fake-user-token")
 _AUTH = f"token {_TOKEN}" if _TOKEN.startswith("ghp_") else f"Bearer {_TOKEN}"
 
