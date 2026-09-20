@@ -139,3 +139,38 @@ def test_ci_still_defines_every_check_main_requires():
         encoding="utf-8"))
     assert "gitleaks" in {job for job in secrets["jobs"]}, (
         "main requires a `gitleaks` check; the secret-scan workflow no longer has one")
+
+
+def test_the_image_builds_the_spa_on_the_node_ci_tests():
+    """Three places name a Node major, and they have to be the same one.
+
+    The Dockerfile builds the dashboard from source rather than trusting the
+    committed bundle, which is right — and useless if it builds on a different
+    major than CI verifies, because then the image ships a bundle nobody
+    tested. They had drifted to 22 and 24, with a comment still saying 20.
+    """
+    import re
+
+    import yaml
+
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    image = re.search(r"FROM node:(\d+)-", dockerfile)
+    assert image, "the Dockerfile no longer builds the SPA on a pinned node image"
+
+    ci = yaml.safe_load((REPO_ROOT / ".github/workflows/checkpoint-ci.yml").read_text(
+        encoding="utf-8"))
+    setups = [step["with"]["node-version"]
+              for job in ci["jobs"].values()
+              for step in job.get("steps", [])
+              if "setup-node" in str(step.get("uses", "")) and step.get("with", {}).get(
+                  "node-version")]
+    assert setups, "CI no longer sets up Node anywhere"
+
+    majors = {str(v).split(".")[0] for v in setups} | {image.group(1)}
+    assert len(majors) == 1, (
+        f"the Docker image and CI build the SPA on different Node majors "
+        f"({sorted(majors)}), so the image ships a bundle CI never tested")
+
+    # The header comment names it too, and a stale comment is how this drifted.
+    assert f"node:{image.group(1)} builds the SPA" in dockerfile, (
+        f"the Dockerfile's header comment does not say node:{image.group(1)}")
