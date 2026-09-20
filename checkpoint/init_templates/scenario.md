@@ -1,8 +1,8 @@
 ---
-twins: [github]
+twins: github
 seed: small-project
 timeout: 60
-tags: [starter, github]
+tags: starter, github
 ---
 # Starter scenario: file an issue
 

@@ -1,9 +1,14 @@
-"""Phase 8 / Plan 03: bundled scenario library.
+"""Phase 8 / Plan 03: the bundled scenario library is discoverable.
 
-Verifies the 5 hand-written scenarios under `scenarios/` parse correctly,
-have `tags:` set, and are enumerable via `checkpoint scenario list`.
+Whether each scenario is *honest* — states what its seed really loads, checks
+what the agent changed, cannot be aced by a do-nothing agent — is
+`tests/test_bundled_scenarios.py`. This file covers DIST-03 only: every bundled
+scenario parses, carries tags the `--tag` filter can read, and is enumerable
+through `checkpoint scenario list`.
 
-Covers DIST-03.
+Tags are asserted as a set the library must *contain*, not as an exact list, so
+adding a scenario or a tag does not break the test; renaming a twin or dropping
+a scenario does.
 """
 from __future__ import annotations
 
@@ -14,87 +19,95 @@ from pathlib import Path
 
 import pytest
 
+from checkpoint.config import matches_tag
 from checkpoint.scenario import parse_file
 
 SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "scenarios"
 
-EXPECTED = {
-    "github-happy-path.md": {"tags": {"happy-path", "github"}, "clones": {"github"}},
-    "github-adversarial.md": {"tags": {"adversarial", "github"}, "clones": {"github"}},
-    "slack-incident-response.md": {"tags": {"slack", "incident"}, "clones": {"slack"}},
-    "stripe-refund-controls.md": {
-        "tags": {"stripe", "financial-controls"},
-        "clones": {"stripe"},
-    },
-    "multi-clone-cross-system.md": {
-        "tags": {"multi-clone", "cross-system"},
-        "clones": {"slack", "stripe"},
-    },
+# The scenarios the library promises: one per twin plus the cross-system and
+# adversarial packs. Each maps to the twins it must run against.
+EXPECTED_TWINS = {
+    "archal-verbatim-github.md": {"github"},
+    "discord-adversarial.md": {"discord"},
+    "discord-incident-response.md": {"discord"},
+    "github-adversarial.md": {"github"},
+    "github-happy-path.md": {"github"},
+    "github-supabase-product-launch.md": {"github", "supabase"},
+    "google-workspace-adversarial.md": {"google-workspace"},
+    "google-workspace-email-ops.md": {"google-workspace"},
+    "linear-adversarial.md": {"linear"},
+    "linear-github-cross-system.md": {"linear", "github"},
+    "linear-issue-triage.md": {"linear"},
+    "multi-clone-cross-system.md": {"slack", "stripe"},
+    "slack-incident-response.md": {"slack"},
+    "stripe-refund-controls.md": {"stripe"},
+    "supabase-adversarial.md": {"supabase"},
+    "supabase-data-ops.md": {"supabase"},
 }
 
-
-def _split_tags(raw: str) -> set[str]:
-    return {t.strip() for t in raw.split(",") if t.strip()}
+ADVERSARIAL = {
+    "discord-adversarial.md", "github-adversarial.md", "google-workspace-adversarial.md",
+    "linear-adversarial.md", "supabase-adversarial.md",
+}
 
 
 def test_scenarios_dir_exists() -> None:
     assert SCENARIOS_DIR.is_dir(), f"missing: {SCENARIOS_DIR}"
 
 
-def test_all_five_scenarios_present() -> None:
+def test_every_promised_scenario_is_present() -> None:
     files = {p.name for p in SCENARIOS_DIR.glob("*.md")}
-    missing = set(EXPECTED) - files
-    assert not missing, f"missing scenarios: {missing}"
+    missing = set(EXPECTED_TWINS) - files
+    assert not missing, f"missing scenarios: {sorted(missing)}"
 
 
-@pytest.mark.parametrize("fname", sorted(EXPECTED.keys()))
+@pytest.mark.parametrize("fname", sorted(EXPECTED_TWINS))
 def test_scenario_parses_with_expected_metadata(fname: str) -> None:
     scn = parse_file(SCENARIOS_DIR / fname)
-    expected = EXPECTED[fname]
-    assert _split_tags(scn.config.get("tags", "")) == expected["tags"], (
-        f"{fname} tags mismatch: got {scn.config.get('tags')!r}"
+    assert set(scn.twins) == EXPECTED_TWINS[fname], (
+        f"{fname} runs against {scn.twins}, expected {sorted(EXPECTED_TWINS[fname])}"
     )
-    assert set(scn.clones) == expected["clones"], (
-        f"{fname} clones mismatch: got {scn.clones}"
-    )
-    # Every scenario must have a prompt + at least one criterion.
-    assert scn.prompt, f"{fname} has empty prompt"
-    assert scn.criteria, f"{fname} has no success criteria"
+    assert scn.tags, f"{fname} has no tags:"
+    assert scn.prompt, f"{fname} has an empty task"
+    assert scn.criteria, f"{fname} has no criteria"
 
 
-def test_scenario_list_json_returns_all_five() -> None:
+@pytest.mark.parametrize("fname", sorted(ADVERSARIAL))
+def test_adversarial_scenarios_are_tagged_and_guarded(fname: str) -> None:
+    """The `--tag adversarial` pack has to be findable, and each entry has to
+    carry at least one must-pass "do no harm" criterion."""
+    scn = parse_file(SCENARIOS_DIR / fname)
+    assert "adversarial" in scn.tags, f"{fname} is not tagged adversarial"
+    guards = [c for c in scn.must_pass if c.kind in ("D", "T")]
+    assert guards, f"{fname} has no must-pass [D!]/[T!] criterion guarding the damage"
+
+
+def test_tag_filter_finds_the_adversarial_pack() -> None:
+    matched = {p.name for p in SCENARIOS_DIR.rglob("*.md")
+               if matches_tag(parse_file(p).config.get("tags"), "adversarial")}
+    assert ADVERSARIAL <= matched, f"--tag adversarial missed {sorted(ADVERSARIAL - matched)}"
+
+
+def test_scenario_list_json_returns_the_library() -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "checkpoint.cli", "scenario", "list", str(SCENARIOS_DIR), "--json"],
         capture_output=True,
         text=True,
-        timeout=30,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
     )
     assert proc.returncode == 0, f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
     rows = json.loads(proc.stdout)
     names = {Path(r["path"]).name for r in rows}
-    # The 5 bundled scenarios must all be listed. Allow extras (e.g. the
-    # Phase 8 Plan 05 archal-verbatim scenario added in the same dir).
-    missing = set(EXPECTED) - names
-    assert not missing, f"scenario list missing: {missing}"
-    # Every bundled-library row should have non-empty tags.
-    for r in rows:
-        if Path(r["path"]).name in EXPECTED:
-            assert r["tags"], f"{r['path']} missing tags in `scenario list` output"
+    missing = set(EXPECTED_TWINS) - names
+    assert not missing, f"scenario list missing: {sorted(missing)}"
+    for row in rows:
+        assert row["tags"], f"{row['path']} is listed without tags"
 
 
-def test_tag_filter_skips_non_matching() -> None:
-    """`--tag adversarial` should match exactly one scenario."""
-    # Use checkpoint scenario list (which doesn't filter by tag), then check
-    # that parse_file picks up tags matching the filter. We're proxying for
-    # the CLI tag-filter path that already has its own tests.
-    matches = []
-    for fname in EXPECTED:
+def test_multi_clone_scenarios_use_two_twins() -> None:
+    for fname in ("multi-clone-cross-system.md", "linear-github-cross-system.md",
+                  "github-supabase-product-launch.md"):
         scn = parse_file(SCENARIOS_DIR / fname)
-        if "adversarial" in _split_tags(scn.config.get("tags", "")):
-            matches.append(fname)
-    assert matches == ["github-adversarial.md"]
-
-
-def test_multi_clone_scenario_uses_two_clones() -> None:
-    scn = parse_file(SCENARIOS_DIR / "multi-clone-cross-system.md")
-    assert len(scn.clones) == 2, f"expected 2 clones, got {scn.clones}"
+        assert len(scn.twins) == 2, f"{fname} runs {scn.twins}, expected two twins"

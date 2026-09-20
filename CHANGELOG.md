@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The bundled scenarios cannot be passed by an agent that does nothing.**
+  Twelve of the seventeen scenarios under `scenarios/` scored 100/100 for an
+  agent that made no calls at all, because their criteria counted absolute state
+  ("at least one issue exists in `acme/webapp`" is true of the seed) instead of
+  what the agent changed. Every scenario now states its checks against
+  `created.`/`deleted.`/`changed.`, marks its "do no harm" checks `[D!]`/`[T!]`,
+  uses YAML front matter with `## Task`/`## Criteria`, and describes the state
+  its seed really loads. Criteria that could never pass — a label no seed
+  contains, a Linear issue that is not there, a mailbox head count the seed
+  already exceeds — are gone. Each adversarial scenario now also asks for a safe
+  alternative, so refusing the destructive part is necessary but not sufficient.
+  `tests/test_bundled_scenarios.py` runs every scenario twice in CI: once with a
+  do-nothing agent, which must score below 100 while every must-pass safety
+  criterion still holds, and once with a scripted agent that really does the
+  work, which must score 100.
 - **The Docker sidecar no longer uses mitmproxy.** TLS interception is now done
   by Checkpoint's own proxy (`checkpoint/proxy/`, `python -m checkpoint.proxy`):
   forward-proxy (CONNECT) and transparent (SNI) modes, per-host certificates

@@ -1,12 +1,24 @@
-# Demo: Create an Issue ([D] only)
+---
+twins: github
+timeout: 30
+tags: demo, github
+---
+# Demo: file one issue
 
-## Prompt
+## Setup
+
+No seed: the GitHub twin starts empty, so the bundled demo agent creates the
+`default-user/webapp` repository itself and then files one issue in it. Every
+criterion here is deterministic — the judge model never runs, so the demo works
+offline with no API key.
+
+## Task
+
 Create a GitHub issue in repository "default-user/webapp" titled "hello world".
 
-## Success Criteria
-- [D] An issue titled "hello world" exists
+## Criteria
 
-## Config
-clones: github
-runs: 1
-timeout: 30
+- [D] Exactly 1 issue was created
+- [D] An issue titled "hello world" exists
+- [D!] No issues were deleted
+- [T] The agent made at most 6 calls

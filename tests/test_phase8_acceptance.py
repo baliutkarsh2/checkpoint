@@ -223,10 +223,20 @@ def test_qa01_demo_scenario_still_present() -> None:
 
 
 def test_qa03_verbatim_scenario_has_archal_shape() -> None:
-    """The verbatim scenario must use Archal's exact section layout."""
-    text = (SCENARIOS_DIR / "archal-verbatim-github.md").read_text()
-    for section in ("# ", "## Setup", "## Prompt", "## Success Criteria", "## Config"):
+    """The verbatim scenario keeps the parity shape: title, setup, task, criteria.
+
+    The section names moved to the canonical ones (`## Task`, `## Criteria`) and
+    the settings to YAML front matter when the bundled library was rewritten;
+    `checkpoint.scenario` reads the old headings and the new ones as the same
+    sections, so the parity this test guards is about the *shape*, not the
+    spelling.
+    """
+    text = (SCENARIOS_DIR / "archal-verbatim-github.md").read_text(encoding="utf-8")
+    assert text.startswith("---\n"), "settings belong in YAML front matter"
+    for section in ("# ", "## Setup", "## Task", "## Criteria"):
         assert section in text, f"missing section: {section}"
-    # Must have at least one [D] and one [P] criterion (Archal style).
+    # Must have a state criterion and a judged one (Archal style), and a
+    # must-pass guard so a destructive run cannot pass on score alone.
     assert "[D]" in text
     assert "[P]" in text
+    assert "[D!]" in text
