@@ -273,10 +273,19 @@ def _file_unchanged(match: re.Match, schema: Schema) -> str | None:
 
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+is\s+{_STATE}")
 def _numbered_state(match: re.Match, schema: Schema) -> str | None:
+    """"Issue #1 is closed" — counted, not read off a selection.
+
+    ``collection[number == 1].state == "closed"`` errors when the selection is
+    not exactly one item, so it scores an agent that *deleted* issue #1 as "we
+    could not decide" rather than as a failure — the worst possible outcome for
+    the worst possible behaviour. Folding the state into the filter makes the
+    missing record a plain fail, and still rejects a second matching record.
+    """
     coll = _collection(match, schema)
     if coll is None or (coll.fields and not {"number", "state"} <= coll.fields):
         return None
-    return f'{coll.path}[number == {match.group("number")}].state == "{match.group("state").lower()}"'
+    condition = f'number == {match.group("number")} && state == "{match.group("state").lower()}"'
+    return f"count({coll.path}[{condition}]) == 1"
 
 
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+(?:still\s+|currently\s+)?exists")

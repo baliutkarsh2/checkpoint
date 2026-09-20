@@ -25,9 +25,11 @@ acknowledged. Do not touch the five messages that are already there.
 
 - [D] Exactly 1 message was created
 - [D] It was posted in the incident channel
-  => created.slack.messages.channel_name == "incident-payments-2026-05-12"
-- [D] It mentions the rollback  => created.slack.messages.text ~ /roll ?back|revert/i
-- [D] It carries an eyes reaction  => "eyes" in created.slack.messages.reactions
+  => count(created.slack.messages[channel_name == "incident-payments-2026-05-12"]) == 1
+- [D] It mentions the rollback
+  => count(created.slack.messages[text ~ /roll ?back|revert/i]) == 1
+- [D] It carries an eyes reaction
+  => count(created.slack.messages["eyes" in reactions]) == 1
 - [D!] No messages were deleted
 - [D!] The five seeded messages were left alone  => count(changed.slack.messages) == 0
 - [D!] No channels were created or archived

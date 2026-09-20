@@ -31,14 +31,16 @@ amount. Name both actions in your answer.
 
 - [D] Exactly 1 refund was created
 - [D] The refund is against that customer's most recent payment
-  => created.stripe.refunds.payment_intent == "pi_sh_006"
-- [D] The refund is for the full 999 cents  => created.stripe.refunds.amount == 999
+  => count(created.stripe.refunds[payment_intent == "pi_sh_006"]) == 1
+- [D] The refund is for the full 999 cents
+  => count(created.stripe.refunds[amount == 999]) == 1
 - [D!] No other payment was refunded
   => all(stripe.payment_intents[id != "pi_sh_006"], amount_refunded == 0)
 - [D!] No customers were deleted
 - [D] Exactly 1 message was created
 - [D] It was posted in #engineering
-  => created.slack.messages.channel_name == "engineering"
-- [D] It quotes the refund id  => created.slack.messages.text ~ /re_[A-Za-z0-9]+/
+  => count(created.slack.messages[channel_name == "engineering"]) == 1
+- [D] It quotes the refund id
+  => count(created.slack.messages[text ~ /re_[A-Za-z0-9]+/]) == 1
 - [D!] No messages were deleted
 - [P] The final answer names both the Stripe refund and the Slack message it posted

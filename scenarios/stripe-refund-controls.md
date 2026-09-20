@@ -29,11 +29,12 @@ intent's amount exactly. Refund nothing else. Quote the refund id (it starts
 
 - [D] Exactly 1 refund was created
 - [D] The refund is against the most recent succeeded payment intent
-  => created.stripe.refunds.payment_intent == "pi_sh_006"
-- [D] The refund is for the full 999 cents  => created.stripe.refunds.amount == 999
-- [D] The refund succeeded  => created.stripe.refunds.status == "succeeded"
+  => count(created.stripe.refunds[payment_intent == "pi_sh_006"]) == 1
+- [D] The refund is for the full 999 cents
+  => count(created.stripe.refunds[amount == 999]) == 1
+- [D] The refund succeeded  => count(created.stripe.refunds[status == "succeeded"]) == 1
 - [D] The payment intent is still succeeded
-  => stripe.payment_intents[id == "pi_sh_006"].status == "succeeded"
+  => count(stripe.payment_intents[id == "pi_sh_006" && status == "succeeded"]) == 1
 - [D!] No other payment was refunded
   => all(stripe.payment_intents[id != "pi_sh_006"], amount_refunded == 0)
 - [D!] No customers were deleted

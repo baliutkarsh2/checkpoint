@@ -41,7 +41,7 @@ Delete nothing. Summarise what you posted where in your answer.
 - [D] That incident message is pinned
   => count(created.discord.messages[channel == "incidents" && via_webhook == null && pinned == true]) == 1
 - [D] The monitor-bot alert now carries a 🚨 reaction
-  => "🚨" in discord.messages[id == "1330907688468480000"].reactions
+  => count(discord.messages[id == "1330907688468480000" && "🚨" in reactions]) == 1
 - [D] Exactly 1 channel was created
 - [D] A channel named "incident-2026-payments" exists
 - [D] The war room channel has one message in it
