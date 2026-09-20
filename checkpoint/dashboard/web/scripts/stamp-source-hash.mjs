@@ -8,8 +8,15 @@
 //
 // What actually has to be true is narrower: nobody changed the source and
 // forgot to rebuild. So the build stamps a hash of its *inputs* beside the
-// output, and CI recomputes that hash and compares. It is stable everywhere,
-// and it fails for exactly the reason we care about.
+// output, and `tests/test_spa_bundle.py` recomputes that hash and compares. It
+// is stable everywhere, and it fails for exactly the reason we care about.
+//
+// "Stable everywhere" is the whole point, so the hash must not depend on how
+// the checkout landed on disk. `.gitattributes` keeps these files LF in git,
+// but the conversion happens on commit, not on save: a Windows editor can
+// leave CRLF in the working tree and git still reports it clean. Hashing raw
+// bytes there produces a stamp no Linux runner can reproduce, so text is
+// normalised to LF before it goes in.
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -37,12 +44,18 @@ function files(path) {
     .flatMap((entry) => files(join(path, entry)));
 }
 
+function contents(file) {
+  const raw = readFileSync(file);
+  if (raw.includes(0)) return raw; // binary: leave it exactly as it is
+  return Buffer.from(raw.toString("utf8").split("\r\n").join("\n"), "utf8");
+}
+
 const hash = createHash("sha256");
 for (const input of INPUTS) {
   for (const file of files(resolve(web, input))) {
     // The path goes in too, so renaming a file counts as a change.
     hash.update(relative(web, file).split("\\").join("/"));
-    hash.update(readFileSync(file));
+    hash.update(contents(file));
   }
 }
 writeFileSync(out, `${hash.digest("hex")}\n`);
