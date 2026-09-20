@@ -16,7 +16,7 @@ import click
 from rich import box
 from rich.table import Table
 
-from checkpoint.scenario import KNOWN_SETTINGS, parse_file
+from checkpoint.scenario import KNOWN_SETTINGS, Scenario, parse_file
 
 from ._shared import console, fail, plain, project, resolve_targets
 
@@ -161,7 +161,12 @@ def _inspect(path: Path) -> dict | None:
             if name not in {t.lower() for t in scenario.twins}:
                 warnings.append(f"faults for {name!r}, which this scenario does not run")
 
-    schema = schema_for(scenario.twins) if scenario.twins else None
+    workspace = _workspace_problem(scenario)
+    if workspace is not None:
+        errors.append(workspace)
+
+    schema = (schema_for(scenario.twins, workspace=bool(scenario.workspace))
+              if scenario.twins or scenario.workspace else None)
     criteria = []
     for criterion in scenario.criteria:
         assertion, source = criterion.assertion, "pinned" if criterion.assertion else ""
@@ -183,6 +188,18 @@ def _inspect(path: Path) -> dict | None:
     return {"scenario": str(path), "title": scenario.title, "valid": not errors,
             "twins": list(scenario.twins), "runs": scenario.runs,
             "criteria": criteria, "errors": errors, "warnings": warnings}
+
+
+def _workspace_problem(scenario: Scenario) -> str | None:
+    """A `workspace:` that will not resolve, reported before a run wastes time on it."""
+    from checkpoint.engine.run import scenario_workspace
+    from checkpoint.engine.sandbox import SandboxError
+
+    try:
+        scenario_workspace(scenario)
+    except SandboxError as e:
+        return str(e)
+    return None
 
 
 _SOURCE_LABEL = {"pinned": "pinned", "pattern": "pattern", "llm": "compiled", "judge": "judged"}

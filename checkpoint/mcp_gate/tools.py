@@ -91,7 +91,8 @@ def check_scenario_tool(scenario_path: str) -> dict:
         problems.append("no '## Criteria' section")
     problems.extend(f"unknown twin {t!r}" for t in scenario.twins if t.lower() not in known)
 
-    schema = schema_for(scenario.twins) if scenario.twins else None
+    schema = (schema_for(scenario.twins, workspace=bool(scenario.workspace))
+              if scenario.twins or scenario.workspace else None)
     criteria = []
     for criterion in scenario.criteria:
         assertion, source = criterion.assertion, "pinned" if criterion.assertion else ""

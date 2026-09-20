@@ -6,7 +6,7 @@
     result = run_scenario(scenario, agent)
 """
 from .agent import Agent, AgentOutput, extract_answer, split_command
-from .run import RunOptions, run_scenario, scenario_setups, scenario_twins
+from .run import RunOptions, run_scenario, scenario_setups, scenario_twins, scenario_workspace
 from .sandbox import Sandbox, SandboxError, TwinSetup
 
 __all__ = [
@@ -20,5 +20,6 @@ __all__ = [
     "run_scenario",
     "scenario_setups",
     "scenario_twins",
+    "scenario_workspace",
     "split_command",
 ]

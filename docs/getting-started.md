@@ -96,6 +96,26 @@ the agent under test, and cannot reach a real API through it. The twins'
 direct URLs are in `CHECKPOINT_<TWIN>_URL`, though most agents never need them:
 calls to `https://api.github.com` are routed into the GitHub twin already.
 
+### If your agent edits files instead of calling APIs
+
+A coding agent, a migration tool or a docs generator does its work in a
+repository, and that is testable the same way. Add one line of front matter:
+
+```yaml
+workspace: fixtures/small-repo
+```
+
+Checkpoint copies that directory into a throwaway one and starts your agent
+inside it, so its relative paths mean what they would in a real checkout, and
+`$CHECKPOINT_WORKSPACE` holds the path. It is a convention rather than
+containment — nothing stops a process from writing elsewhere on the machine —
+so use a container for an agent you do not trust. Afterwards the tree is queryable as
+`workspace.files`, so `count(created.workspace.files) == 1` and
+`exists(changed.workspace.files[path == "src/app.py"])` are ordinary criteria.
+Full details in
+[Scenarios](scenarios.md#testing-an-agent-that-edits-files); a working project
+in [`examples/coding-agent`](../examples/coding-agent/).
+
 ## First run
 
 ```bash

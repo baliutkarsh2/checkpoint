@@ -300,7 +300,8 @@ def _run_scenario_n(
     def worker(indices: list[int]) -> None:
         try:
             sandbox = Sandbox(twins, intercept=opts.intercept, egress=opts.egress,
-                              allow_hosts=opts.allow_hosts)
+                              allow_hosts=opts.allow_hosts,
+                              workspace=bool(item.scenario.workspace))
             sandbox.start()
         except (SandboxError, KeyError) as e:
             for i in indices:

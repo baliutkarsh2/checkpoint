@@ -5,6 +5,10 @@ the field a soft delete sets), so the difference between the seed and the final
 snapshot is computed per collection rather than guessed from HTTP verbs. That
 diff is what makes "no issues were deleted" answerable — including for twins
 that archive instead of deleting, which the old checker always scored as pass.
+
+A workspace is just another namespace in these mappings (``workspace``, holding
+``files``), so nothing here treats it specially and every delta root works on it
+for the same reason it works on a twin.
 """
 from __future__ import annotations
 
@@ -55,8 +59,9 @@ def _meta(views: Mapping[str, Mapping[str, dict]], field: str, default: Any) -> 
     }
 
 
-def schema_for(twins: Sequence[str], *, seed: str | None = None) -> Schema:
-    """The collections a scenario's twins expose, without starting them.
+def schema_for(twins: Sequence[str], *, seed: str | None = None,
+               workspace: bool = False) -> Schema:
+    """The collections a scenario exposes, without starting anything.
 
     Lets ``checkpoint check``, the dashboard and the scenario generator tell an
     author what a criterion can refer to before anything runs.
@@ -68,8 +73,15 @@ def schema_for(twins: Sequence[str], *, seed: str | None = None) -> Schema:
     With no ``seed`` named, every bundled seed contributes, so the result is
     every field a collection can carry rather than the ones one dataset happens
     to use.
+
+    ``workspace`` adds the ``workspace.files`` collection, for a scenario that
+    declares one. Its fields are declared rather than sampled, so no fixture has
+    to be read from disk — and without it every file criterion in the scenario
+    would be reported as referring to a collection that does not exist.
     """
     from checkpoint.twins import registry
+    from checkpoint.workspace import NAMESPACE as WORKSPACE
+    from checkpoint.workspace import declared_views
 
     views: dict[str, dict[str, dict]] = {}
     for name in twins:
@@ -82,6 +94,8 @@ def schema_for(twins: Sequence[str], *, seed: str | None = None) -> Schema:
         if twin is None:
             continue
         views[spec.name] = _sampled_views(twin, seed)
+    if workspace:
+        views[WORKSPACE] = declared_views()
     return Schema.from_views(views)
 
 

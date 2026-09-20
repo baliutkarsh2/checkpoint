@@ -304,6 +304,87 @@ def test_a_scripted_correct_agent_scores_100(rel: str, sandbox: Sandbox) -> None
     )
 
 
+# --- 5. the workspace example ----------------------------------------------------
+#
+# `examples/coding-agent` is the one bundled scenario with no twins: it is
+# scored on the file tree the agent left rather than on any API call. It lives
+# in examples/ rather than scenarios/ because it ships a whole project — its own
+# agent and its own fixture tree — and because the parametrized tests above all
+# assume a scenario names twins. It gets the same two proofs they do: a correct
+# agent reaches 100, and an idle one cannot.
+
+WORKSPACE_EXAMPLE = REPO_ROOT / "examples" / "coding-agent"
+WORKSPACE_SCENARIO = WORKSPACE_EXAMPLE / "scenarios" / "document-the-modules.md"
+
+
+def _score_workspace(scenario: Scenario, result: Any) -> Evaluation:
+    """Scored on views alone; there are no twins to filter down to."""
+    world = build_world(
+        seed_views=result.seed_views,
+        final_views=result.views,
+        trace=result.trace,
+        task=scenario.prompt,
+        answer=result.final_answer,
+        exit_code=result.exit_code,
+        duration=result.duration_s,
+    )
+    return evaluate_criteria(scenario, world, Schema.from_views(result.views),
+                             model="none", allow_llm=False, judge=_pass_everything)
+
+
+def test_the_workspace_example_compiles_without_a_model() -> None:
+    scenario = parse_file(WORKSPACE_SCENARIO)
+    assert not scenario.problems, scenario.problems
+    assert scenario.workspace, "the example is supposed to declare a workspace"
+    assert not scenario.twins, "and no twins: the two are independent"
+
+    schema = schema_for(scenario.twins, workspace=True)
+    seed_world = World(final={"workspace": {"files": []}}, seed={"workspace": {"files": []}},
+                       keys={"workspace": {"files": "path"}})
+    for criterion in scenario.criteria:
+        assertion = criterion.assertion
+        if assertion is None:
+            if criterion.kind == "P":
+                continue
+            compiled = compile_criterion(criterion.text, schema)
+            assert compiled is not None, (
+                f"line {criterion.line}: {criterion.text!r} needs a model to compile")
+            assertion = compiled.assertion
+        assert validate_assertion(assertion, schema, seed_world) is None, (
+            f"line {criterion.line}: {assertion!r} is not valid")
+
+
+def test_the_workspace_examples_agent_scores_100() -> None:
+    scenario = parse_file(WORKSPACE_SCENARIO)
+    agent = Agent(command=[sys.executable, str(WORKSPACE_EXAMPLE / "agent.py")],
+                  name="coding-agent")
+
+    result = run_scenario(scenario, agent,
+                          options=RunOptions(intercept=False, evaluate=False, timeout=60))
+
+    assert not result.error, f"{result.error}\n{result.stderr[-2000:]}"
+    evaluation = _score_workspace(scenario, result)
+    failed = [(o.text, o.status, o.reasoning, o.assertion)
+              for o in evaluation.outcomes if not o.passed]
+    assert evaluation.score == 100, f"a correct agent scored {evaluation.score:.0f}/100: {failed}"
+
+
+def test_a_do_nothing_agent_cannot_ace_the_workspace_example() -> None:
+    """The vacuity test, for a scenario scored on a diff rather than on calls."""
+    scenario = parse_file(WORKSPACE_SCENARIO)
+
+    result = run_scenario(scenario, LAZY_AGENT,
+                          options=RunOptions(intercept=False, evaluate=False, timeout=60))
+
+    assert not result.error, result.stderr[-2000:]
+    evaluation = _score_workspace(scenario, result)
+    passed = [o.text for o in evaluation.outcomes if o.passed]
+    assert evaluation.score < 100, f"a do-nothing agent aced it: {passed}"
+    harmed = [o.text for o in evaluation.outcomes
+              if o.must_pass and o.kind in ("D", "T") and not o.passed]
+    assert not harmed, f"an agent that changed nothing failed a do-no-harm criterion: {harmed}"
+
+
 def test_every_scenario_and_twin_has_a_scripted_agent() -> None:
     """Nothing under scenarios/ may escape the proof that it can be scored 100."""
     unscripted = {_id(p) for p in BUNDLED if p != DEMO_SCENARIO} - set(SCRIPTED)

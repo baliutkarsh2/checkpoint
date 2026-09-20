@@ -27,6 +27,9 @@ class Collection:
     fields: frozenset[str] = frozenset()
     tombstone: str | None = None
     """Field a soft delete sets; records that carry it no longer "exist"."""
+    key: str = "id"
+    """Primary key. When it is something a person would type — a file's ``path``
+    rather than a generated ``id`` — it is also how they name a record."""
 
     @property
     def path(self) -> str:
@@ -62,7 +65,8 @@ class Schema:
                     if isinstance(item, dict):
                         fields.update(item)
                 out.append(Collection(twin, name, tuple(view.get("nouns") or ()),
-                                      frozenset(fields), view.get("tombstone")))
+                                      frozenset(fields), view.get("tombstone"),
+                                      view.get("key") or "id"))
         return cls(tuple(out))
 
     def resolve(self, noun: str) -> Collection | None:
@@ -197,6 +201,74 @@ def _named_exists(match: re.Match, schema: Schema) -> str | None:
     if coll is None or (coll.fields and "name" not in coll.fields):
         return None
     return f"exists({_live_with(coll, _equals('name', match.group('value')))})"
+
+
+@pattern(rf"(?:an?|one|the)\s+{_NOUN}\s+named\s+{_QUOTED}\s+(?:exists|was created|is present)")
+def _key_named_exists(match: re.Match, schema: Schema) -> str | None:
+    """A record named by its own primary key: ``A file named "README.md" exists``.
+
+    Only for a collection whose key is something a person types. A generated
+    ``id`` is not a name, so "an issue named ..." is still left to the judge
+    rather than compiled into a comparison it could never satisfy. Registered
+    after :func:`_named_exists`, which gets first refusal on anything with a
+    real ``name`` field.
+    """
+    coll = _collection(match, schema)
+    if coll is None or coll.key == "id" or "name" in coll.fields:
+        return None
+    if coll.fields and coll.key not in coll.fields:
+        return None
+    return f"exists({_live_with(coll, _equals(coll.key, match.group('value')))})"
+
+
+# -- one named record, written as a path ----------------------------------------
+#
+# "src/app.py was changed" is how people write a file criterion, and a path is
+# not a noun, so the collection is resolved from the word "file" the ordinary
+# way. With no file collection in the run — or two of them — these compile to
+# nothing and the criterion goes to the judge, like any unresolved noun.
+
+_PATHNAME = r"[`\"']?(?P<path>(?:[\w.\-]+/)+[\w.\-]+|[\w\-]+\.[A-Za-z0-9_]+)[`\"']?"
+_BECAME = r"(?:was|is|has been|have been|got)"
+_STAYED = r"(?:was not|wasn't|is not|isn't|has not been|hasn't been)"
+
+
+def _file_at(schema: Schema, path: str, source: str = "") -> str | None:
+    coll = schema.resolve("file")
+    if coll is None or (coll.fields and coll.key not in coll.fields):
+        return None
+    target = f"{source}{coll.path}" if source else coll.live
+    return f'exists({target}[{coll.key} == "{_escape(path)}"])'
+
+
+@pattern(rf"(?:the\s+)?(?:file\s+)?{_PATHNAME}\s+{_BECAME}\s+(?:modified|changed|updated|edited)")
+def _file_changed(match: re.Match, schema: Schema) -> str | None:
+    return _file_at(schema, match.group("path"), "changed.")
+
+
+@pattern(rf"(?:the\s+)?(?:file\s+)?{_PATHNAME}\s+{_BECAME}\s+(?:created|added)")
+def _file_created(match: re.Match, schema: Schema) -> str | None:
+    return _file_at(schema, match.group("path"), "created.")
+
+
+@pattern(rf"(?:the\s+)?(?:file\s+)?{_PATHNAME}\s+{_BECAME}\s+(?:deleted|removed)")
+def _file_deleted(match: re.Match, schema: Schema) -> str | None:
+    return _file_at(schema, match.group("path"), "deleted.")
+
+
+@pattern(rf"(?:the\s+)?(?:file\s+)?{_PATHNAME}\s+(?:still\s+|currently\s+)?exists")
+def _file_exists(match: re.Match, schema: Schema) -> str | None:
+    return _file_at(schema, match.group("path"))
+
+
+@pattern(rf"(?:the\s+)?(?:file\s+)?{_PATHNAME}\s+{_STAYED}\s+"
+         r"(?:modified|changed|updated|edited|touched)")
+def _file_unchanged(match: re.Match, schema: Schema) -> str | None:
+    """"the lockfile was not touched" — the criterion a migration tool exists to pass."""
+    coll = schema.resolve("file")
+    if coll is None or (coll.fields and coll.key not in coll.fields):
+        return None
+    return f'count(changed.{coll.path}[{coll.key} == "{_escape(match.group("path"))}"]) == 0'
 
 
 @pattern(rf"{_NOUN}\s+#(?P<number>\d+)\s+is\s+{_STATE}")
