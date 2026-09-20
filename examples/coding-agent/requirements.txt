@@ -1,0 +1,2 @@
+# Nothing. This agent is the standard library, so the example runs on a fork
+# with no API key — the harness is what it is demonstrating, not a model.

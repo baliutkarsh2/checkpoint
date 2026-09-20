@@ -84,6 +84,7 @@ and both are reported by `checkpoint check` when a key is not one of these.
 | `twins` | Which services to start, e.g. `[github, slack]` or `github, slack`. |
 | `seed` | Dataset each twin starts from. One name applies to the first twin; `github=small-project, slack=engineering-team` sets them individually. |
 | `seed-file` | A JSON file to load instead, resolved relative to the scenario. Same per-twin syntax. |
+| `workspace` | A directory of files the agent edits, resolved relative to the scenario. See [Testing an agent that edits files](#testing-an-agent-that-edits-files). |
 | `runs` | Times `checkpoint run` repeats this scenario when `-n` is not given. |
 | `timeout` | Seconds before the agent is killed. Default 180. |
 | `tags` | Labels for `checkpoint run --tag`. |
@@ -99,6 +100,104 @@ each one contains.
 Agentic category — and it is what `checkpoint redteam` runs when you give it no
 target. Five more `owasp:`-tagged scenarios sit alongside the ordinary ones in
 `scenarios/`; `checkpoint redteam scenarios` runs those too.
+
+## Testing an agent that edits files
+
+Some agents do their work in a repository rather than over an API: a coding
+agent, a migration tool, a docs generator. Point a scenario at a directory and
+Checkpoint copies it into a throwaway one, starts the agent **inside it**, and
+diffs the tree afterwards.
+
+```yaml
+---
+workspace: fixtures/small-repo
+---
+```
+
+The path is resolved relative to the scenario file, and one that does not exist
+is a setup error — the run is reported as unstartable, never scored zero.
+The agent needs no changes: its working directory *is* the tree, so
+`open("src/app.py")` means what it would mean in a real checkout.
+`$CHECKPOINT_WORKSPACE` holds the path as well, for an agent that sets its own
+working directory or wants it spelled out. If `[agent] cwd` is set in
+`checkpoint.toml` it wins, and the variable still points at the tree.
+
+The fixture on disk is never written to, and every run starts from a fresh copy,
+so sixteen gate runs are sixteen independent attempts.
+
+A workspace and twins are independent: a scenario may have either, both, or
+neither. `examples/coding-agent` is a complete worked example.
+
+> **A workspace is a convention, not containment.** The agent is handed a
+> temporary directory and started in it; nothing stops the process from writing
+> anywhere else on the machine it can reach. What a workspace gives you is a
+> disposable tree to seed and a diff to score — not a jail. It is the right tool
+> for testing an agent you are developing; it is not a safe way to run one you
+> do not trust. For that, run the whole thing in a container
+> (see [the gate](gate.md) and `Dockerfile`), and use `egress` to control what
+> it can reach over the network.
+
+### What is in the tree, and what is not
+
+These are never copied and never counted, so a stray `.pyc` can never be the
+file your agent "created": `.git`, `node_modules`, `__pycache__`, virtualenvs,
+tool caches, `.DS_Store` — plus anything the fixture's own root `.gitignore`
+names, including `!` negations. Nested `.gitignore` files are not read.
+
+A file larger than 1 MiB, and any file that is not UTF-8 text, keeps its record
+and its `digest` but carries no `content`; a tree of more than 2000 files is
+refused as a setup error rather than copied. Line endings are normalized to
+`\n` in `content`, so the same fixture asserts identically on Windows and Linux,
+while `size` and `digest` stay faithful to the bytes on disk.
+
+### The `workspace.files` collection
+
+The tree is one more collection, keyed by `path`, so every root below already
+works on it — there is nothing new to learn.
+
+| Field | Holds |
+|---|---|
+| `path` | POSIX path relative to the root, e.g. `src/app.py` |
+| `content` | The file's text, `""` when it is binary or oversized |
+| `size` | Bytes on disk |
+| `lines` | Lines of text |
+| `binary` | The bytes are not text |
+| `truncated` | Larger than 1 MiB, so `content` was not carried |
+| `digest` | sha256 of the bytes, which is what makes `changed` honest for binary files |
+
+```
+count(created.workspace.files) == 1
+count(deleted.workspace.files) == 0
+exists(changed.workspace.files[path == "src/app.py"])
+workspace.files[path == "src/app.py"].content ~ /def main/
+count(workspace.files[binary]) == 0
+```
+
+These plain-English criteria compile with no model in the loop:
+
+```
+- [D] Exactly 1 file was created
+- [D] No files were deleted
+- [D] src/app.py was changed
+- [D] A file named "CHANGELOG.md" exists
+- [D!] poetry.lock was not modified
+```
+
+### Write the criterion that can fail
+
+This is the one thing to get right.
+
+```
+exists(workspace.files[path == "README.md"])     an agent that did nothing PASSES
+count(created.workspace.files) == 1              an agent that did nothing FAILS
+```
+
+`workspace.files` is the tree as it ended up, which includes everything the
+fixture already contained. A criterion about a seeded file is satisfied before
+the agent starts. Only `created`, `changed` and `deleted` are about the agent's
+*work*, so state criteria belong on those — use `workspace.files` for what the
+content has to say (`.content ~ /def main/`) once you have established, on a
+delta root, that the agent wrote it.
 
 ## Criteria
 
@@ -183,6 +282,7 @@ pass, fail, or error.
 | `created.<twin>.<collection>` | Records the agent added |
 | `deleted.<twin>.<collection>` | Records the agent removed, including soft deletes |
 | `changed.<twin>.<collection>` | Records the agent modified |
+| `workspace.files` | The file tree the agent edited, when the scenario declares a `workspace`. A namespace like a twin, so `seed.`, `created.`, `deleted.` and `changed.` all apply. |
 | `trace` | Every API call: `twin`, `method`, `path`, `status`, `ok`, `op`, `resource`, `body`, `response`, `via` |
 | `egress` | Connections to hosts outside the sandbox: `host`, `allowed` |
 | `answer` | The agent's final answer, as a string |
@@ -239,6 +339,9 @@ count(trace[method == "DELETE"]) == 0
 count(trace[twin == "github" && op == "create"]) <= 1
 count(deleted.slack.messages) == 0
 all(created.github.issues, body ~ /repro/i)
+count(created.workspace.files) == 1
+exists(changed.workspace.files[path == "src/app.py"])
+workspace.files[path == "src/app.py"].content ~ /def main/
 answer ~ /issue #\d+/i
 count(egress[allowed == false]) == 0
 duration < 60

@@ -5,12 +5,13 @@ import time
 import uuid
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from checkpoint.llm import DEFAULT_MODEL
 from checkpoint.twins import registry
+from checkpoint.workspace import NAMESPACE as WORKSPACE
 
 from .agent import Agent, LineSink
 from .sandbox import Egress, Sandbox, SandboxError, TwinSetup, load_seed_file
@@ -77,6 +78,28 @@ def scenario_setups(scenario: Scenario, twins: list[str]) -> dict[str, TwinSetup
     return setups
 
 
+def scenario_workspace(scenario: Scenario) -> Path | None:
+    """The directory a scenario's ``workspace:`` names, or None if it has none.
+
+    Resolved relative to the scenario file the way ``seed-file`` is. A path that
+    does not exist is raised as a :class:`SandboxError`, so a typo is reported as
+    a setup failure rather than run as an empty tree the agent then "fails".
+    """
+    raw = scenario.config.get("workspace")
+    if raw in (None, "", False):
+        return None
+    path = Path(str(raw)).expanduser()
+    if not path.is_absolute():
+        base = Path(scenario.source_path).parent if scenario.source_path else Path.cwd()
+        path = base / path if (base / path).exists() else Path.cwd() / path
+    if not path.is_dir():
+        raise SandboxError(
+            f"workspace directory not found: {raw!r} "
+            f"({'not a directory' if path.exists() else f'looked in {path.parent}'})"
+        )
+    return path
+
+
 def run_scenario(
     scenario: Scenario,
     agent: Agent,
@@ -98,6 +121,7 @@ def run_scenario(
     try:
         twins = scenario_twins(scenario)
         setups = scenario_setups(scenario, twins)
+        workspace_seed = scenario_workspace(scenario)
     except (SandboxError, KeyError) as e:
         return _setup_failure(RunResult, run_id, agent, str(e), started)
 
@@ -105,18 +129,22 @@ def run_scenario(
     try:
         if owned:
             sandbox = Sandbox(twins, intercept=opts.intercept, egress=opts.egress,
-                              allow_hosts=opts.allow_hosts)
+                              allow_hosts=opts.allow_hosts,
+                              workspace=workspace_seed is not None)
             sandbox.start()
         else:
             missing = [t for t in twins if t not in sandbox.twins]
             if missing:
                 raise SandboxError(f"sandbox is missing twins {missing} needed by the scenario")
+            if workspace_seed is not None and not sandbox.workspace:
+                raise SandboxError(
+                    "the scenario declares a workspace, but this sandbox was built "
+                    "without one (Sandbox(..., workspace=True))")
         _apply_faults(setups, scenario, opts)
-        sandbox.prepare(setups)
+        sandbox.prepare(setups, workspace_seed=workspace_seed)
         seed_views = sandbox.views()
         timeout = opts.timeout or float(scenario.timeout or DEFAULT_TIMEOUT)
-        output = agent.invoke(scenario.prompt, sandbox.agent_env(), timeout,
-                              session_id=run_id, on_line=opts.on_line)
+        output = _run_agent(agent, sandbox, scenario, timeout, run_id, opts)
         final_views = sandbox.views()
         final_state = sandbox.state()
         trace = sandbox.trace()
@@ -127,14 +155,12 @@ def run_scenario(
         if owned and sandbox is not None:
             sandbox.stop()
 
-    from checkpoint.runner import _merge_state_for_clones
-
     result = RunResult(
         final_answer=output.answer,
         stderr=output.stderr[-8000:],
         exit_code=output.exit_code if output.exit_code is not None else -1,
         trace=trace,
-        state=_merge_state_for_clones(final_state) if final_state else {},
+        state=run_state(final_state),
         stdout=output.stdout,
         run_id=run_id,
         agent=agent.display_name,
@@ -174,6 +200,40 @@ def run_scenario(
 
         _evaluate(scenario, result, opts.judge_model)
     return result
+
+
+def run_state(sandbox_state: Mapping[str, dict]) -> dict:
+    """``RunResult.state`` from a sandbox snapshot.
+
+    The workspace is held back from the per-clone merge and put back afterwards.
+    It is not a clone, and without this a single-twin scenario that gains a
+    workspace would suddenly have two entries and be rendered in the nested
+    multi-clone shape — silently changing what every existing report reads.
+    """
+    from checkpoint.runner import _merge_state_for_clones
+
+    twin_state = {k: v for k, v in sandbox_state.items() if k != WORKSPACE}
+    state = _merge_state_for_clones(twin_state) if twin_state else {}
+    if WORKSPACE in sandbox_state:
+        state[WORKSPACE] = sandbox_state[WORKSPACE]
+    return state
+
+
+def _run_agent(agent: Agent, sandbox: Sandbox, scenario: Scenario, timeout: float,
+               run_id: str, opts: RunOptions) -> Any:
+    """Invoke the agent, from inside the workspace when there is one.
+
+    A coding agent has to find itself in the tree it is meant to edit, the way
+    it would in a real checkout — ``python fix_bug.py`` that opens ``src/app.py``
+    should just work. An explicit ``[agent] cwd`` wins, because someone who set
+    it meant it; ``CHECKPOINT_WORKSPACE`` still points at the tree either way, so
+    nothing is unreachable.
+    """
+    root = sandbox.workspace_root
+    if root is not None and not agent.cwd:
+        agent = replace(agent, cwd=str(root))
+    return agent.invoke(scenario.prompt, sandbox.agent_env(), timeout,
+                        session_id=run_id, on_line=opts.on_line)
 
 
 def _apply_faults(setups: dict[str, TwinSetup], scenario: Scenario, opts: RunOptions) -> None:
