@@ -1,4 +1,4 @@
-"""Phase 2 Plan 02: repos / branches / files / commits surface."""
+"""GitHub twin: the repos / branches / files / commits surface."""
 from __future__ import annotations
 
 import base64

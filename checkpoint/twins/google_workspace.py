@@ -276,7 +276,7 @@ def _permission_id() -> str:
 
 def _event_id() -> str:
     # Calendar event ids are base32hex ([a-v0-9]); hex digits are a valid subset.
-    return _unique("event", lambda n: hashlib.sha1(f"cp-event-{n}".encode()).hexdigest()[:26],
+    return _unique("event", lambda n: hashlib.sha1(f"cp-event-{n}".encode()).hexdigest()[:26],  # noqa: S324 - an identifier the vendor shapes, not a secret
                    STATE["calendar_events"])
 
 
@@ -1628,7 +1628,7 @@ def _drive_user() -> dict:
 
 
 def _owner_permission_id() -> str:
-    return str(int(hashlib.sha1(_me().encode()).hexdigest()[:12], 16))
+    return str(int(hashlib.sha1(_me().encode()).hexdigest()[:12], 16))  # noqa: S324 - an identifier the vendor shapes, not a secret
 
 
 def _web_view_link(file: dict) -> str:
@@ -2447,7 +2447,8 @@ def _event_resource(event: dict) -> dict:
     """The Event resource, in the field order the API returns it."""
     stored = {key: value for key, value in event.items() if not key.startswith("_")}
     calendar_id = event.get("_calendarId", "")
-    digest = hashlib.sha1(json.dumps(stored, sort_keys=True, default=str).encode()).hexdigest()
+    digest = hashlib.sha1(  # noqa: S324 - an identifier the vendor shapes, not a secret
+        json.dumps(stored, sort_keys=True, default=str).encode()).hexdigest()
     out: dict[str, Any] = {
         "kind": "calendar#event",
         "etag": f'"{digest[:16]}"',
@@ -3100,7 +3101,7 @@ TWIN = kit.install(app, kit.Twin(
 
 # --- MCP transport -----------------------------------------------------------
 
-from checkpoint.mcp_servers.google_workspace_mcp import (  # noqa: E402
+from checkpoint.mcp_servers.google_workspace_mcp import (
     mount_on as _mount_mcp,
 )
 

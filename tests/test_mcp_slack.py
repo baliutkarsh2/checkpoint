@@ -1,7 +1,7 @@
-"""Phase 6 Plan 02: Slack MCP server end-to-end through the official client.
+"""Slack MCP server, end to end through the official MCP client.
 
 Boots the Slack twin via uvicorn, opens an MCP client at /mcp, verifies
-the 8-tool surface from SCOPE §3.4 and exercises every tool against
+the twin's 8-tool surface and exercises every tool against
 the `engineering-team` seed (the default Slack seed) — confirming each
 mutation is visible to the REST /_state view.
 """

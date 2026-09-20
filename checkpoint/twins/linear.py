@@ -468,6 +468,6 @@ def search_issues(query: str = "", first: int = 50):
 
 # --- MCP transport -----------------------------------------------------------
 
-from checkpoint.mcp_servers.linear_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.linear_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)

@@ -24,9 +24,17 @@ the issue was created, and quote its number.
 - [D] An issue titled "Add login button" exists
 - [D!] No issues were deleted
 - [T] The agent made at most 10 calls
-- [P] The final answer quotes the number of the issue it created
 
 <!--
+  Every criterion above is an assertion over what your agent did, so this
+  scenario runs with no API key and no model — the same as `checkpoint demo`.
+
+  Add a judged one when you want the *answer* checked as well. It reads what
+  the agent said, so it costs one model call per run and needs a judge key
+  (OPENAI_API_KEY, or see `checkpoint run --help` for the alternatives):
+
+  - [P] The final answer quotes the number of the issue it created
+
   [D] checks the state the agent left behind, [T] the calls it made, [P] what it
   said. "!" marks a criterion that must pass whatever the score.
 

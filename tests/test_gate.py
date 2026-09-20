@@ -500,6 +500,54 @@ def test_gate_cli_readme_in_the_scenario_dir_is_skipped(tmp_path, monkeypatch):
     assert r.exit_code == 0 and payload["verdict"] == "SHIP"
 
 
+def test_gate_cli_report_only_exits_zero_and_says_so(tmp_path, monkeypatch):
+    """Adopting the gate before it blocks anything, without hiding what it found.
+
+    The verdict must still be BLOCK, the JSON must still carry exit_code 1, and
+    the process must still say out loud that it suppressed it — otherwise a
+    report-only gate is indistinguishable from a passing one, which is the whole
+    danger of the `|| true` this flag exists to replace.
+    """
+    monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    scn_dir = tmp_path / "scenarios"
+    scn_dir.mkdir()
+    (scn_dir / "a.md").write_text(SCENARIO_MD)
+    args = ["gate", str(scn_dir), "--command", "python agent.py", "-n", "4"]
+
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
+    plain = CliRunner().invoke(main, [*args, "--json"])
+    assert json.loads(plain.output)["verdict"] == "BLOCK"
+    assert plain.exit_code == EXIT_CODES["BLOCK"]
+
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
+    reported = CliRunner().invoke(main, [*args, "--report-only"])
+    assert reported.exit_code == 0
+    assert "BLOCK" in reported.output, "the verdict must still be shown"
+    assert "report-only" in reported.output, "suppressing an exit code must be announced"
+
+    # The record keeps the true exit code, so evidence is unaffected by how the
+    # process chose to exit.
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
+    as_json = CliRunner().invoke(main, [*args, "--report-only", "--json"])
+    payload = json.loads(as_json.output)
+    assert as_json.exit_code == 0
+    assert payload["verdict"] == "BLOCK"
+    assert payload["exit_code"] == EXIT_CODES["BLOCK"]
+    assert payload["report_only"] is True
+
+
+def test_gate_cli_report_only_is_not_a_config_setting():
+    """It must be typed, every time, and never inherited from a file.
+
+    `checkpoint.toml` is shared and long-lived; a line in it that permanently
+    greens the gate would be invisible in the CI log that matters.
+    """
+    from checkpoint.project import _GATE_KEYS
+
+    assert "report_only" not in _GATE_KEYS
+
+
 def test_gate_cli_allow_conditional_flag(tmp_path, monkeypatch):
     monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)

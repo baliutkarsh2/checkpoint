@@ -1052,7 +1052,8 @@ def _store_object(bucket_id: str, path: str, content: bytes, mime: str,
         "updated_at": now,
         "last_accessed_at": now,
         "metadata": {
-            "eTag": f'"{hashlib.md5(content).hexdigest()}"',
+            # An ETag the vendor's own clients compare; not a secret.
+            "eTag": f'"{hashlib.md5(content).hexdigest()}"',  # noqa: S324 - an identifier the vendor shapes, not a secret
             "size": len(content),
             "mimetype": mime,
             "cacheControl": "max-age=3600",
@@ -1477,6 +1478,6 @@ async def _service_shaped_errors(request: Request, exc: StarletteHTTPException) 
 
 # --- MCP transport -----------------------------------------------------------
 
-from checkpoint.mcp_servers.supabase_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.supabase_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)

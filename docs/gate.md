@@ -109,9 +109,19 @@ Three rules keep the ledger honest:
 - **Fingerprinted by the scenario's criteria.** Change what passing means and
   the old rate is discarded rather than reported as a regression.
 
-The file is small and worth committing. In CI, restore it from the cache or
-every run is a first run with nothing to compare against. `--no-baseline`
-neither reads nor writes it.
+`checkpoint init` writes `.checkpoint/` into `.gitignore`, so `git add
+.checkpoint/baselines.json` is refused. Restore the file with your CI cache
+instead — without it every run is a first run with nothing to compare against.
+To keep it in git rather than in a cache, exclude the directory's contents
+rather than the directory, because git will not re-include a file whose parent
+is excluded:
+
+```gitignore
+.checkpoint/*
+!.checkpoint/baselines.json
+```
+
+`--no-baseline` neither reads nor writes the file.
 
 ## Tuning
 
@@ -123,12 +133,33 @@ neither reads nor writes it.
 | `--block-max` | 0.50 | CI upper bound at or under which to BLOCK |
 | `--confidence` | 0.95 | Confidence level for the interval |
 | `--regression-drop` | 0.20 | Pass-rate drop against the baseline that reads as a regression |
-| `-j`, `--concurrency` | 1 | Scenarios gated in parallel |
+| `--report-only` | off | Print the verdict and exit 0 whatever it was (see below) |
+| `-j`, `--concurrency` | 4 | Runs of one scenario at once, each in its own sandbox; scenarios still run in sequence. The CPU count, when that is lower |
 
 `block_max` must stay below `ship_min`, or a scenario could be a confident pass
 and a confident fail at once; the gate refuses to start rather than pick one.
 The same settings live under `[gate]` in `checkpoint.toml`, and a flag beats
 the file.
+
+## Adopting it without blocking anything
+
+Turning a gate on for an existing project is the moment you find out what it
+thinks, and the first BLOCK usually arrives before anyone is ready to act on it.
+
+```bash
+checkpoint gate --report-only
+```
+
+prints the verdict exactly as it would otherwise — BLOCK is still BLOCK, and
+`--json` still carries the real `exit_code` — and then exits 0, saying so on the
+last line. Run it that way until the verdict is one you would have acted on
+anyway, then drop the flag.
+
+It is deliberately a flag and not a `checkpoint.toml` setting. A config file is
+shared and long-lived, and a line in one that permanently greens the gate would
+be invisible in the log that matters. It also replaces the thing teams reach for
+instead — `checkpoint gate || true`, which swallows ERROR as well, the one
+verdict that means the gate itself broke rather than the agent.
 
 ## In CI
 

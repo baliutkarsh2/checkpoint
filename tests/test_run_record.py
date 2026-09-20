@@ -1,4 +1,4 @@
-"""Phase 5 / Plan 05-03: run-record persistence tests."""
+"""Run records: what is written to disk, and what reads back."""
 from __future__ import annotations
 
 import json

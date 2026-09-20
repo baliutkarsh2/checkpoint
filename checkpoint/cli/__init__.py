@@ -53,7 +53,7 @@ SECTIONS: list[tuple[str, list[Entry]]] = [
         Entry("twins", "twins:twins", "The services scenarios run against"),
     ]),
     ("Evidence", [
-        Entry("cert", "cert:cert", "Issue and verify signed verdicts"),
+        Entry("cert", "cert:cert", "Verify and read signed verdicts"),
         Entry("report", "cert:report", "Build an assurance report"),
         Entry("runs", "runs:runs", "Past runs: list, show, compare, export"),
     ]),

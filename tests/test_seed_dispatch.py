@@ -1,8 +1,7 @@
-"""Phase 4 plan 02 — named seeds + seed-file dispatch.
+"""Named seeds and seed-file dispatch.
 
-These tests cover the scenario-level surface for SCN-06 (`seed:`) and
-SCN-07 (`seed-file:`). They use HTTP directly against running twins so we
-don't pay for an LLM judge.
+These cover the two scenario-level knobs, `seed:` and `seed-file:`. They
+drive running twins over HTTP directly, so no judge model is needed.
 """
 from __future__ import annotations
 
@@ -49,7 +48,7 @@ def test_scenario_parses_per_twin_seed_map():
 
 
 def test_named_seed_loads_into_twin(noop_harness):
-    """SCN-06: `seed: small-project` populates the twin before harness start."""
+    """`seed: small-project` populates the twin before the agent starts."""
     s = Scenario(prompt="ok", config={"clones": "github", "seed": "small-project", "timeout": "30"})
     r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
@@ -65,7 +64,7 @@ def test_unknown_named_seed_errors(noop_harness):
 
 
 def test_seed_file_replaces_state(tmp_path, noop_harness):
-    """SCN-07: `seed-file: ./gh.json` replaces twin state with the file's content."""
+    """`seed-file: ./gh.json` replaces twin state with the file's content."""
     seed_path = tmp_path / "custom_gh.json"
     seed_path.write_text(json.dumps({
         "state": {

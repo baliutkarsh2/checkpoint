@@ -1,4 +1,4 @@
-"""Phase 2 Plan 03: pull requests + workflows + search."""
+"""GitHub twin: pull requests, workflows and search."""
 from __future__ import annotations
 
 import pytest

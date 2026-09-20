@@ -2,6 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
+// Vite 8 warns that its native config loader, which becomes the default in a
+// future major, cannot supply the CommonJS globals. This is an ESM config
+// file, so the ESM spelling of the directory is the correct one.
+const here = import.meta.dirname;
+
 // Build output goes into ../static so FastAPI's StaticFiles can serve it directly
 // when the user runs `checkpoint view`. During local development, run
 // `npm run dev` for the Vite dev server (port 5173) which proxies /api to the
@@ -9,10 +14,10 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: { "@": path.resolve(here, "src") },
   },
   build: {
-    outDir: path.resolve(__dirname, "..", "static"),
+    outDir: path.resolve(here, "..", "static"),
     emptyOutDir: true,
     sourcemap: false,
     target: "es2020",

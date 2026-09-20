@@ -1,4 +1,4 @@
-"""Phase 6 Plan 01: GitHub MCP server end-to-end through the official client.
+"""GitHub MCP server, end to end through the official MCP client.
 
 Spawns the GitHub twin with uvicorn on a free port, opens an MCP
 ClientSession over streamable HTTP at `/mcp`, lists tools, calls 5

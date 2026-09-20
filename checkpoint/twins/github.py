@@ -2941,6 +2941,6 @@ def search_users(request: Request, q: str = "", per_page: int = 30, page: int = 
 # Mount the GitHub MCP server at /mcp on this same FastAPI app so REST and
 # MCP share the same STATE dict.
 
-from checkpoint.mcp_servers.github_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.github_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)

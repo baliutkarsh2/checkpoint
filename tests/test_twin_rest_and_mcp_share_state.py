@@ -92,7 +92,7 @@ def test_twin_mcp_url_helper():
 
 @pytest.mark.asyncio
 async def test_three_twins_mcp_one_transport_two_doors(three_twins):
-    """Phase 6 acceptance: each twin mutates via MCP, then REST sees it too.
+    """Each twin mutates via MCP, then REST sees it too.
 
     For each twin:
       1. MCP creates one resource.

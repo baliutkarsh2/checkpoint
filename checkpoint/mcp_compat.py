@@ -30,7 +30,7 @@ try:  # mcp >= 2.0
 
     MCP_MAJOR = 2
 except ModuleNotFoundError:  # mcp < 2.0
-    from mcp.server.fastmcp import FastMCP  # noqa: F401
+    from mcp.server.fastmcp import FastMCP
 
     MCP_MAJOR = 1
 

@@ -17,11 +17,11 @@ import pytest
 pytest.importorskip("googleapiclient")
 pytest.importorskip("google.oauth2")
 
-from google.oauth2.credentials import Credentials  # noqa: E402
-from googleapiclient import discovery_cache  # noqa: E402
-from googleapiclient.discovery import build_from_document  # noqa: E402
-from googleapiclient.errors import HttpError  # noqa: E402
-from googleapiclient.http import MediaIoBaseUpload  # noqa: E402
+from google.oauth2.credentials import Credentials
+from googleapiclient import discovery_cache
+from googleapiclient.discovery import build_from_document
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseUpload
 
 TWIN = "google-workspace"
 

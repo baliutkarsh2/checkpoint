@@ -7,6 +7,8 @@ uses it, and that a value Checkpoint cannot honour is refused out loud.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from checkpoint.project import CONFIG_NAME, ConfigError, Project, render_template
@@ -209,6 +211,12 @@ def test_judge_samples_reaches_the_judge(tmp_path):
     the judge has supported multi-sampling all along — but nothing ever carried
     the value from the file to the call. Setting it did nothing, silently, which
     is precisely what `checkpoint.toml` exists to make impossible.
+
+    Note what this asserts and what it does not: reaching ``RunOptions`` is the
+    *carry*, not the *call*. The first version of this test stopped there, and a
+    second scoring path went on dropping the value for months with the test
+    green. ``test_scoring_paths_cannot_reconstruct_the_judge_policy`` below is
+    the half that actually caught it.
     """
     from checkpoint.cli._shared import resolve_options
 
@@ -217,6 +225,66 @@ def test_judge_samples_reaches_the_judge(tmp_path):
 
     assert project.judge_samples() == 3
     assert resolve_options(project).judge_samples == 3
+
+
+def test_judge_policy_reaches_the_judge_call():
+    """The consumer end: what `evaluate_with` actually hands the judge.
+
+    Both halves of the policy are checked, because both were dropped: the sample
+    count, and the precedence that lets a scenario pin its own judge model while
+    an explicit flag still wins.
+    """
+    from checkpoint.engine.run import RunOptions, evaluate_with
+
+    seen = {}
+
+    def spy(scenario, result, judge_model, *, samples=1):
+        seen.update(model=judge_model, samples=samples)
+
+    scenario = SimpleNamespace(judge_model="from-scenario")
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr("checkpoint.runner._evaluate", spy)
+    try:
+        evaluate_with(scenario, object(), RunOptions(judge_model="from-opts", judge_samples=3))
+        assert seen == {"model": "from-scenario", "samples": 3}, (
+            "the scenario's pinned judge and the configured sample count must both arrive"
+        )
+
+        evaluate_with(scenario, object(), RunOptions(
+            judge_model="from-flag", judge_samples=2, judge_model_pinned=True))
+        assert seen == {"model": "from-flag", "samples": 2}, "an explicit --model must win"
+    finally:
+        monkey.undo()
+
+
+def test_scoring_paths_cannot_reconstruct_the_judge_policy():
+    """Every path that scores a run must go through the one helper that decides.
+
+    This is the general guard, and it is static on purpose. The bug was never
+    that `_evaluate` was wrong — it was that a *second* call site rebuilt the
+    policy by hand and got it half right, and no runtime test exercised that
+    command with a non-default config. Any new caller of `_evaluate` fails here
+    until it routes through `evaluate_with`, whatever it remembers to pass.
+    """
+    import ast
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent / "checkpoint"
+    allowed = {package / "engine" / "run.py", package / "runner.py"}
+    offenders = []
+    for path in package.rglob("*.py"):
+        if path in allowed:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_evaluate":
+                offenders.append(f"{path.relative_to(package.parent)}:{node.lineno}")
+
+    assert not offenders, (
+        "these call _evaluate directly instead of going through "
+        "checkpoint.engine.run.evaluate_with, so they can drift from the judge "
+        f"policy the config asked for: {offenders}"
+    )
 
 
 def test_judge_samples_defaults_to_one_and_a_flag_still_wins(tmp_path):

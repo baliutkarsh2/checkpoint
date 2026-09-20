@@ -415,7 +415,7 @@ def _by_id(run_id: str) -> dict | None:
                 record = store.get_run(run_id)
                 if record is not None:
                     return record
-            except Exception:  # noqa: BLE001 — the files below are the durable copy
+            except Exception:  # noqa: BLE001, S110 — the files below are the durable copy
                 pass
 
     path = RUNS_DIR / f"{run_id}.json"
@@ -440,7 +440,7 @@ def _recent(limit: int, scenario: str | None) -> list[dict]:
         with store:
             try:
                 return _from_store(store, limit, scenario)
-            except Exception:  # noqa: BLE001 — a broken index must not hide the runs
+            except Exception:  # noqa: BLE001, S110 — a broken index must not hide the runs
                 pass
     return _from_files(limit, scenario)
 

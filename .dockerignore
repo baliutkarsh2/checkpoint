@@ -1,5 +1,4 @@
 # Build context — keep it tight so docker build is fast.
-.planning/
 .git
 .github
 .venv
@@ -18,7 +17,7 @@ checkpoint/dashboard/web/*.tsbuildinfo
 checkpoint/dashboard/web/vite.config.d.ts
 checkpoint/dashboard/web/vite.config.js
 tests
-example
+examples
 *.md
 !README.md
 .env

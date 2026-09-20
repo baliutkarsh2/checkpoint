@@ -316,6 +316,12 @@ function IdentityStrip({ report: t }: { report: TelemetryReport }) {
   );
 }
 
+/** Single-quote a value for a POSIX shell, matching Python's shlex.quote. */
+function shellQuote(value: string): string {
+  if (value && /^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
+  return "'" + value.replace(/'/g, "'\''") + "'";
+}
+
 /** The same commands `checkpoint.telemetry._cli_commands` emits, for the case
  *  where the telemetry endpoint could not be reached and this page has only
  *  the record to work from. */
@@ -326,7 +332,9 @@ function buildCliCommands(r: RunRecord): Record<string, string> {
   const rerun = ["checkpoint", "run", scenarioPath];
   // A recorded command is only worth repeating when it is not the one
   // checkpoint.toml would supply anyway.
-  if (agent.cmd) rerun.push("--command", String(agent.cmd));
+  // Quoted: a real command has a space in it ("python my_agent.py"), and the
+  // unquoted line ran `--command python` with the script as a stray target.
+  if (agent.cmd) rerun.push("--command", shellQuote(String(agent.cmd)));
   return {
     detail: `checkpoint runs show ${runId}`,
     trace: `checkpoint runs trace ${runId}`,

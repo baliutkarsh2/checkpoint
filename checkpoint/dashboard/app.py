@@ -247,8 +247,8 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
     for md in sorted(scenarios_dir.rglob("*.md")):
         try:
             scn = parse_file(md)
-        except Exception:  # noqa: BLE001
-            continue
+        except Exception:  # noqa: BLE001, S112
+            continue      # must not blank the whole dashboard page
         if not (scn.prompt or scn.criteria):
             continue
         d_crits = [c for c in scn.criteria if c.kind in ("D", "T")]
@@ -917,22 +917,62 @@ def _register_static_file(app: FastAPI, route: str, fpath: Path) -> None:
         return FileResponse(fpath)
 
 
+#: Every route that carries an id, as the metrics label should read it. First
+#: match wins, so a literal route that a template would otherwise swallow is
+#: listed above it: ``supported`` is a route, not a twin id.
 _PATH_BUCKETS = (
+    "/api/twins/supported",
     "/api/runs/{id}",
+    "/api/runs/{id}/telemetry",
+    "/api/runs/{id}/anonymized",
+    "/api/gates/{id}",
     "/api/jobs/{id}",
     "/api/jobs/{id}/stream",
+    "/api/twins/{id}",
+    "/api/twins/{id}/reset",
+    "/api/twins/{id}/tools",
+    "/api/twins/{id}/seed/{name}",
     "/runs/{id}",
+    "/gates/{id}",
     "/live/{id}",
+    "/agents/{id}",
 )
+
+#: A generated id in a path Prometheus must not see: run ids, gate ids and job
+#: ids are all prefixes of ``uuid4().hex``, and a UUID adds dashes.
+_ID_CHARS = frozenset("0123456789abcdef-")
 
 
 def _bucket_path(path: str) -> str:
-    """Reduce path cardinality for metrics. Replace UUIDs with {id}."""
-    parts = path.split("/")
-    out: list[str] = []
-    for p in parts:
-        if len(p) >= 8 and any(c.isdigit() for c in p) and any(c.isalpha() for c in p):
-            out.append("{id}")
-        else:
-            out.append(p)
-    return "/".join(out)
+    """Reduce path cardinality for metrics, by route rather than by guesswork.
+
+    An unbounded ``path`` label is a metrics outage waiting to happen: one
+    series per run id fills the scrape. The routes are known, so they decide —
+    guessing is the fallback, not the rule.
+
+    The guess alone was wrong in both directions. It replaced any segment of
+    8+ characters holding a digit and a letter, so ``/assets/index-Kk_dH6hR.js``
+    became ``/assets/{id}`` and every bundle a deploy served looked like the
+    same request; and it left short or all-hex ids alone, so ``/api/jobs/9f2``
+    and a gate id of ``1234567890123456`` each got a series of their own.
+    """
+    for template in _PATH_BUCKETS:
+        if _matches(path, template):
+            return template
+    return "/".join(
+        "{id}" if _looks_like_an_id(p) else p for p in path.split("/")
+    )
+
+
+def _matches(path: str, template: str) -> bool:
+    """Does ``path`` fill in ``template``'s ``{...}`` placeholders?"""
+    got, want = path.split("/"), template.split("/")
+    if len(got) != len(want):
+        return False
+    # An empty segment means a trailing or doubled slash, never an id, so it
+    # must not satisfy a placeholder and quietly claim the route's label.
+    return all(bool(g) if w.startswith("{") else g == w for g, w in zip(got, want, strict=True))
+
+
+def _looks_like_an_id(segment: str) -> bool:
+    return len(segment) >= 8 and set(segment.lower()) <= _ID_CHARS

@@ -46,6 +46,15 @@ class RunResult:
     error: str | None = None
     run_id: str = ""
     agent: str = ""
+    """A short label for the agent, for headings and tables."""
+    agent_command: str = ""
+    """What actually started the agent, so a reader can re-run it.
+
+    Distinct from :attr:`agent`, which is a *name* derived by stripping the
+    script's extension. The dashboard offered that name as a copy-pasteable
+    rerun line — `checkpoint run <scenario> --command my_agent` for an agent
+    started by `python my_agent.py` — and it failed for everyone who tried it.
+    """
     twins: list[str] = field(default_factory=list)
     seed_views: dict = field(default_factory=dict)
     """Each twin's collections before the agent ran (``{twin: {collection: view}}``)."""
@@ -65,9 +74,21 @@ class RunResult:
 
     @property
     def score(self) -> float:
-        if not self.criteria:
+        """Percent of the criteria that *could be scored* and passed.
+
+        Criteria whose status is ``error`` leave the denominator as well as the
+        numerator. A criterion that could not be evaluated — a judge outage, a
+        missing judge key, an assertion that blew up — is not evidence that the
+        agent failed it, and counting it as one reports a working agent as
+        broken. It used to: a four-assertion scenario with one unscoreable
+        ``[P]`` printed ``80/100`` and stored it, permanently depressing the
+        trend history for a run whose own :attr:`scored` flag already said no
+        verdict was available.
+        """
+        usable = [c for c in self.criteria if c.status != "error"]
+        if not usable:
             return 0.0
-        return 100.0 * sum(1 for c in self.criteria if c.passed) / len(self.criteria)
+        return 100.0 * sum(1 for c in usable if c.passed) / len(usable)
 
     @property
     def complete(self) -> bool:

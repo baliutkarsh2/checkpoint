@@ -12,7 +12,7 @@ import pytest
 
 slack_sdk = pytest.importorskip("slack_sdk")
 
-from slack_sdk.errors import SlackApiError  # noqa: E402
+from slack_sdk.errors import SlackApiError
 
 TWIN = "slack"
 

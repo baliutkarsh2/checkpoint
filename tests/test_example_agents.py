@@ -9,6 +9,7 @@ needs a model key, and these have to pass on a fork.
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,49 @@ def test_an_example_is_complete(agent: str):
 @pytest.mark.parametrize("agent", AGENTS)
 def test_the_agent_is_valid_python(agent: str):
     ast.parse((EXAMPLES / agent / "agent.py").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("agent", AGENTS)
+def test_the_agent_actually_imports(agent: str):
+    """Parsing is not importing, and the gap hid a broken example.
+
+    `mcp` 2.0 renamed `streamablehttp_client`, and the MCP example still asked
+    for the 1.x name. It parsed perfectly — so this file was green — while any
+    reader who copied it onto a current `mcp` got an ImportError on line one.
+    An example is sample code people run, so the check has to run the imports.
+
+    A dependency that is simply not installed here is a skip, not a failure:
+    each example declares its own requirements and the suite does not install
+    them. What must never pass is importing a module that IS present and
+    finding the name gone.
+    """
+    import importlib.util
+
+    path = EXAMPLES / agent / "agent.py"
+    spec = importlib.util.spec_from_file_location(f"example_{agent.replace('-', '_')}", path)
+    module = importlib.util.module_from_spec(spec)
+
+    # Credentials the sandbox would supply; these examples read them at import.
+    fake_env = {"GITHUB_TOKEN": "x", "SLACK_BOT_TOKEN": "x", "OPENAI_API_KEY": "x",
+                "CHECKPOINT_TASK": "x"}
+    saved = {k: os.environ.get(k) for k in fake_env}
+    os.environ.update(fake_env)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as e:
+        missing = (e.name or "").split(".")[0]
+        if missing and importlib.util.find_spec(missing) is None:
+            pytest.skip(f"{agent} needs {missing}, which is not installed here")
+        raise AssertionError(f"{agent}/agent.py cannot import: {e}") from e
+    except Exception:
+        # Anything else is runtime behaviour, not an import contract.
+        pass
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @pytest.mark.parametrize("agent", AGENTS)

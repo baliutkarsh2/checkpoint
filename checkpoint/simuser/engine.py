@@ -21,9 +21,9 @@ from ..engine import (
     scenario_twins,
     scenario_workspace,
 )
-from ..engine.run import run_state
+from ..engine.run import evaluate_with, run_state
 from ..llm import DEFAULT_MODEL
-from ..runner import RunResult, _evaluate
+from ..runner import RunResult
 from .calibration import compute_calibration
 from .persona import Persona, UserTurn
 from .user import LLMSimulatedUser
@@ -127,6 +127,7 @@ def simulate(
         state=run_state(final_state),
         run_id=session_id,
         agent=agent.display_name,
+        agent_command=agent.command or agent.url or "",
         twins=list(twins),
         seed_views=seed_views,
         views=final_views,
@@ -136,7 +137,7 @@ def simulate(
     if turn_error:
         result.error = turn_error
     else:
-        _evaluate(scenario, result, opts.judge_model)
+        evaluate_with(scenario, result, opts)
 
     return SimResult(
         persona_name=persona.name,

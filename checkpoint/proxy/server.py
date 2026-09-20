@@ -272,7 +272,11 @@ class InterceptProxy:
         def run() -> None:
             try:
                 loop.run_until_complete(self._open())
-            except BaseException as exc:
+            except BaseException as exc:  # noqa: BLE001 — see below
+                # Deliberately everything, including KeyboardInterrupt and
+                # SystemExit: this is a thread bootstrap, and an exception that
+                # does not reach `failure` leaves start() waiting on `started`
+                # forever for a loop that is already dead.
                 failure.append(exc)
             started.set()
             if not failure:
@@ -372,9 +376,20 @@ class InterceptProxy:
             # bundles its own roots and ignores all of the above.
             "HTTPLIB2_CA_CERTS": bundle,
             # Node appends these to its built-in roots, so the CA alone is right.
+            # Bun and Deno read it too, which is why it is not named for Node.
             "NODE_EXTRA_CA_CERTS": ca_cert,
             # Node >= 24.5 / 22.21 honours HTTP(S)_PROXY only when asked to.
             "NODE_USE_ENV_PROXY": "1",
+            # git over HTTPS. A coding agent that clones, fetches or pushes
+            # fails TLS verification without this, and the failure looks like a
+            # network fault rather than a missing trust root.
+            "GIT_SSL_CAINFO": bundle,
+            # Deno's own flag-equivalent; it ignores SSL_CERT_FILE.
+            "DENO_CERT": ca_cert,
+            # cargo, for a Rust agent fetching crates or calling an API.
+            "CARGO_HTTP_CAINFO": bundle,
+            # grpc's C core reads this file directly rather than a trust store.
+            "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH": bundle,
         }
 
     # -- lifecycle (loop thread) -------------------------------------------------

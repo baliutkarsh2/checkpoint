@@ -1,4 +1,4 @@
-"""Phase 5 / Plan 05-03: failure analyzer tests.
+"""Failure analyzer: every path, driven by a fake OpenAI client.
 
 All paths exercised with a fake OpenAI client (no live API).
 """

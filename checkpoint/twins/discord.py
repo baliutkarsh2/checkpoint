@@ -1972,6 +1972,6 @@ for _prefix in API_PREFIXES:
 
 # --- MCP transport -----------------------------------------------------------
 
-from checkpoint.mcp_servers.discord_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.discord_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)
