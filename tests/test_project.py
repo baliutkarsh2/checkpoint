@@ -177,3 +177,26 @@ def test_the_starter_config_survives_a_command_with_quotes(tmp_path):
     command = """python -c "print('hi')" """.strip()
     write(tmp_path, render_template(command))
     assert Project.load(tmp_path).build_agent().command == command
+
+
+def test_a_script_in_the_command_is_found_from_anywhere(tmp_path):
+    """The directory an agent runs *in* is not always where its code lives.
+
+    A scenario with a `workspace:` starts the agent inside a throwaway copy of a
+    fixture tree, where `python agent.py` finds no `agent.py` — the script is
+    back in the project. Every other path in checkpoint.toml is relative to the
+    file, and the command has to be too.
+    """
+    write(tmp_path, '[agent]\ncommand = "python agent.py --loud"\n')
+    (tmp_path / "agent.py").write_text("print('hi')\n", encoding="utf-8")
+
+    argv = Project.load(tmp_path).build_agent().argv()
+    assert argv[1] == str(tmp_path / "agent.py")
+    # A flag is not a file, and neither is an interpreter found on PATH.
+    assert argv[0] == "python"
+    assert argv[2] == "--loud"
+
+
+def test_a_command_with_no_file_in_it_is_left_alone(tmp_path):
+    write(tmp_path, '[agent]\ncommand = "my-agent --serve"\n')
+    assert Project.load(tmp_path).build_agent().command == "my-agent --serve"

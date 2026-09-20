@@ -194,6 +194,30 @@ app = "mycompany.testing.billing_twin:app"
 domains = ["api.billing.internal"]
 ```
 
+## Agents that edit a repository
+
+Not every agent calls an API. Point a scenario at a fixture directory and your
+agent runs inside a throwaway copy of it, with the diff it leaves behind as the
+thing you score:
+
+```yaml
+---
+workspace: fixtures/small-repo
+---
+```
+
+```
+- [D] Exactly 1 file was created  =>  count(created.workspace.files) == 1
+- [D!] poetry.lock was not modified
+- [D] src/app.py defines main  =>  workspace.files[path == "src/app.py"].content ~ /def main/
+```
+
+Your agent needs no changes: its working directory *is* the tree. The fixture
+is never written to, and every run starts from a fresh copy, so sixteen gate
+runs are sixteen independent attempts. A workspace is a disposable tree and a
+diff, not a jail — see [the docs](docs/scenarios.md) for what that does and
+does not protect you from.
+
 ## Beyond the happy path
 
 ```bash
