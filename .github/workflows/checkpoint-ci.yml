@@ -43,21 +43,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11", pytest-args: "-q" }
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12", pytest-args: "-q" }
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13", pytest-args: "-q" }
-          - { os: macos-latest,   os-name: macOS,   python-version: "3.13", pytest-args: "-q" }
-          # Verbose, and capturing at sys level only, both on purpose. This is
-          # the one leg with a test that hangs on the runner and nowhere else,
-          # and the usual ways of finding out which are all closed here:
-          # pytest-timeout ends the run with a KeyboardInterrupt and, under
-          # pytest 9, crashes in `capman.read_global_capture()` before printing
-          # its report, while the faulthandler dump goes into fd-level capture
-          # that a test which never finishes never flushes. `-v` names the test
-          # (pytest writes its id before running it) and `tee-sys` lets the
-          # stack dump reach the log. No test in this suite reads capsys.
-          - { os: windows-latest, os-name: Windows, python-version: "3.13",
-              pytest-args: "-v --capture=tee-sys" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13" }
+          - { os: macos-latest,   os-name: macOS,   python-version: "3.13" }
+          - { os: windows-latest, os-name: Windows, python-version: "3.13" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -74,13 +64,14 @@ jobs:
         run: pip install -e ".[dev]"
 
       # The per-test cap lives in pyproject.toml (timeout = 300), so it applies
-      # here and on a contributor's machine alike. It cannot save a run from a
-      # process that is signalled rather than stuck — that was the twin-host
-      # teardown, fixed in the engine — but it does turn a hung call into one
-      # named failure instead of a job that burns its whole budget and reports
-      # as cancelled.
+      # here and on a contributor's machine alike. `--capture=tee-sys` is what
+      # makes it useful: pytest's faulthandler writes its stack dump to the real
+      # stderr, and under the default fd-level capture that dump lands in a
+      # buffer a test which never finishes never flushes. Capturing at sys level
+      # lets it reach the log, which is the difference between "one of these
+      # 1800 tests hung" and knowing which.
       - name: Run pytest
-        run: pytest tests/ ${{ matrix.pytest-args }}
+        run: pytest tests/ -q --capture=tee-sys
 
   # Each twin must answer the calls real agents make through the vendor's own
   # SDK; a twin bug fails a correct agent and reads as an agent regression.

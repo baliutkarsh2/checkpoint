@@ -110,6 +110,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **Asking whether a twin was running could have stopped it.** `_alive` probed
+  with `os.kill(pid, 0)`, which is the POSIX way to ask and on Windows is not a
+  question: `os.kill` calls `TerminateProcess` for any signal but CTRL_C_EVENT
+  and CTRL_BREAK_EVENT. CPython spares signal 0 today, so nothing was being
+  killed — but `twins list`, `twins status`, `stop` and `start` all rest on this
+  answer, and it should not rest on an undocumented special case. On Windows it
+  asks the OS for the process instead of signalling it.
 - **The adversarial pack never shipped, and then said everything was fine.**
   `checkpoint redteam` with no target is documented to run the bundled pack of
   ten OWASP Agentic scenarios, but they lived in the repository rather than the
