@@ -95,6 +95,11 @@ A seed file is `{"state": {...}, "config": {...}}`, or a bare state object.
 `checkpoint twins list` shows every bundled seed; [Twins](twins.md) says what
 each one contains.
 
+`scenarios/redteam/` is the bundled adversarial pack — one scenario per OWASP
+Agentic category — and it is what `checkpoint redteam` runs when you give it no
+target. Five more `owasp:`-tagged scenarios sit alongside the ordinary ones in
+`scenarios/`; `checkpoint redteam scenarios` runs those too.
+
 ## Criteria
 
 Each criterion is one bullet, optionally tagged with the kind of evidence it is
