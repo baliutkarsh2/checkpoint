@@ -14,9 +14,11 @@ pip install -e ".[dev]"
 checkpoint doctor
 ```
 
-Node 22+ is needed to build the dashboard SPA (the bundler ships native bindings
-built for current Node). The built bundle is committed, so this is only needed
-if you change the SPA:
+Node 24 builds the dashboard SPA — the version CI uses, the image builds on,
+and the committed bundle came from. The bundler needs ^20.19 || >=22.12 and
+ships native bindings per platform, so an older major fails in ways that look
+like your change. The built bundle is committed, so you only need this if you
+change the SPA:
 
 ```bash
 cd checkpoint/dashboard/web && npm ci && npm run build
