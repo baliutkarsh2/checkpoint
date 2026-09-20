@@ -34,12 +34,22 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
 from . import registry as twin_registry
 
 SESSIONS_FILE = Path(".checkpoint/cache/twins.json")
+
+
+class TwinNotRunning(RuntimeError):
+    """No twin of that name is up.
+
+    Raised with a message written for whoever asked — a person at a terminal or
+    a dashboard user — so a caller can show it without deciding whether what it
+    holds is safe to reveal.
+    """
 
 
 def _utc_iso() -> str:
@@ -232,6 +242,8 @@ def stop(twin: str, *, sessions_file: Path = SESSIONS_FILE, timeout: float = 5.0
             try:
                 os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
             except OSError:
+                # It exited between the liveness check and this signal, which is
+                # the outcome we wanted anyway.
                 pass
     del sessions[twin]
     _write(sessions_file, sessions)
@@ -268,7 +280,10 @@ def seed(twin: str, name: str, *, sessions_file: Path = SESSIONS_FILE) -> dict:
     """Load a named dataset into a running twin."""
     entry = _running(twin, sessions_file)
     try:
-        response = httpx.post(f"{entry['url']}/_seed/{name}", timeout=10.0)
+        # The name is user input: encode it so it cannot climb out of the
+        # path and address some other endpoint on the twin.
+        response = httpx.post(f"{entry['url']}/_seed/{quote(name, safe='')}",
+                              timeout=10.0)
         is_json = response.headers.get("content-type", "").startswith("application/json")
         return {"ok": response.status_code < 400, "status": response.status_code,
                 "body": response.json() if is_json else None}
@@ -352,9 +367,12 @@ def _running(twin: str, sessions_file: Path) -> dict:
     sessions = _read(sessions_file)
     entry = sessions.get(twin)
     if not entry:
-        raise KeyError(twin)
+        raise TwinNotRunning(
+            f"no {twin} twin is running. Start one: checkpoint twins start {twin}")
     if not _alive(entry.get("pid", -1)):
         del sessions[twin]
         _write(sessions_file, sessions)
-        raise RuntimeError(f"the {twin} twin was recorded as running, but its process is gone")
+        raise TwinNotRunning(
+            f"the {twin} twin was recorded as running, but its process is gone. "
+            f"Start it again: checkpoint twins start {twin}")
     return entry

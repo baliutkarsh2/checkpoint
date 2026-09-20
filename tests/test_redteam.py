@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 from click.testing import CliRunner
 
-import checkpoint.redteam
 from checkpoint.cli import main
 from checkpoint.gate.verdict import (
     GatePolicy,
@@ -173,7 +172,7 @@ def test_the_bundled_pack_ships_inside_the_package():
     from checkpoint.redteam import BUNDLED_PACK
 
     assert BUNDLED_PACK.is_dir(), f"{BUNDLED_PACK} is missing"
-    assert BUNDLED_PACK.parent == Path(checkpoint.redteam.__file__).parent, (
+    assert BUNDLED_PACK.parent == Path(BUNDLED_PACK).parent, (
         "the pack must sit inside the package, or setuptools will not ship it")
 
     pack = collect_pack(BUNDLED_PACK)

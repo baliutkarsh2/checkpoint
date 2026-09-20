@@ -498,11 +498,8 @@ def create_app(
         if not db.is_file():
             return {"rows": [], "store": str(db)}
         from ..store import SqliteRunStore
-        store = SqliteRunStore(db)
-        try:
+        with SqliteRunStore(db) as store:
             rows = store.list_gates(target=target or None, limit=limit)
-        finally:
-            store.close()
         return {"rows": rows, "store": str(db)}
 
     @app.get("/api/gates/{gate_id}", tags=["gate"])
@@ -513,11 +510,8 @@ def create_app(
         if not db.is_file():
             raise HTTPException(404, "no gate results recorded yet")
         from ..store import SqliteRunStore
-        store = SqliteRunStore(db)
-        try:
+        with SqliteRunStore(db) as store:
             gate = store.get_gate(gate_id)
-        finally:
-            store.close()
         if gate is None:
             raise HTTPException(404, f"gate {gate_id!r} not found")
         return gate
@@ -585,26 +579,38 @@ def create_app(
     @app.post("/api/twins/{twin_id}/seed/{seed_name}", tags=["twins"])
     def api_twin_seed(twin_id: str, seed_name: str):
         from ..twins import sessions
+        from ..twins.sessions import TwinNotRunning
         try:
             return sessions.seed(twin_id, seed_name, **_sessions_kw())
-        except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e)) from None
+        except TwinNotRunning as e:
+            # Only this error's own text reaches the client: it is written to be
+            # read, where an arbitrary exception would say whatever it happened
+            # to say about the inside of this process.
+            raise HTTPException(404, e.args[0]) from None
 
     @app.post("/api/twins/{twin_id}/reset", tags=["twins"])
     def api_twin_reset(twin_id: str):
         from ..twins import sessions
+        from ..twins.sessions import TwinNotRunning
         try:
             return sessions.reset(twin_id, **_sessions_kw())
-        except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e)) from None
+        except TwinNotRunning as e:
+            # Only this error's own text reaches the client: it is written to be
+            # read, where an arbitrary exception would say whatever it happened
+            # to say about the inside of this process.
+            raise HTTPException(404, e.args[0]) from None
 
     @app.get("/api/twins/{twin_id}/tools", tags=["twins"])
     def api_twin_tools(twin_id: str):
         from ..twins import sessions
+        from ..twins.sessions import TwinNotRunning
         try:
             return sessions.tools(twin_id, **_sessions_kw())
-        except (KeyError, RuntimeError) as e:
-            raise HTTPException(404, str(e)) from None
+        except TwinNotRunning as e:
+            # Only this error's own text reaches the client: it is written to be
+            # read, where an arbitrary exception would say whatever it happened
+            # to say about the inside of this process.
+            raise HTTPException(404, e.args[0]) from None
 
     @app.get("/api/twins/supported", tags=["twins"])
     def api_twins_supported():
