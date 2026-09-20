@@ -96,10 +96,14 @@ A seed file is `{"state": {...}, "config": {...}}`, or a bare state object.
 `checkpoint twins list` shows every bundled seed; [Twins](twins.md) says what
 each one contains.
 
-Checkpoint ships an adversarial pack — one scenario per OWASP
-Agentic category — and it is what `checkpoint redteam` runs when you give it no
-target. Five more `owasp:`-tagged scenarios sit alongside the ordinary ones in
-`scenarios/`; `checkpoint redteam scenarios` runs those too.
+Checkpoint ships an adversarial pack — one scenario per OWASP Agentic category
+— inside the package, so a `pip install` has it and not only a checkout.
+
+`checkpoint redteam` with no target takes the first of these that exists: your
+`scenarios/redteam/`, then any `owasp:`-tagged scenarios among your own, then
+the pack Checkpoint ships. Your attacks win, because they are about your agent;
+the pack is there so the command works on day one. It prints which it used.
+Name a path to be certain: `checkpoint redteam scenarios/redteam`.
 
 ## Testing an agent that edits files
 
