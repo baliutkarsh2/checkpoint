@@ -334,18 +334,14 @@ def run_process(
     Agents routinely spawn children (a node CLI, a browser, a tool server); on
     timeout those must die too, or they keep mutating the sandbox and leak.
     """
-    kwargs: dict = {}
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        kwargs["start_new_session"] = True
     argv = [_resolve_executable(argv[0], env, cwd), *argv[1:]]
     started = time.perf_counter()
     try:
         proc = subprocess.Popen(
             argv, cwd=cwd, env=dict(env),
             stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            **own_process_group(),
         )
     except FileNotFoundError:
         return AgentOutput("", "", "", None, 0.0,
@@ -395,6 +391,20 @@ def _resolve_executable(program: str, env: Mapping[str, str], cwd: str | None) -
     return found or program
 
 
+def own_process_group() -> dict:
+    """Popen keyword arguments that give the child a process group of its own.
+
+    Every process Checkpoint starts has to be spawned with these. :func:`kill_tree`
+    stops a process *group*, which is the only way an agent's own children — a
+    node CLI, a browser, a tool server — reliably die with it. A POSIX child
+    inherits the caller's process group unless told otherwise, and killing *that*
+    group takes Checkpoint down along with the process it meant to stop.
+    """
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
 def kill_tree(proc: subprocess.Popen) -> None:
     """Terminate a process and every descendant."""
     if proc.poll() is not None:
@@ -404,7 +414,15 @@ def kill_tree(proc: subprocess.Popen) -> None:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                            capture_output=True, timeout=15)
         else:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            group = os.getpgid(proc.pid)
+            if group == os.getpgid(0):
+                # The child is in our own process group, so it was spawned
+                # without own_process_group(). Signalling the group here would
+                # kill Checkpoint itself — and, in CI, the shell running it. The
+                # process tree cannot be reached safely, so take the process.
+                proc.kill()
+            else:
+                os.killpg(group, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
         proc.kill()
     try:
