@@ -9,11 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from checkpoint.fake_credentials import FAKE_TOKENS
-
-from .engine.agent import extract_answer
 from .scenario import Scenario
-from .twins import registry as twin_registry
 
 if TYPE_CHECKING:
     pass
@@ -93,40 +89,17 @@ def twin_mcp_url(port: int | str, host: str = "127.0.0.1") -> str:
     return f"http://{host}:{port}/mcp/"
 
 
-# The variable each twin's SDKs read their credential from.
-_CLONE_BOOTSTRAP_TOKEN_ENV = {
-    spec.name: (spec.token_env[0], FAKE_TOKENS[spec.name])
-    for spec in twin_registry.all_specs() if spec.token_env
-}
+def merge_state_for_twins(per_twin_state: dict[str, dict]) -> dict:
+    """Build the `state` field on RunResult for a run with several twins.
 
-_extract_final_answer = extract_answer
-
-
-def _merge_state_for_clones(per_clone_state: dict[str, dict]) -> dict:
-    """Build the `state` field on RunResult for multi-clone runs.
-
-    Single-clone runs keep the legacy flat shape (top-level keys are twin state
-    keys like `repositories`, `pull_requests`, etc.) so deterministic checks
-    against existing scenarios keep working. Multi-clone runs use a nested
-    `{clone_id: state}` shape and the deterministic checker walks both.
+    A single twin keeps the flat shape — top-level keys are that twin's own
+    state keys, `repositories`, `pull_requests` and so on — so criteria written
+    against one twin read the same whether or not others are present. Several
+    twins nest under `{twin: state}`, and the deterministic checker walks both.
     """
-    if len(per_clone_state) == 1:
-        return next(iter(per_clone_state.values()))
-    return dict(per_clone_state)
-
-
-def _merge_trace_for_clones(per_clone_trace: dict[str, list]) -> list:
-    """Concatenate per-clone traces. Each entry is tagged with `_clone` so
-    callers can filter when needed."""
-    if len(per_clone_trace) == 1:
-        return next(iter(per_clone_trace.values()))
-    out: list = []
-    for clone, entries in per_clone_trace.items():
-        for e in entries:
-            if isinstance(e, dict) and "_clone" not in e:
-                e = {**e, "_clone": clone}
-            out.append(e)
-    return out
+    if len(per_twin_state) == 1:
+        return next(iter(per_twin_state.values()))
+    return dict(per_twin_state)
 
 
 def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:

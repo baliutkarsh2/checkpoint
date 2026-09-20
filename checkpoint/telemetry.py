@@ -161,11 +161,29 @@ def _normalize_metrics(metrics: dict, record: dict, api_calls: list, tool_calls:
     }
 
 
+#: Every name a trace event has used for "which twin served this call". The
+#: engine writes `twin`; records made before the rename carry the others. A
+#: reader that knows only one of them silently drops the field — which is how
+#: the dashboard's Twin column came to be empty for every current run while
+#: `checkpoint runs trace` printed it correctly.
+TWIN_KEYS = ("twin", "_twin", "clone", "_clone")
+
+
+def twin_of(event: Any) -> str | None:
+    """Which twin served a call, whichever name the writer used."""
+    if not isinstance(event, dict):
+        return None
+    for key in TWIN_KEYS:
+        if event.get(key):
+            return event[key]
+    return None
+
+
 def _normalize_api_call(index: int, event: Any) -> dict:
     ev = event if isinstance(event, dict) else {"raw": event}
     return {
         "index": index,
-        "clone": ev.get("_clone") or ev.get("clone"),
+        "twin": twin_of(ev),
         "method": ev.get("method") or ev.get("type") or "UNKNOWN",
         "path": ev.get("path") or ev.get("url") or "",
         "status": ev.get("status") or ev.get("status_code"),
@@ -242,7 +260,7 @@ def _build_timeline(
             "label": f"{call.get('method')} {call.get('path')}",
             "timestamp": call.get("timestamp"),
             "status": "error" if isinstance(status, int) and status >= 400 else "ok",
-            "detail": f"{status or '-'} {call.get('clone') or ''}".strip(),
+            "detail": f"{status or '-'} {call.get('twin') or ''}".strip(),
             "ref": {"section": "api_calls", "index": call.get("index")},
         })
     for step in judge_steps:
@@ -408,11 +426,14 @@ def _as_list(value: Any) -> list:
     if isinstance(value, list):
         return value
     if isinstance(value, dict):
+        # A multi-twin trace: {twin_name: [events]}. Tag each event with the
+        # twin it came from, under the name every reader prefers, unless it
+        # already says so under one of the names this field has had.
         out: list = []
-        for clone, events in value.items():
+        for twin, events in value.items():
             for ev in _as_list(events):
-                if isinstance(ev, dict) and "_clone" not in ev:
-                    out.append({**ev, "_clone": clone})
+                if isinstance(ev, dict) and not any(k in ev for k in TWIN_KEYS):
+                    out.append({**ev, "twin": twin})
                 else:
                     out.append(ev)
         return out
