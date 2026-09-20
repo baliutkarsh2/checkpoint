@@ -1,9 +1,9 @@
 """Checkpoint as an MCP server, so a coding agent can test while it writes.
 
 Registered with an MCP client as command ``checkpoint``, args ``["mcp"]``, this
-gives Claude Code, Cursor or any other client the same four things a developer
-does at the terminal: what scenarios exist, how each criterion will be decided,
-what one run did, and whether the build ships.
+gives any client the same four things a developer does at the terminal: what
+scenarios exist, how each criterion will be decided, what one run did, and
+whether the build ships.
 
 The tool descriptions are the only instructions the model gets, so they say what
 a result *means* — INCONCLUSIVE is not a failure, an unscored run is not a
@@ -17,7 +17,24 @@ from .tools import check_scenario_tool, gate_tool, list_scenarios_tool, run_scen
 
 
 def build_server() -> FastMCP:
-    mcp = make_server("checkpoint")
+    # Every twin server states what it is up front, and this one has more to
+    # explain than they do: a client that does not know what a verdict means
+    # will report INCONCLUSIVE as a failure and BLOCK as an outage.
+    mcp = make_server("checkpoint", instructions=(
+        "Checkpoint tests an AI agent before it ships: it runs the agent against "
+        "stateful twins of the services it calls, then scores what the agent "
+        "actually did — not what it said it did.\n\n"
+        "Start with list_scenarios to see what this project already tests, and "
+        "check_scenario before writing or editing criteria — it shows the "
+        "assertion behind each one, which is how you catch a criterion an agent "
+        "doing nothing would already pass. run_scenario is the fast loop while "
+        "you code; gate is the release decision.\n\n"
+        "Read verdicts exactly: SHIP means the evidence supports a release. "
+        "BLOCK means it does not. CONDITIONAL means it ships only with the "
+        "stated conditions. INCONCLUSIVE means too few runs to decide — that is "
+        "not a failure, it is an absence of evidence, and the fix is more runs. "
+        "ERROR means the plumbing broke, so there is no verdict at all; fix the "
+        "setup and run again rather than reporting it as a result."))
 
     @mcp.tool()
     def list_scenarios(scenarios_dir: str | None = None) -> list[dict]:

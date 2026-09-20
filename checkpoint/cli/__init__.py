@@ -92,7 +92,7 @@ class CheckpointCLI(click.Group):
 @click.group(cls=CheckpointCLI, context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(package_name="checkpoint-agents", prog_name="checkpoint")
 def main() -> None:
-    """Checkpoint — prove your agent works before your customers find out.
+    """Checkpoint — prove your agent works before your customers find out it doesn't.
 
     \b
     Run your real agent, unmodified, against stateful copies of the services it

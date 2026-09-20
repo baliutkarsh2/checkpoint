@@ -48,8 +48,8 @@ already works from the command line needs no changes at all.
               help="Write a GitHub Actions workflow that gates every pull request. "
                    "[default: only if the repo already has .github/]")
 @click.option("--skill/--no-skill", default=None,
-              help="Write a Claude Code skill so your coding agent can drive Checkpoint. "
-                   "[default: only if the repo already has .claude/]")
+              help="Write a .claude/skills/ skill file so your coding agent can drive "
+                   "Checkpoint. [default: only if the repo already has .claude/]")
 def init(target_dir, command, task_via, task_arg, model, ci, skill):
     """Set up Checkpoint in this repository.
 
