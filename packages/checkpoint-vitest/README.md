@@ -70,4 +70,4 @@ knowledge of any of this. See the [Checkpoint README](../../README.md).
 
 ## License
 
-MIT
+Apache-2.0

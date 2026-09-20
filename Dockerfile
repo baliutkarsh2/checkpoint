@@ -27,7 +27,7 @@ RUN npm run build && ls -la ../static/
 FROM python:3.12-slim AS runtime
 
 # Build-time labels for image registries.
-LABEL org.opencontainers.image.title="checkpoint"
+LABEL org.opencontainers.image.title="Checkpoint"
 LABEL org.opencontainers.image.description="The Checkpoint dashboard: runs, traces and gate verdicts for AI agents tested against stateful service twins."
 LABEL org.opencontainers.image.source="https://github.com/baliutkarsh2/checkpoint"
 LABEL org.opencontainers.image.licenses="Apache-2.0"

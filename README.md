@@ -319,9 +319,9 @@ checkpoint mcp       serve Checkpoint over MCP
 checkpoint doctor    check this machine
 ```
 
-`checkpoint mcp` puts all of this inside your coding agent: Claude Code or
-Cursor can list scenarios, run one, and gate the build while it writes the very
-agent under test.
+`checkpoint mcp` puts all of this inside your coding agent: any MCP client can
+list scenarios, run one, and gate the build while it writes the very agent under
+test.
 
 ## Documentation
 

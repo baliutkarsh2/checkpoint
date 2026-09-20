@@ -39,7 +39,7 @@ log = logging.getLogger("checkpoint.proxy")
 # backdating notBefore keeps a freshly minted CA valid inside the container.
 _CLOCK_SKEW = timedelta(hours=1)
 _CA_COMMON_NAME = "Checkpoint intercept CA"
-_ORGANIZATION = "checkpoint"
+_ORGANIZATION = "Checkpoint"
 
 
 def normalize_host(host: str) -> str:

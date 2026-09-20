@@ -92,7 +92,12 @@ def test_keep_state_drops_the_seed_so_the_twins_carry_on(project, run_cli, stub_
 def test_the_agent_comes_from_the_project_when_no_flag_overrides_it(project, run_cli, stub_runs):
     run_cli("run")
 
-    assert stub_runs.calls[0].agent.command.endswith("agent.py")
+    # The project's `<python> agent.py` reaches the run as argv, because a script
+    # named in checkpoint.toml is resolved against the file rather than against
+    # whatever directory the agent happens to start in. What matters here is that
+    # it is still the project's agent.
+    argv = stub_runs.calls[0].agent.argv()
+    assert argv[-1] == str(project.agent)
 
 
 def test_command_overrides_the_project_agent(project, run_cli, stub_runs):

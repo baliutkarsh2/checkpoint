@@ -358,14 +358,14 @@ def create_app(
             await watcher.stop()
 
     app = FastAPI(
-        title="checkpoint dashboard",
+        title="Checkpoint dashboard",
         version=_version,
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
         description=(
-            "Local dashboard + JSON API for checkpoint. The SPA frontend lives "
+            "Local dashboard + JSON API for Checkpoint. The SPA frontend lives "
             "at `/` (built bundle in dashboard/static/); this OpenAPI doc covers "
             "the JSON surface that the SPA — and any external script — consumes."
         ),

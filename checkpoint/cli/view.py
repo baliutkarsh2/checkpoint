@@ -32,6 +32,7 @@ or leave --host at 127.0.0.1.
 
 @click.command("view")
 @click.option("--port", type=int, default=4001, show_default=True,
+              envvar="CHECKPOINT_PORT", show_envvar=True,
               help="Port to listen on.")
 @click.option("--host", default="127.0.0.1", show_default=True,
               help="Interface to bind. Off loopback, CHECKPOINT_DASHBOARD_API_KEY is required.")
