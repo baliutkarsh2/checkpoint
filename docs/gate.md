@@ -166,6 +166,16 @@ reported regression.
 
 ## Evidence
 
+Every run the gate makes is recorded, stamped with the id of the gate it
+belongs to — the same id the certificate carries. So a verdict is something you
+can open rather than take on faith:
+
+```bash
+checkpoint gate --json | jq -r .gate_id     # the id this verdict was given
+checkpoint runs list                        # every run behind it
+checkpoint runs show <run-id>               # what one of them actually did
+```
+
 ```bash
 checkpoint gate --certificate build.cert.json    # issue
 checkpoint cert verify build.cert.json           # check the signature and expiry

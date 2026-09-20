@@ -1,58 +1,54 @@
 // Type definitions for @checkpoint/vitest
 
-export type CheckpointServiceId =
-  | "github"
-  | "slack"
-  | "stripe"
-  | "linear"
-  | "supabase"
-  | "discord"
-  | "google-workspace";
-
 export interface CheckpointServiceConfig {
-  /** How the twin should be reached. Currently only `route` is supported. */
-  mode?: "route";
-  /** Named seed to load into the twin after start (e.g. `small-project`). */
+  /** Named dataset to load into the twin as it starts, e.g. `small-project`. */
   seed?: string;
 }
 
 export interface CheckpointServiceHandle {
   /** Base URL of the running twin, e.g. `http://127.0.0.1:53115`. */
   url: string;
-  /** MCP transport URL for the same twin. */
+  /** MCP endpoint for the same twin. */
   mcpUrl: string;
-  /** Bootstrap token to send as `Authorization`. */
+  /** Credential the twin accepts, to send as `Authorization`. */
   token: string;
-  /** Resolved mode (defaults to `route`). */
-  mode: string;
+  /** Variables this service's SDKs read the credential from. */
+  tokenEnv: string[];
+  /** Variable holding the twin's base URL, e.g. `CHECKPOINT_GITHUB_URL`. */
+  urlEnv: string;
   /** Seed that was loaded, if any. */
   seed: string | null;
 }
 
 export interface WithCheckpointConfig {
-  services: Partial<Record<CheckpointServiceId, CheckpointServiceConfig>>;
+  /**
+   * Twins to start, keyed by name. Any twin the installed Checkpoint knows
+   * about works, including one a project declares in its own `checkpoint.toml`
+   * — the list is read from the CLI rather than fixed here.
+   */
+  services: Record<string, CheckpointServiceConfig | null>;
 }
 
 export interface CheckpointSession {
-  /** Per-service handles keyed by service id. */
-  services: Partial<Record<CheckpointServiceId, CheckpointServiceHandle>>;
+  /** Per-twin handles, keyed by name. */
+  services: Record<string, CheckpointServiceHandle>;
   /** Stop every twin this call started. */
   stop(): void;
 }
 
 /**
- * Spin up the requested Checkpoint twins and return per-service URLs + tokens.
+ * Start the requested Checkpoint twins and return their URLs and credentials.
  *
- * Shells out to `checkpoint clone start <id>` under the hood, so the
- * Checkpoint CLI must be on PATH (set `CHECKPOINT_CLI=/path/to/checkpoint`
- * to override).
+ * Runs `checkpoint twins start --json`, so the Checkpoint CLI must be on PATH
+ * (`pip install checkpoint-agents`); set `CHECKPOINT_CLI` to point at another
+ * one.
  */
 export function withCheckpoint(
   config: WithCheckpointConfig
 ): Promise<CheckpointSession>;
 
 /**
- * Call `/_reset` on every twin started in this process to wipe state without
- * restarting the processes.
+ * Reset every twin this process started, wiping their state without paying to
+ * restart them.
  */
 export function resetCheckpointTwins(): Promise<void>;
