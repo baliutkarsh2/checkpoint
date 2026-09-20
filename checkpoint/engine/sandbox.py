@@ -19,7 +19,6 @@ import json
 import os
 import queue
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -144,16 +143,22 @@ class Sandbox:
             self._workdir = None
 
     def _start_twins(self) -> None:
-        self._ports = {name: _free_port() for name in self.twins}
-        if not self._ports:
+        if not self.twins:
+            self._ports = {}
             return
+        # Port 0 for every twin: the host binds, then tells us what it got.
+        # Choosing here instead meant binding a socket, reading its number and
+        # closing it before the host bound the same one -- a window two sandboxes
+        # starting together land in, which `-j 4` made the common case:
+        # [Errno 98], four dead runs, and an INCONCLUSIVE gate.
+        requested = dict.fromkeys(self.twins, 0)
         assert self._workdir is not None
         self._stderr_log = self._workdir / "twins.log"
         log = self._stderr_log.open("w", encoding="utf-8")
         try:
             self._host = subprocess.Popen(
                 [sys.executable, "-m", "checkpoint.twins.host",
-                 *(f"{name}={port}" for name, port in self._ports.items())],
+                 *(f"{name}={port}" for name, port in requested.items())],
                 stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8",
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 **own_process_group(),
@@ -167,6 +172,7 @@ class Sandbox:
                 f"twins ({', '.join(self.twins)}) failed to start"
                 + (f":\n{detail.strip()}" if detail.strip() else " (no output)")
             )
+        self._ports = _ready_ports(ready, self.twins)
 
     def _start_proxy(self) -> None:
         try:
@@ -368,11 +374,26 @@ def _event_dict(event: Any) -> dict:
     return {f: getattr(event, f, None) for f in fields}
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def _ready_ports(line: str, twins: Sequence[str]) -> dict[str, int]:
+    """The ports the twin host reported, validated rather than assumed.
 
+    A port the host never confirmed would be routed to anyway, and every call
+    to that twin would then fail with a connection error that reads like a
+    broken agent rather than a broken sandbox.
+    """
+    try:
+        ready = json.loads(line).get("ready")
+    except (TypeError, ValueError) as e:
+        raise SandboxError(f"twins reported an unreadable ready line: {line!r}") from e
+    if not isinstance(ready, dict):
+        raise SandboxError(f"twins reported no port map: {line!r}")
+    ports: dict[str, int] = {}
+    for name in twins:
+        port = ready.get(name)
+        if not isinstance(port, int) or port <= 0:
+            raise SandboxError(f"the {name} twin reported no usable port ({port!r})")
+        ports[name] = port
+    return ports
 
 def _read_line(proc: subprocess.Popen, timeout: float) -> str | None:
     """Read one stdout line from ``proc`` within ``timeout`` seconds (None on timeout/exit)."""

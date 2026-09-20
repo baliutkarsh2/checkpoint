@@ -34,19 +34,25 @@ def default_concurrency() -> int:
     starts from the same seed — so this is the one place parallelism is free of
     ordering questions.
 
-    **One, for now.** Parallel runs are correct -- the runs of a scenario are
-    independent and tests pin that the verdict cannot depend on the worker
-    count -- but sandbox startup is not yet safe to race: ports are chosen by
-    binding to port 0 and closing the socket before the twin host binds it, so
-    two workers starting at the same moment can be handed the same port. On a
-    Linux runner that surfaced immediately as `[Errno 98] address already in
-    use`, four failed runs, and an INCONCLUSIVE gate.
+    The gate's cost is its whole adoption problem: sixteen runs of twenty
+    scenarios is 320 agent executions, and serially that is hours. The runs of
+    one scenario are independent by construction -- each gets its own sandbox
+    and starts from the same seed -- so this is the one place parallelism is
+    free of ordering questions, and a test pins that the verdict cannot depend
+    on the worker count.
 
-    A default that races is worse than a slow one, so this stays at 1 until the
-    port handover is fixed. ``-j`` and ``[gate] concurrency`` still raise it for
-    anyone who wants the speed and can tolerate the retry.
+    Capped rather than simply ``cpu_count()``: a worker holds a sandbox open
+    (a twin process per twin, plus the proxy, plus the agent), so the ceiling
+    that matters is memory, not cores. Four is what a standard CI runner
+    carries comfortably. ``-j`` and ``[gate] concurrency`` override it.
+
+    This was briefly 1. Raising it the first time exposed a startup race -- the
+    parent chose ports by binding to 0 and closing the socket before the twin
+    host bound them -- which cost a CI run four dead runs and an INCONCLUSIVE
+    verdict. The host picks its own ports now, and
+    tests/engine/test_sandbox_concurrency.py holds that line.
     """
-    return 1
+    return max(1, min(4, os.cpu_count() or 1))
 
 
 # progress(scenario_name, run_index, total_runs, score, complete)

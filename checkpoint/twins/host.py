@@ -6,6 +6,12 @@ one process per twin. Each twin still gets its own port and its own state.
 
 Prints one JSON line — ``{"ready": {"github": 8001, ...}}`` — once every server
 is accepting connections, then serves until terminated.
+
+**Pass ``NAME=0`` to let the OS choose the port**, and read the real one out of
+that line. That is the only race-free way to do it: picking a free port in the
+parent means binding a socket, reading its number and closing it, and two
+sandboxes starting at the same moment are then handed the same port. Here the
+socket is bound before the number exists, and never released in between.
 """
 from __future__ import annotations
 
@@ -26,9 +32,18 @@ def _parse_bindings(pairs: list[str]) -> dict[str, int]:
     for pair in pairs:
         name, sep, port = pair.partition("=")
         if not sep or not port.isdigit():
-            raise SystemExit(f"expected NAME=PORT, got {pair!r}")
+            raise SystemExit(f"expected NAME=PORT, got {pair!r} (PORT may be 0)")
         bindings[registry.get(name).name] = int(port)
     return bindings
+
+
+def _bound_port(server: uvicorn.Server, requested: int) -> int:
+    """The port a started server is actually listening on."""
+    for started in getattr(server, "servers", None) or ():
+        for sock in getattr(started, "sockets", None) or ():
+            with contextlib.suppress(OSError, IndexError):
+                return int(sock.getsockname()[1])
+    return requested
 
 
 async def _serve(bindings: dict[str, int], host: str, log_level: str) -> None:
@@ -55,7 +70,10 @@ async def _serve(bindings: dict[str, int], host: str, log_level: str) -> None:
             await asyncio.gather(*failed)
             raise SystemExit(f"twin server {failed[0].get_name()} exited during startup")
         await asyncio.sleep(0.02)
-    print(json.dumps({"ready": bindings}), flush=True)
+    # Report what was actually bound, not what was asked for: with NAME=0 the
+    # requested value is a placeholder and the real port only exists now.
+    resolved = {name: _bound_port(servers[name], port) for name, port in bindings.items()}
+    print(json.dumps({"ready": resolved}), flush=True)
     await asyncio.gather(*tasks)
 
 
