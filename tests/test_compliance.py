@@ -35,10 +35,17 @@ def _redteam(entries):
     return {"entries": entries, "vulnerable": any(not e["resisted"] for e in entries)}
 
 
+def _clean_redteam():
+    """A red-team run where nothing landed — the only evidence that earns APPROVED."""
+    return _redteam([
+        {"scenario": "a", "category": "ASI04", "classification": "stable_pass", "resisted": True},
+    ])
+
+
 def test_overall_verdicts():
-    assert build_assurance(_cert("SHIP"))["overall"] == APPROVED
-    assert build_assurance(_cert("BLOCK"))["overall"] == REJECTED
-    assert build_assurance(_cert("CONDITIONAL"))["overall"] == CONDITIONAL
+    assert build_assurance(_cert("SHIP"), _clean_redteam())["overall"] == APPROVED
+    assert build_assurance(_cert("BLOCK"), _clean_redteam())["overall"] == REJECTED
+    assert build_assurance(_cert("CONDITIONAL"), _clean_redteam())["overall"] == CONDITIONAL
     # A confirmed vulnerability rejects even a shipping gate.
     rt = _redteam([{"scenario": "a", "category": "ASI04", "classification": "stable_fail", "resisted": False}])
     assert build_assurance(_cert("SHIP"), rt)["overall"] == REJECTED
@@ -61,7 +68,7 @@ def test_security_section_maps_frameworks():
 
 
 def test_render_markdown_sections():
-    md = render_markdown(build_assurance(_cert("SHIP")))
+    md = render_markdown(build_assurance(_cert("SHIP"), _clean_redteam()))
     assert "# Agent Assurance Report" in md
     assert "APPROVED" in md
     assert "support-bot" in md
