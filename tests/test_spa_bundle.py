@@ -32,8 +32,8 @@ STAMP = REPO_ROOT / "checkpoint" / "dashboard" / "static" / ".source-hash"
 # walks them. package-lock.json is in here because a dependency bump changes
 # the output without touching src/.
 INPUTS = ["src", "index.html", "package.json", "package-lock.json",
-          "vite.config.ts", "tsconfig.json", "tsconfig.app.json",
-          "postcss.config.js", "tailwind.config.js"]
+          "vite.config.ts", "tsconfig.json", "tsconfig.node.json",
+          "postcss.config.js"]
 
 REBUILD = "cd checkpoint/dashboard/web && npm ci && npm run build"
 
