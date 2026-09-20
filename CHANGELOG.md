@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `checkpoint.toml`'s `[twins]`, and a public API on the package itself:
   `from checkpoint import Agent, RunOptions, Sandbox, parse_file, run_scenario`.
   Names resolve on first use, so `import checkpoint` stays cheap.
+- **A reference for `checkpoint.toml`** (`docs/configuration.md`). The file is
+  the one place a setting can live, and nothing listed what it can contain —
+  `[gate]` and `[judge]` were named in passing and never enumerated. Since the
+  loader rejects unknown keys, a reader could neither look a setting up nor
+  guess it: `[agent] task_env`, `[judge] samples`, `[gate] pass_threshold`,
+  `allow_conditional` and `regression_drop` were all reachable and unfindable. A
+  test holds the page to the loader's schema in both directions.
 - **The suite runs on macOS and Windows in CI**, not only Linux. Checkpoint
   starts processes, binds sockets and kills process trees, and each platform
   does all three differently; testing one of them was testing none.
