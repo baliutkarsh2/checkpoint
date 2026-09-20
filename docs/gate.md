@@ -169,11 +169,19 @@ reported regression.
 ```bash
 checkpoint gate --certificate build.cert.json    # issue
 checkpoint cert verify build.cert.json           # check the signature and expiry
-checkpoint report --certificate build.cert.json --out assurance.md
+checkpoint redteam --json > redteam.json         # the security half
+checkpoint report --certificate build.cert.json --redteam redteam.json --out assurance.md
 ```
 
 There is no `cert issue`: a certificate is issued by the run that earned it, so
 none can exist without the evidence behind it. `checkpoint report` assembles the
 verdict, the statistics, the adversarial results and the cross-references a
-reviewer asks for into one document, and grades a certificate whose signature
-does not verify as REJECTED however good its numbers look.
+reviewer asks for into one document.
+
+Its grade is the word a reader quotes without reading the rest of the page, so
+it is deliberately hard to earn. A certificate whose signature does not verify
+is REJECTED however good its numbers look. So is a gate verdict that never said
+ship. And a report built **without** a red-team run is CONDITIONAL, not
+APPROVED, with the security section saying plainly that nobody looked —
+otherwise "we never tested that" prints identically to "we tested it and it
+held".

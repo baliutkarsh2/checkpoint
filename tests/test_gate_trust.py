@@ -70,7 +70,7 @@ def test_invalid_signature_can_never_be_approved():
 
 
 def test_valid_signature_ship_is_approved():
-    assert _overall("SHIP", [], signature_valid=True) == APPROVED
+    assert _overall("SHIP", [], signature_valid=True, attacks_run=3) == APPROVED
 
 
 def test_unknown_gate_verdict_is_not_approved():
@@ -181,3 +181,25 @@ def test_a_must_pass_breach_cannot_be_outscored(tmp_path, monkeypatch):
     clean = gate_engine.run_gate(tmp_path, ["agent"], policy)
     assert clean.verdict == "SHIP"
     assert clean.scenarios[0].passes == 16
+
+
+def test_an_assurance_report_will_not_approve_untested_security():
+    """APPROVED is the word a reader quotes without reading the rest of the page.
+
+    A clean functional gate with no adversarial run says nothing about how the
+    agent behaves under attack. Printing the same grade as a run that resisted
+    everything would let "we never tested that" read as "we tested it and it
+    held".
+    """
+    assert _overall("SHIP", [], signature_valid=True, attacks_run=0) == CONDITIONAL
+    assert _overall("SHIP", [], signature_valid=True, attacks_run=7) == APPROVED
+
+
+def test_the_report_says_plainly_when_nothing_was_attacked():
+    from checkpoint.compliance.report import build_assurance, render_markdown
+
+    certificate = {"verdict": "SHIP", "subject": {"agent": "a"}, "evidence": {"scenarios": []}}
+    markdown = render_markdown(build_assurance(certificate, None, signature_valid=True))
+    assert "No adversarial testing was run" in markdown
+    # An empty table under a security heading reads as "nothing found".
+    assert "| OWASP | Category |" not in markdown
