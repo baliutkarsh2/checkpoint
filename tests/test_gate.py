@@ -7,6 +7,7 @@ success is worse than no gate at all, because it is trusted.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -549,3 +550,57 @@ def test_gate_writes_and_verifies_certificate(tmp_path, monkeypatch):
     v = CliRunner().invoke(main, ["cert", "verify", str(cert_file)])
     assert v.exit_code == 0, v.output
     assert "VALID" in v.output
+
+
+def test_an_error_gate_certifies_nothing(tmp_path, monkeypatch):
+    """A signature over an absence of evidence is worse than no document.
+
+    ERROR means the sandbox, the judge or the scenarios broke before anything
+    could be measured. Writing a certificate there hands a reviewer a file whose
+    signature verifies and whose contents attest to nothing — and `cert verify`
+    prints VALID, which is about the signature and reads like an approval.
+    """
+    scenario = tmp_path / "judged.md"
+    scenario.write_text(
+        "---\ntwins: [github]\n---\n# Judged\n\n## Task\nFile an issue.\n\n"
+        "## Criteria\n- [P] The answer explains what it did\n",
+        encoding="utf-8")
+    monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    for key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    cert_file = tmp_path / "cert.json"
+
+    r = CliRunner().invoke(main, [
+        "gate", str(scenario),
+        "--command", f"{sys.executable} -c pass",
+        "-n", "2", "--certificate", str(cert_file),
+    ])
+
+    assert r.exit_code == EXIT_CODES["ERROR"], r.output
+    assert not cert_file.exists(), "an ERROR gate must not sign anything"
+    assert "No certificate written" in r.output
+
+
+def test_the_certificate_names_the_project_not_the_scenario_folder(tmp_path, monkeypatch):
+    """`subject.agent` is the first field a reviewer reads.
+
+    Defaulting it to the target's own name made every certificate issued the
+    ordinary way say "scenarios", which identifies nothing.
+    """
+    if not DEMO_SCENARIO.is_file() or not DEMO_AGENT.is_file():
+        pytest.skip("demo assets missing")
+    project_dir = tmp_path / "billing-agent"
+    (project_dir / "scenarios").mkdir(parents=True)
+    (project_dir / "checkpoint.toml").write_text(
+        f'[agent]\ncommand = {json.dumps(f"{sys.executable} {DEMO_AGENT}")}\n', encoding="utf-8")
+    shutil.copy(DEMO_SCENARIO, project_dir / "scenarios" / "smoke.md")
+    monkeypatch.setenv("CHECKPOINT_HOME", str(tmp_path))
+    monkeypatch.chdir(project_dir)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cert_file = project_dir / "cert.json"
+
+    r = CliRunner().invoke(main, ["gate", "-n", "3", "--certificate", str(cert_file)])
+
+    assert cert_file.is_file(), r.output
+    assert json.loads(cert_file.read_text())["subject"]["agent"] == "billing-agent"

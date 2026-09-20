@@ -145,9 +145,20 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
 
     certificate = None
     if cert_path:
-        certificate = _write_certificate(
-            result, cert_path, agent_name=name or root.stem,
-            command=agent.command, model=options.judge_model, gate_id=gate_id)
+        if result.verdict == "ERROR":
+            # A certificate is evidence, and an ERROR gate produced none: the
+            # sandbox, the judge or the scenarios broke before anything could be
+            # measured. Signing that would hand a reviewer a document whose
+            # signature verifies and whose contents attest to nothing, which is
+            # worse than handing them nothing at all.
+            console.print(
+                "[yellow]No certificate written:[/yellow] the gate could not reach a "
+                "verdict, so there is no evidence to certify. Fix the errors above "
+                "and run it again.")
+        else:
+            certificate = _write_certificate(
+                result, cert_path, agent_name=name or _subject_name(proj, root),
+                command=agent.command, model=options.judge_model, gate_id=gate_id)
 
     record = _as_dict(result, policy, updated, certificate)
     record["gate_id"] = _record_verdict(record, target=str(root), gate_id=gate_id)
@@ -338,6 +349,17 @@ def _as_dict(result, policy, updated, certificate) -> dict:
         "baseline_updated": updated,
         "certificate": certificate,
     }
+
+
+def _subject_name(proj, root: Path) -> str:
+    """What to call the agent on the certificate when nobody passed --name.
+
+    The target is usually a directory of scenarios, so its own name says
+    "scenarios" — which is the first field a reviewer reads and tells them
+    nothing about what was tested. The project the gate ran in is a far better
+    guess, and `--name` is there for when it is not.
+    """
+    return proj.root.name or root.stem
 
 
 def _write_certificate(result, path, *, agent_name, command, model, gate_id) -> str:
