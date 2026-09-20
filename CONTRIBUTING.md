@@ -80,7 +80,10 @@ checkpoint view                                           # serves the fresh bun
 - **Scenarios** are markdown under `scenarios/`: front matter, `## Task`,
   `## Criteria`. Run `checkpoint check` before submitting — it prints the
   assertion behind every criterion, which is where a criterion that an idle
-  agent would pass gives itself away.
+  agent would pass gives itself away. The adversarial pack is different: it
+  ships *inside* the package at `checkpoint/redteam/pack/`, because
+  `checkpoint redteam` runs it for people who installed Checkpoint rather than
+  cloned it.
 
 ## Ground rules
 
@@ -89,9 +92,23 @@ checkpoint view                                           # serves the fresh bun
   tripwire (`tests/test_no_tracked_secrets.py`) and the gitleaks CI job enforce this.
 - Line endings are normalized by `.gitattributes` (shell scripts stay LF).
 - Keep the README honest. `tests/test_readme.py` checks that every command it
-  names exists and that retired vocabulary stays retired; it cannot check that a
-  claim is true, so that part is on you. Document what ships, and label a
-  roadmap item as one.
+  names exists and that retired vocabulary stays retired; `tests/test_docs.py`
+  does the same for every page under `docs/`. Neither can check that a claim is
+  true, so that part is on you. Document what ships, and label a roadmap item
+  as one.
+- **If you add a setting, add the thing that reads it — and the line that
+  documents it.** The bug this codebase produces most is a setting that parses,
+  validates, and does nothing: `[judge] samples`, a scenario's `judge-model`,
+  `goal`, `seed_file` were all accepted and read by nobody, so writing one was
+  silent. `tests/test_project.py` and `tests/test_scenario_authoring.py` now ask
+  of every key whether anything consumes it, and `tests/test_docs.py` holds
+  `docs/configuration.md` to the loader's schema in both directions.
+- **When two places have to agree, write the test that says so.** Most of what
+  has gone wrong here is a pair holding different beliefs with nothing checking:
+  the engine and the dashboard on a trace key, the docs and the wheel on where
+  the red-team pack lives, branch protection and a job name, the Docker image
+  and CI on a Node major. The useful test is often not "does this function
+  work" but "do these two still agree".
 - Open an issue before a large change so we can align on approach.
 
 ## Reporting security issues
