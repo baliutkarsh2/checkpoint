@@ -410,14 +410,13 @@ def _by_id(run_id: str) -> dict | None:
     """One record, from the index when it has it, else from its own file."""
     store = _store()
     if store is not None:
-        try:
-            record = store.get_run(run_id)
-            if record is not None:
-                return record
-        except Exception:  # noqa: BLE001 — the files below are the durable copy
-            pass
-        finally:
-            store.close()
+        with store:
+            try:
+                record = store.get_run(run_id)
+                if record is not None:
+                    return record
+            except Exception:  # noqa: BLE001 — the files below are the durable copy
+                pass
 
     path = RUNS_DIR / f"{run_id}.json"
     if not path.exists():
@@ -438,12 +437,11 @@ def _recent(limit: int, scenario: str | None) -> list[dict]:
     """The newest records, through the index when there is a working one."""
     store = _store()
     if store is not None:
-        try:
-            return _from_store(store, limit, scenario)
-        except Exception:  # noqa: BLE001 — a broken index must not hide the runs
-            pass
-        finally:
-            store.close()
+        with store:
+            try:
+                return _from_store(store, limit, scenario)
+            except Exception:  # noqa: BLE001 — a broken index must not hide the runs
+                pass
     return _from_files(limit, scenario)
 
 

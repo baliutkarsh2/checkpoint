@@ -307,8 +307,13 @@ def test_api_config_is_read_only(tmp_path):
     (tmp_path / "checkpoint.toml").write_text('[agent]\ncommand = "python my_agent.py"\n')
     c = TestClient(create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, project_dir=tmp_path))
 
-    assert c.put("/api/config", json={"agent": {"command": "rm -rf /"}}).status_code == 405
-    assert c.delete("/api/config").status_code == 405
+    # The requests are made outside the assert: under `python -O` an assert is
+    # removed entirely, and a test whose only HTTP call lives inside one stops
+    # exercising the endpoint it is named after.
+    put = c.put("/api/config", json={"agent": {"command": "rm -rf /"}})
+    delete = c.delete("/api/config")
+    assert put.status_code == 405
+    assert delete.status_code == 405
     assert (tmp_path / "checkpoint.toml").read_text() == '[agent]\ncommand = "python my_agent.py"\n'
 
 
