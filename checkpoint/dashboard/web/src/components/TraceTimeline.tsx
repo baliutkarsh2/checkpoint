@@ -27,7 +27,7 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
   const twins = useMemo(
     () =>
       Array.from(
-        new Set(events.map((e) => e._clone || (e as { clone?: string }).clone).filter(Boolean) as string[]),
+        new Set(events.map((e) => e.twin || e._clone || (e as { clone?: string }).clone).filter(Boolean) as string[]),
       ),
     [events],
   );
@@ -41,7 +41,7 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
       .map((e, i) => ({ e, i }))
       .filter(({ e }) => {
         if (filter.method && e.method !== filter.method) return false;
-        const twin = e._clone || (e as { clone?: string }).clone || "";
+        const twin = e.twin || e._clone || (e as { clone?: string }).clone || "";
         if (filter.twin && twin !== filter.twin) return false;
         if (filter.status) {
           const klass = String(e.status)[0];
@@ -134,7 +134,7 @@ export default function TraceTimeline({ events }: TraceTimelineProps) {
                 <span className="truncate">{e.path || "—"}</span>
                 <span style={{ color: STATUS_COLOR(e.status) }}>{e.status}</span>
                 <span className="text-ink-3 dark:text-paper-3 truncate">
-                  {e._clone || (e as { clone?: string }).clone || "—"}
+                  {e.twin || e._clone || (e as { clone?: string }).clone || "—"}
                 </span>
               </button>
               {open && <TraceDetail event={e} />}

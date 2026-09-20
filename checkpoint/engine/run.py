@@ -210,10 +210,10 @@ def run_state(sandbox_state: Mapping[str, dict]) -> dict:
     workspace would suddenly have two entries and be rendered in the nested
     multi-clone shape — silently changing what every existing report reads.
     """
-    from checkpoint.runner import _merge_state_for_clones
+    from checkpoint.runner import merge_state_for_twins
 
     twin_state = {k: v for k, v in sandbox_state.items() if k != WORKSPACE}
-    state = _merge_state_for_clones(twin_state) if twin_state else {}
+    state = merge_state_for_twins(twin_state) if twin_state else {}
     if WORKSPACE in sandbox_state:
         state[WORKSPACE] = sandbox_state[WORKSPACE]
     return state

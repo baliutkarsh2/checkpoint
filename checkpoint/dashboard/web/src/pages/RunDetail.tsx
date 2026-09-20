@@ -39,7 +39,7 @@ function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
   const apiCalls = trace.map((ev, index) => ({
     ...ev,
     index,
-    clone: ev._clone || (ev as { clone?: string }).clone || null,
+    twin: ev.twin || ev._clone || (ev as { clone?: string }).clone || null,
     raw: ev,
   }));
   const judgeCriteria = criteria.map((c, index) => ({
@@ -92,7 +92,7 @@ function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
       label: `${call.method || "UNKNOWN"} ${call.path || ""}`,
       timestamp: call.timestamp || null,
       status: typeof call.status === "number" && call.status >= 400 ? "error" : "ok",
-      detail: `${call.status || "-"} ${call.clone || ""}`.trim(),
+      detail: `${call.status || "-"} ${call.twin || ""}`.trim(),
       ref: { section: "api_calls", index: call.index },
     })),
     ...judgeCriteria.map((c) => ({

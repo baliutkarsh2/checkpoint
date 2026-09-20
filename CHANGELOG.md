@@ -110,6 +110,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **The dashboard's Twin column was empty for every run.** A trace event says
+  which twin served the call; the engine writes that under `twin`, and records
+  made before the rename carry `_clone`. The dashboard and the telemetry report
+  read only the old names, so the field they were built to show was blank on
+  every run the current engine produced — while `checkpoint runs trace`, which
+  reads the new name, printed it correctly. Both now go through one function
+  that knows every name the field has had. The normalized call in
+  `/api/runs/{id}/telemetry` renames its `clone` key to `twin` to match.
+- **Deleted three dead symbols in `checkpoint/runner.py`**, one of which was the
+  function that wrote the `_clone` key nothing else expected — it had no callers
+  at all. `_merge_state_for_clones` is `merge_state_for_twins`, the last piece of
+  the old vocabulary in the engine.
 - **Asking whether a twin was running could have stopped it.** `_alive` probed
   with `os.kill(pid, 0)`, which is the POSIX way to ask and on Windows is not a
   question: `os.kill` calls `TerminateProcess` for any signal but CTRL_C_EVENT

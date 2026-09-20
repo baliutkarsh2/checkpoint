@@ -53,7 +53,8 @@ export interface TraceEvent {
   method: string;
   path: string;
   status: number;
-  /** Which twin served the call. The wire name predates the twin rename. */
+  /** Which twin served the call. Records made before the rename say _clone. */
+  twin?: string | null;
   _clone?: string;
   request_body?: unknown;
   response_body?: unknown;
@@ -119,7 +120,7 @@ export interface TelemetryReport {
     summary?: string | null;
     raw?: unknown;
   }[];
-  api_calls: (TraceEvent & { index: number; clone?: string | null; raw?: unknown })[];
+  api_calls: (TraceEvent & { index: number; twin?: string | null; raw?: unknown })[];
   judge: {
     model: string | null;
     model_source: string | null;
