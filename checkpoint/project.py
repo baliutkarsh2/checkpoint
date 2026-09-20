@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 import sys
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -119,7 +119,7 @@ class Project:
         if not isinstance(env, Mapping):
             raise ConfigError("[agent] env must be a table of name = \"value\" pairs")
         return Agent(
-            command=spec.get("command") or (),
+            command=self._resolve_command(spec.get("command") or ()),
             url=spec.get("url"),
             task_via=spec.get("task_via", "env"),
             task_env=spec.get("task_env", "CHECKPOINT_TASK"),
@@ -128,6 +128,28 @@ class Project:
             env={str(k): str(v) for k, v in env.items()},
             name=spec.get("name", ""),
         )
+
+    def _resolve_command(self, command: str | Sequence[str]) -> str | list[str]:
+        """Make file paths in the command absolute, relative to checkpoint.toml.
+
+        Every other path in this file is relative to the file itself, and the
+        command has to be too — because the directory the agent runs *in* is not
+        always the directory its code lives in. A scenario with a ``workspace:``
+        starts the agent inside a throwaway copy of a fixture tree, and there
+        ``python agent.py`` finds no ``agent.py``: the script is back in the
+        project. Resolving it here means the same line works either way.
+
+        Only tokens that really name a file are touched, so a flag, a literal
+        argument or a program found on PATH is passed through untouched.
+        """
+        if not command:
+            return command if isinstance(command, str) else list(command)
+        from .engine import split_command
+
+        argv = split_command(command) if isinstance(command, str) else list(command)
+        resolved = [str((self.root / token).resolve()) if (self.root / token).is_file()
+                    else token for token in argv]
+        return resolved if resolved != argv else command
 
     def judge_model(self, flag: str | None = None) -> str:
         return (flag or os.environ.get("CHECKPOINT_JUDGE_MODEL")
