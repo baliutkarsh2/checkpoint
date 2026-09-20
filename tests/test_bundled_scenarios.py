@@ -104,8 +104,14 @@ SCRIPTED: dict[str, str] = {
 
 # --- scoring without a model --------------------------------------------------
 
-def _pass_everything(criteria: Sequence[Any], world: World, *, model: str = "") -> list[Verdict]:
-    """A judge that passes every judged criterion (see the module docstring)."""
+def _pass_everything(criteria: Sequence[Any], world: World, *,
+                     model: str = "", samples: int = 1) -> list[Verdict]:
+    """A judge that passes every judged criterion (see the module docstring).
+
+    `samples` is part of the judge protocol — the evaluator passes how many
+    times to ask — so a stub has to accept it or it stops standing in for the
+    real thing.
+    """
     return [Verdict(id=c.id, passed=True, reasoning="stub judge: passed") for c in criteria]
 
 
