@@ -128,7 +128,8 @@ def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
     return out
 
 
-def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
+def _evaluate(scenario: Scenario, result: RunResult, judge_model: str,
+              *, samples: int = 1) -> None:
     """Score ``result`` against ``scenario``'s criteria (see :mod:`checkpoint.eval`)."""
     from .eval import Schema, build_world
     from .eval.evaluate import evaluate_criteria
@@ -144,7 +145,8 @@ def _evaluate(scenario: Scenario, result: RunResult, judge_model: str) -> None:
         duration=result.duration_s,
     )
     schema = Schema.from_views(result.views or result.seed_views)
-    evaluation = evaluate_criteria(scenario, world, schema, model=judge_model)
+    evaluation = evaluate_criteria(scenario, world, schema, model=judge_model,
+                                   samples=samples)
     result.criteria = [
         CriterionResult(
             text=o.text, kind=o.kind, passed=o.passed, reasoning=o.reasoning,

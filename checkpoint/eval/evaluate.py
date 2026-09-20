@@ -68,6 +68,7 @@ def evaluate_criteria(
     schema: Schema,
     *,
     model: str,
+    samples: int = 1,
     cache: AssertionCache | None = None,
     judge: JudgeFn | None = None,
     compile_fn: Callable[..., Any] | None = None,
@@ -101,7 +102,8 @@ def evaluate_criteria(
         ))
 
     if deferred:
-        _judge_deferred(evaluation, deferred, world, model=model, judge=judge)
+        _judge_deferred(evaluation, deferred, world, model=model,
+                        samples=samples, judge=judge)
     return evaluation
 
 
@@ -138,6 +140,7 @@ def _judge_deferred(
     world: World,
     *,
     model: str,
+    samples: int,
     judge: JudgeFn | None,
 ) -> None:
     criteria = [_SimpleCriterion(f"c{index + 1}", c.text) for index, c in deferred]
@@ -154,7 +157,7 @@ def _judge_deferred(
         judge = default_judge
 
     try:
-        verdicts = judge(criteria, world, model=model)
+        verdicts = judge(criteria, world, model=model, samples=samples)
     except Exception as e:  # noqa: BLE001 — a judge outage is an error, not a failed agent
         evaluation.errors.append(f"judge failed: {e}")
         for index, _ in deferred:

@@ -200,3 +200,56 @@ def test_a_script_in_the_command_is_found_from_anywhere(tmp_path):
 def test_a_command_with_no_file_in_it_is_left_alone(tmp_path):
     write(tmp_path, '[agent]\ncommand = "my-agent --serve"\n')
     assert Project.load(tmp_path).build_agent().command == "my-agent --serve"
+
+
+def test_judge_samples_reaches_the_judge(tmp_path):
+    """A setting the file accepts and nothing reads is the bug this file prevents.
+
+    `[judge] samples` was in the allowed set, so writing it raised no error, and
+    the judge has supported multi-sampling all along — but nothing ever carried
+    the value from the file to the call. Setting it did nothing, silently, which
+    is precisely what `checkpoint.toml` exists to make impossible.
+    """
+    from checkpoint.cli._shared import resolve_options
+
+    write(tmp_path, "[judge]\nsamples = 3\n")
+    project = Project.load(tmp_path)
+
+    assert project.judge_samples() == 3
+    assert resolve_options(project).judge_samples == 3
+
+
+def test_judge_samples_defaults_to_one_and_a_flag_still_wins(tmp_path):
+    write(tmp_path, '[agent]\ncommand = "x"\n')
+    project = Project.load(tmp_path)
+
+    assert project.judge_samples() == 1
+    assert project.judge_samples(5) == 5
+
+
+def test_every_setting_the_file_accepts_is_carried_somewhere(tmp_path):
+    """The general form of the bug above: accepted, and then dropped.
+
+    Each key is written on its own, loaded, and read back through the accessor
+    that is supposed to surface it. A key with no accessor at all is the shape
+    that hides — it parses, it validates, and nothing ever asks for it.
+    """
+    from checkpoint.project import _AGENT_KEYS, _GATE_KEYS, _JUDGE_KEYS
+
+    write(tmp_path, "[judge]\nsamples = 7\nmodel = \"m\"\n")
+    project = Project.load(tmp_path)
+    assert project.judge_model() == "m" and project.judge_samples() == 7
+
+    write(tmp_path, "[gate]\n" + "\n".join(f"{k} = 1" for k in sorted(_GATE_KEYS)
+                                           if k not in ("strict", "allow_conditional")))
+    project = Project.load(tmp_path)
+    for key in sorted(_GATE_KEYS - {"strict", "allow_conditional"}):
+        assert project.gate_setting(key, None, "unset") == 1, f"[gate] {key} was dropped"
+
+    write(tmp_path, '[sandbox]\negress = "none"\nintercept = false\nallow_hosts = ["a"]\n')
+    project = Project.load(tmp_path)
+    for key, expected in (("egress", "none"), ("intercept", False), ("allow_hosts", ["a"])):
+        assert project.sandbox_setting(key, None, "unset") == expected, f"[sandbox] {key} dropped"
+
+    # [agent] is surfaced through build_agent rather than a setting accessor.
+    assert _AGENT_KEYS and _JUDGE_KEYS  # named so a new key here fails review, not silently
