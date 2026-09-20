@@ -25,8 +25,11 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      # Until the first PyPI release, install from git — `pip install
+      # checkpoint-agents` resolves to nothing today and this workflow has to
+      # work the moment `checkpoint init --ci` writes it.
       - name: Install Checkpoint
-        run: pip install checkpoint-agents
+        run: pip install git+https://github.com/baliutkarsh2/checkpoint
 
       # Pass rates are remembered in .checkpoint/baselines.json and only a SHIP
       # updates them, which is what turns "this used to pass" into a reported
