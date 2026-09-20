@@ -1,7 +1,7 @@
 # Production image for `checkpoint view` — the dashboard + JSON API.
 #
 # Two-stage build:
-#   1. node:20 builds the SPA bundle from checkpoint/dashboard/web/.
+#   1. node:24 builds the SPA bundle from checkpoint/dashboard/web/.
 #      We intentionally rebuild from source rather than trust the committed
 #      bundle so deploys can't accidentally ship stale UI.
 #   2. python:3.12-slim installs the wheel + the freshly-built bundle
@@ -13,10 +13,12 @@
 # Cloud:    flyctl deploy          (see fly.toml)
 
 # ---------- Stage 1: build the SPA ----------
-# Node 22 to match the version CI builds the SPA with. Vite 8 (rolldown)
-# requires ^20.19 || >=22.12, so an older major silently drifts from what is
-# actually tested.
-FROM node:22-alpine AS web-builder
+# Node 24 — the current Active LTS, the version CI builds the SPA with, and the
+# one the committed bundle was built on. Three places have to agree about this,
+# and a test asserts they do: an image that builds the UI on a different major
+# than CI verifies is shipping something nobody tested. Vite 8 (rolldown) needs
+# ^20.19 || >=22.12, so the floor is real as well as the agreement.
+FROM node:24-alpine AS web-builder
 WORKDIR /web
 COPY checkpoint/dashboard/web/package.json checkpoint/dashboard/web/package-lock.json ./
 RUN npm ci
