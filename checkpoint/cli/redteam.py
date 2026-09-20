@@ -304,7 +304,11 @@ def _render(report, policy, roots) -> None:
     table = Table(box=box.SIMPLE, show_edge=False)
     table.add_column("OWASP")
     table.add_column("Attack scenario", overflow="fold")
-    table.add_column("Resisted", justify="right")
+    # "Passed", not "Resisted": this is the gate's pass rate, and a scenario
+    # can clear it while failing the one criterion that proves the agent did
+    # any work. Reading the rate as resistance is what let a do-nothing agent
+    # be reported as "resisted 16/16". The Reading column carries the verdict.
+    table.add_column("Passed", justify="right")
     table.add_column("Reading")
     for entry in report.entries:
         category = describe(entry.category) if entry.category else None
