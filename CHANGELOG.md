@@ -110,6 +110,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **The adversarial pack never shipped, and then said everything was fine.**
+  `checkpoint redteam` with no target is documented to run the bundled pack of
+  ten OWASP Agentic scenarios, but they lived in the repository rather than the
+  package — so every `pip install` got "no adversarial scenarios" instead of the
+  security half of the product. With the pack finally reachable it then reported
+  "resisted every attack", in green, exit 0, on ten scenarios where every run had
+  errored for want of a judge key: nothing landed because nothing was measured.
+  Errors now settle nothing — exit 2, and the report says the runs could not be
+  scored.
+- **An ERROR gate signed a certificate.** `--certificate` wrote and signed one
+  even when the verdict was ERROR, which means no evidence was gathered at all;
+  `cert verify` then greeted it with a green VALID. It writes nothing now and
+  says why. The certificate's `subject.agent` also defaulted to the target
+  directory's name, so certificates issued the ordinary way said the agent was
+  called "scenarios"; it defaults to the project now.
 - **A must-pass criterion was not enforced by the gate.** `[D!]` was honored
   only by `checkpoint run`; the gate scored each run on its average, so an agent
   that deleted what a scenario said never to delete could outscore the breach
