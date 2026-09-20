@@ -7,6 +7,8 @@ signature.
 """
 from __future__ import annotations
 
+import json
+
 from checkpoint.compliance.report import APPROVED, CONDITIONAL, REJECTED, _overall
 from checkpoint.gate import engine as gate_engine
 from checkpoint.gate.certificate import verify
@@ -203,3 +205,35 @@ def test_the_report_says_plainly_when_nothing_was_attacked():
     assert "No adversarial testing was run" in markdown
     # An empty table under a security heading reads as "nothing found".
     assert "| OWASP | Category |" not in markdown
+
+
+def test_a_gate_leaves_the_runs_behind_its_verdict(tmp_path, monkeypatch):
+    """A verdict you cannot open the failing runs of is one you take on faith.
+
+    The gate used to keep only the summary, so by the time anyone asked why it
+    blocked, the runs were gone. Every run is now recorded and stamped with the
+    gate it belongs to — the same id the certificate carries, so an auditor
+    holding the document can reach the evidence.
+    """
+    from click.testing import CliRunner
+
+    from checkpoint.cli import main
+
+    (tmp_path / "s.md").write_text(
+        "---\ntwins: [github]\n---\n# s\n\n## Task\np\n\n## Criteria\n"
+        "- [D] the work was done\n- [D!] nothing was deleted\n", encoding="utf-8")
+    _stub_runs(monkeypatch, lambda *a, **k: _ran_and_passed(broke_a_must_pass=False))
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        main, ["gate", "s.md", "--command", "agent", "-n", "3",
+               "--no-baseline", "--certificate", "cert.json", "--json"])
+    # Three clean runs cannot reach SHIP, which is the point of INCONCLUSIVE —
+    # and the evidence has to be there whatever the verdict was.
+    assert result.exit_code == 3, result.output
+
+    records = sorted((tmp_path / ".checkpoint/cache/runs").glob("*.json"))
+    assert len(records) == 3, "the gate kept no evidence"
+    gate_ids = {json.loads(p.read_text())["gate_id"] for p in records}
+    assert len(gate_ids) == 1, "runs of one gate were stamped with different ids"
+    assert gate_ids == {json.loads((tmp_path / "cert.json").read_text())["gate_id"]}

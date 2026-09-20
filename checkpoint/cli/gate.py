@@ -121,6 +121,11 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
     except ValueError as e:
         raise click.UsageError(str(e)) from e
 
+    # One id for the whole gate, minted before anything runs, so every run
+    # record it produces and the certificate it may issue all point at each
+    # other. A verdict you cannot open the failing runs of is a verdict you
+    # have to take on faith.
+    gate_id = uuid.uuid4().hex[:16]
     baselines = None if no_baseline else baseline.load(root)
     result = run_gate(
         root, None, policy,
@@ -128,6 +133,7 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
         progress=None if as_json else _progress(policy.pass_threshold),
         baselines=baselines,
         concurrency=int(proj.gate_setting("concurrency", concurrency, 1)),
+        on_result=_recorder(gate_id, options.judge_model),
     )
 
     updated: list[str] = []
@@ -137,11 +143,11 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
         # writes its own degraded rate, and the next identical run sees no drop.
         updated = baseline.save(root, result.scenarios)
 
-    certificate = gate_id = None
+    certificate = None
     if cert_path:
-        certificate, gate_id = _write_certificate(
+        certificate = _write_certificate(
             result, cert_path, agent_name=name or root.stem,
-            command=agent.command, model=options.judge_model)
+            command=agent.command, model=options.judge_model, gate_id=gate_id)
 
     record = _as_dict(result, policy, updated, certificate)
     record["gate_id"] = _record_verdict(record, target=str(root), gate_id=gate_id)
@@ -153,12 +159,52 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
     sys.exit(result.exit_code)
 
 
+def _recorder(gate_id: str, judge_model: str):
+    """Persist every run the gate makes, stamped with the gate it belongs to.
+
+    A gate that kept only its verdict left nothing to look at when it blocked:
+    the sixteen runs behind the number were gone by the time anyone asked why.
+    Best effort per run — a record that cannot be written is not worth failing
+    a verdict over.
+    """
+    from checkpoint.run_record import build_record, write_record
+    from checkpoint.scenario import parse_file
+
+    def keep(path: Path, index: int, result) -> None:
+        try:
+            scenario = parse_file(path)
+            entry = build_record(
+                scenario_name=scenario.title or path.stem,
+                scenario_path=str(path),
+                satisfaction=result.score,
+                criteria=result.criteria,
+                evaluator_model=judge_model,
+                evaluator_model_source="gate",
+                final_answer=result.final_answer,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                trace=result.trace,
+                state=result.state,
+                error=result.error,
+                exit_code=result.exit_code,
+                run_id=result.run_id or None,
+                agent={"name": result.agent or "agent", "cmd": result.agent},
+                agent_trace=result.agent_trace or None,
+                duration_ms=round(result.duration_s * 1000, 1),
+                warnings=result.warnings,
+                egress=result.egress,
+                twins=result.twins,
+                gate_id=gate_id,
+            )
+            write_record(entry, pointer=False)
+        except Exception:  # noqa: BLE001 — evidence is a bonus, the verdict is not
+            pass
+
+    return keep
+
+
 def _record_verdict(record: dict, *, target: str, gate_id: str | None = None) -> str | None:
     """Keep the verdict, so the dashboard can show what CI decided and why.
-
-    When a certificate was issued, its id is reused here: a signed artifact and
-    the stored verdict it came from should be findable by the same id, or an
-    auditor holding one cannot reach the other.
 
     Best effort: the verdict is already on screen and in the exit code, so a
     store that will not open is a dim note, never a different answer.
@@ -285,17 +331,16 @@ def _as_dict(result, policy, updated, certificate) -> dict:
     }
 
 
-def _write_certificate(result, path, *, agent_name, command, model) -> tuple[str, str | None]:
-    """Write the signed certificate. Returns its path and the gate id it carries."""
+def _write_certificate(result, path, *, agent_name, command, model, gate_id) -> str:
+    """Write the signed certificate for this gate run."""
     from checkpoint.gate.certificate import LocalSigner, build_certificate
 
     body = build_certificate(
         result, agent=agent_name,
         command=command,
-        commit_sha=_commit_sha(), model=model)
-    signed = LocalSigner().sign(body)
-    Path(path).write_text(json.dumps(signed, indent=2), encoding="utf-8")
-    return str(path), signed.get("gate_id")
+        commit_sha=_commit_sha(), model=model, gate_id=gate_id)
+    Path(path).write_text(json.dumps(LocalSigner().sign(body), indent=2), encoding="utf-8")
+    return str(path)
 
 
 def _commit_sha() -> str | None:

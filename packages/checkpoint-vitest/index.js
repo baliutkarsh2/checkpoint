@@ -1,40 +1,31 @@
-// @checkpoint/vitest — thin wrapper around the `checkpoint` CLI.
+// @checkpoint/vitest — start Checkpoint's service twins from a JavaScript test.
 //
-// `withCheckpoint({ services })` spins up long-lived twin sessions via
-// `checkpoint clone start <id>` and exposes their bootstrap URLs + tokens
-// to the test suite. `resetCheckpointTwins()` calls `/_reset` on each
-// running twin to wipe state without restarting the processes.
+// `withCheckpoint({ services })` starts a long-lived twin per service and hands
+// back its URL, MCP endpoint and credential. `resetCheckpointTwins()` wipes
+// their state between tests without paying to restart the processes.
 //
-// The Vitest integration is deliberately optional: this module exports
-// plain async functions you can call from any test framework's setup hook
-// (Vitest beforeAll, Mocha before, Jest beforeAll, etc.).
+// It shells out to `checkpoint twins start --json`, which exists so this does
+// not have to scrape a terminal panel with regexes — the previous version did,
+// and a single relabelled line in the CLI silently broke every consumer.
+//
+// The Vitest integration is deliberately optional: these are plain async
+// functions, callable from any framework's setup hook (Vitest `beforeAll`,
+// Mocha `before`, Jest `beforeAll`).
 
-const { execFileSync, spawnSync } = require("node:child_process");
+const { spawnSync } = require("node:child_process");
 const http = require("node:http");
 
-const SUPPORTED_SERVICES = new Set([
-  "github",
-  "slack",
-  "stripe",
-  "linear",
-  "supabase",
-  "discord",
-  "google-workspace",
-]);
 const DEFAULT_CLI = process.env.CHECKPOINT_CLI || "checkpoint";
 
-// Tracks every clone this process started so `resetCheckpointTwins()` and
-// shutdown hooks can act on them. Keyed by service id.
+// Every twin started by this process, so reset and shutdown can reach them.
 const _started = new Map();
 
-function _runCli(args, { timeoutMs = 30_000 } = {}) {
-  const out = spawnSync(DEFAULT_CLI, args, {
-    encoding: "utf8",
-    timeout: timeoutMs,
-  });
+function _runCli(args, { timeoutMs = 60_000 } = {}) {
+  const out = spawnSync(DEFAULT_CLI, args, { encoding: "utf8", timeout: timeoutMs });
   if (out.error) {
     throw new Error(
-      `checkpoint CLI not runnable (${DEFAULT_CLI}): ${out.error.message}`
+      `the checkpoint CLI is not runnable (${DEFAULT_CLI}): ${out.error.message}. ` +
+        "Install it with `pip install checkpoint-agents`, or set CHECKPOINT_CLI."
     );
   }
   if (out.status !== 0) {
@@ -45,111 +36,110 @@ function _runCli(args, { timeoutMs = 30_000 } = {}) {
   return out.stdout;
 }
 
-function _parseCloneStart(stdout) {
-  // The CLI prints a rich-panel block; extract URL + Token via regex.
-  // Token may contain spaces (e.g. Discord uses "Bot <token>") so we
-  // capture the entire remainder of the line rather than just \S+.
-  const url = stdout.match(/URL:\s*(\S+)/)?.[1];
-  const mcpUrl = stdout.match(/MCP URL:\s*(\S+)/)?.[1];
-  const token = stdout.match(/Token:\s*(.+)/)?.[1]?.trim();
-  if (!url || !token) {
+function _json(args) {
+  const stdout = _runCli(args);
+  try {
+    return JSON.parse(stdout);
+  } catch (cause) {
     throw new Error(
-      `unable to parse \`checkpoint clone start\` output:\n${stdout}`
+      `checkpoint ${args.join(" ")} did not return JSON:\n${stdout}`,
+      { cause }
     );
   }
-  return { url, mcpUrl, token };
 }
 
-function _resetClone(serviceId, baseUrl) {
+function _supportedServices() {
+  // Asked of the CLI rather than hard-coded here, so a twin the installed
+  // Checkpoint has — including one a project declares itself — is usable
+  // without waiting for this package to be republished.
+  return new Set(_json(["twins", "list", "--json"]).map((twin) => twin.name));
+}
+
+function _reset(service, baseUrl) {
   return new Promise((resolve, reject) => {
-    const u = new URL("/_reset", baseUrl);
-    const req = http.request(
+    const target = new URL("/_reset", baseUrl);
+    const request = http.request(
       {
-        hostname: u.hostname,
-        port: u.port,
-        path: u.pathname,
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
         method: "POST",
         headers: { "Content-Length": "0" },
       },
-      (res) => {
-        res.resume();
-        res.on("end", () =>
-          res.statusCode < 400
+      (response) => {
+        response.resume();
+        response.on("end", () =>
+          response.statusCode < 400
             ? resolve()
-            : reject(
-                new Error(`reset ${serviceId} returned ${res.statusCode}`)
-              )
+            : reject(new Error(`resetting ${service} returned ${response.statusCode}`))
         );
       }
     );
-    req.on("error", reject);
-    req.end();
+    request.on("error", reject);
+    request.end();
   });
 }
 
 /**
- * Spin up the requested services and return a handle with URLs + tokens.
+ * Start the requested twins and return their URLs, MCP endpoints and credentials.
  *
- * @param {{ services: Record<string, { mode?: string, seed?: string }> }} config
- * @returns {Promise<{ services: Record<string, { url: string, mcpUrl: string, token: string, mode: string, seed: string | null }>, stop: () => void }>}
+ * @param {{ services: Record<string, { seed?: string } | null> }} config
+ * @returns {Promise<{ services: Record<string, object>, stop: () => void }>}
  */
 async function withCheckpoint(config = {}) {
   const services = config.services || {};
+  const supported = _supportedServices();
   const handles = {};
 
-  for (const [id, opts] of Object.entries(services)) {
-    if (!SUPPORTED_SERVICES.has(id)) {
+  for (const [name, options] of Object.entries(services)) {
+    if (!supported.has(name)) {
       throw new Error(
-        `Unsupported Checkpoint service: ${id}. Supported: ${[...SUPPORTED_SERVICES].join(", ")}`
+        `unknown Checkpoint twin: ${name}. Available: ${[...supported].sort().join(", ")}`
       );
     }
-    const mode = (opts && opts.mode) || "route";
-    const seed = (opts && opts.seed) || null;
+    const args = ["twins", "start", name, "--json"];
+    const seed = (options && options.seed) || null;
+    // Seeding is part of starting, so a failed seed fails the start rather
+    // than leaving a test running against an empty twin it thinks is seeded.
+    if (seed) args.push("--seed", seed);
 
-    const stdout = _runCli(["clone", "start", id]);
-    const parsed = _parseCloneStart(stdout);
-    _started.set(id, parsed);
-
-    // Seed if requested — POST /_seed/<name> (the canonical twin endpoint).
-    if (seed) {
-      try {
-        execFileSync(
-          "curl",
-          ["-fsS", "-X", "POST", `${parsed.url}/_seed/${encodeURIComponent(seed)}`],
-          { stdio: "ignore" }
-        );
-      } catch {
-        // Seeding failures are non-fatal; the URL is still usable empty.
-      }
-    }
-
-    handles[id] = { ...parsed, mode, seed };
+    const started = _json(args);
+    const handle = {
+      url: started.url,
+      mcpUrl: started.mcp_url,
+      token: started.token,
+      tokenEnv: started.token_env,
+      urlEnv: started.url_env,
+      seed: started.seed,
+    };
+    _started.set(name, handle);
+    handles[name] = handle;
   }
 
   return {
     services: handles,
     stop() {
-      for (const id of Object.keys(handles)) {
+      for (const name of Object.keys(handles)) {
         try {
-          _runCli(["clone", "stop", id]);
+          _runCli(["twins", "stop", name]);
         } catch {
-          // best-effort
+          // A twin that is already gone is the outcome we wanted.
         }
-        _started.delete(id);
+        _started.delete(name);
       }
     },
   };
 }
 
 /**
- * Reset every clone started in this process. Returns a Promise that resolves
- * once all `/_reset` calls have completed (or rejects on the first failure).
+ * Reset every twin this process started, wiping their state without restarting
+ * them. Resolves when they have all answered, rejects on the first failure.
  *
  * @returns {Promise<void>}
  */
 async function resetCheckpointTwins() {
-  for (const [id, info] of _started.entries()) {
-    await _resetClone(id, info.url);
+  for (const [name, handle] of _started.entries()) {
+    await _reset(name, handle.url);
   }
 }
 

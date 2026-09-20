@@ -128,8 +128,13 @@ def build_record(
     return record
 
 
-def write_record(record: dict, *, root: Path | None = None) -> Path:
-    """Persist ``record`` and update the last-run pointer.
+def write_record(record: dict, *, root: Path | None = None, pointer: bool = True) -> Path:
+    """Persist ``record``, and by default point "the last run" at it.
+
+    ``pointer=False`` for runs that arrive in bulk. A gate writes sixteen runs
+    per scenario, often from several threads at once: moving the pointer for
+    each would race on one file, and "the last run" would end up meaning an
+    arbitrary member of the batch rather than the run somebody just did by hand.
 
     Returns the absolute path of the written record.
     """
@@ -139,8 +144,10 @@ def write_record(record: dict, *, root: Path | None = None) -> Path:
     rid = record["run_id"]
     path = runs_dir / f"{rid}.json"
     path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
-    pointer = cache_root / "last-run.json"
-    pointer.write_text(json.dumps({"run_id": rid, "path": str(path)}, indent=2), encoding="utf-8")
+    if pointer:
+        last = cache_root / "last-run.json"
+        last.write_text(json.dumps({"run_id": rid, "path": str(path)}, indent=2),
+                        encoding="utf-8")
     return path
 
 

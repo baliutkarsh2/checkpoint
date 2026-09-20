@@ -84,7 +84,10 @@ def list_twins(as_json: bool) -> None:
 @click.option("--ttl", "ttl_seconds", type=int, default=None, metavar="SECONDS",
               help="Note when this twin should be thrown away. Advisory: "
                    "`twins status` shows it, nothing stops the twin for you.")
-def start_twin(name: str, seed_name: str | None, ttl_seconds: int | None) -> None:
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Print one JSON object and nothing else.")
+def start_twin(name: str, seed_name: str | None, ttl_seconds: int | None,
+               as_json: bool) -> None:
     """Start a twin and leave it running.
 
     NAME is a twin from `checkpoint twins list`. It keeps running after this
@@ -95,6 +98,9 @@ def start_twin(name: str, seed_name: str | None, ttl_seconds: int | None) -> Non
         checkpoint twins start github --seed large-backlog
         checkpoint twins status github
         checkpoint twins stop github
+
+    `--json` is what a test harness should read: the URL, the MCP endpoint and
+    the credential as data, rather than scraped out of the text below.
     """
     from checkpoint.twins import sessions
 
@@ -120,14 +126,7 @@ def start_twin(name: str, seed_name: str | None, ttl_seconds: int | None) -> Non
         except (KeyError, RuntimeError):
             pass  # The twin is up; only the expiry note failed to stick.
 
-    console.print(f"[green]{spec.title} twin running[/green] [dim]pid {entry['pid']}[/dim]")
-    console.print(f"  [dim]URL[/dim]         {entry['url']}")
-    console.print(f"  [dim]MCP[/dim]         {entry['mcp_url']}")
-    holder = f"  [dim]({spec.token_env[0]})[/dim]" if spec.token_env else ""
-    console.print(f"  [dim]credential[/dim]  {entry.get('token') or '(none)'}{holder}")
-    if entry.get("expires_at_iso"):
-        console.print(f"  [dim]expires[/dim]     {entry['expires_at_iso']}")
-
+    seeded: str | None = None
     if seed_name:
         result = sessions.seed(spec.name, seed_name)
         if not result.get("ok"):
@@ -135,7 +134,32 @@ def start_twin(name: str, seed_name: str | None, ttl_seconds: int | None) -> Non
                  f"{_why(result)}",
                  hint=f"Try it again: checkpoint twins seed {spec.name} {seed_name}",
                  code=1)
-        console.print(f"  [dim]seed[/dim]        {seed_name}")
+        seeded = seed_name
+
+    if as_json:
+        click.echo(json.dumps({
+            "twin": spec.name,
+            "title": spec.title,
+            "url": entry["url"],
+            "mcp_url": entry["mcp_url"],
+            "token": entry.get("token") or "",
+            "token_env": list(spec.token_env),
+            "url_env": spec.url_env,
+            "pid": entry["pid"],
+            "seed": seeded,
+            "expires_at": entry.get("expires_at_iso"),
+        }, indent=2))
+        return
+
+    console.print(f"[green]{spec.title} twin running[/green] [dim]pid {entry['pid']}[/dim]")
+    console.print(f"  [dim]URL[/dim]         {entry['url']}")
+    console.print(f"  [dim]MCP[/dim]         {entry['mcp_url']}")
+    holder = f"  [dim]({spec.token_env[0]})[/dim]" if spec.token_env else ""
+    console.print(f"  [dim]credential[/dim]  {entry.get('token') or '(none)'}{holder}")
+    if entry.get("expires_at_iso"):
+        console.print(f"  [dim]expires[/dim]     {entry['expires_at_iso']}")
+    if seeded:
+        console.print(f"  [dim]seed[/dim]        {seeded}")
 
     console.print(f"[dim]Stop it with `checkpoint twins stop {spec.name}`.[/dim]")
 

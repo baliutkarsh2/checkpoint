@@ -56,6 +56,7 @@ def build_certificate(
     commit_sha: str | None = None,
     model: str | None = None,
     valid_days: int = 90,
+    gate_id: str | None = None,
 ) -> dict:
     """Assemble the unsigned certificate body from a GateResult."""
     now = datetime.datetime.now(datetime.UTC)
@@ -105,8 +106,10 @@ def build_certificate(
         "issued_at": now.isoformat(),
         "expires_at": (now + datetime.timedelta(days=valid_days)).isoformat(),
     }
-    # A content id derived from the canonical body — stable and reproducible.
-    body["gate_id"] = hashlib.sha256(_canonical(body)).hexdigest()[:16]
+    # The id of the gate run that earned this certificate, so an auditor holding
+    # the document can find the runs behind it. Falls back to a content id
+    # derived from the canonical body for a certificate built on its own.
+    body["gate_id"] = gate_id or hashlib.sha256(_canonical(body)).hexdigest()[:16]
     return body
 
 
