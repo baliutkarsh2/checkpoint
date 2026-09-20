@@ -477,7 +477,7 @@ def create_app(
     # Twins running right now
     # -----------------------------------------------------------------------
 
-    @app.get("/api/clones", tags=["twins"])
+    @app.get("/api/twins", tags=["twins"])
     def api_twin_sessions():
         """Twins running right now, from the session file `checkpoint twins` writes."""
         return _load_twin_sessions(twin_sessions_file)
@@ -567,46 +567,46 @@ def create_app(
         """Keep every session call on the same file the listing reads."""
         return {"sessions_file": twin_sessions_file} if twin_sessions_file else {}
 
-    @app.post("/api/clones/{clone_id}", tags=["twins"], status_code=201)
-    def api_twin_start(clone_id: str):
+    @app.post("/api/twins/{twin_id}", tags=["twins"], status_code=201)
+    def api_twin_start(twin_id: str):
         from ..twins import sessions
         try:
-            entry = sessions.start(clone_id, **_sessions_kw())
+            entry = sessions.start(twin_id, **_sessions_kw())
         except (ValueError, RuntimeError) as e:
             raise HTTPException(400, str(e)) from None
-        return {"id": clone_id, **entry}
+        return {"id": twin_id, **entry}
 
-    @app.delete("/api/clones/{clone_id}", tags=["twins"])
-    def api_twin_stop(clone_id: str):
+    @app.delete("/api/twins/{twin_id}", tags=["twins"])
+    def api_twin_stop(twin_id: str):
         from ..twins import sessions
-        was_running = sessions.stop(clone_id, **_sessions_kw())
-        return {"id": clone_id, "was_running": was_running}
+        was_running = sessions.stop(twin_id, **_sessions_kw())
+        return {"id": twin_id, "was_running": was_running}
 
-    @app.post("/api/clones/{clone_id}/seed/{seed_name}", tags=["twins"])
-    def api_twin_seed(clone_id: str, seed_name: str):
+    @app.post("/api/twins/{twin_id}/seed/{seed_name}", tags=["twins"])
+    def api_twin_seed(twin_id: str, seed_name: str):
         from ..twins import sessions
         try:
-            return sessions.seed(clone_id, seed_name, **_sessions_kw())
+            return sessions.seed(twin_id, seed_name, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.post("/api/clones/{clone_id}/reset", tags=["twins"])
-    def api_twin_reset(clone_id: str):
+    @app.post("/api/twins/{twin_id}/reset", tags=["twins"])
+    def api_twin_reset(twin_id: str):
         from ..twins import sessions
         try:
-            return sessions.reset(clone_id, **_sessions_kw())
+            return sessions.reset(twin_id, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.get("/api/clones/{clone_id}/tools", tags=["twins"])
-    def api_twin_tools(clone_id: str):
+    @app.get("/api/twins/{twin_id}/tools", tags=["twins"])
+    def api_twin_tools(twin_id: str):
         from ..twins import sessions
         try:
-            return sessions.tools(clone_id, **_sessions_kw())
+            return sessions.tools(twin_id, **_sessions_kw())
         except (KeyError, RuntimeError) as e:
             raise HTTPException(404, str(e)) from None
 
-    @app.get("/api/clones/supported", tags=["twins"])
+    @app.get("/api/twins/supported", tags=["twins"])
     def api_twins_supported():
         """Every twin this installation knows how to start."""
         from ..twins import registry
