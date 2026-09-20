@@ -97,6 +97,54 @@ def test_one_broken_scenario_fails_the_whole_check(project, run_cli):
     assert "Starter" in result.output  # the good one is still reported
 
 
+# -- workspaces ----------------------------------------------------------------
+
+
+def test_file_criteria_compile_without_a_model(project, run_cli):
+    """A workspace scenario must be checkable before anything is copied or run."""
+    (project.root / "fixtures" / "repo" / "src").mkdir(parents=True)
+    (project.root / "fixtures" / "repo" / "src" / "app.py").write_text("x = 1\n",
+                                                                       encoding="utf-8")
+    project.write_scenario(
+        "coding", twins=(), settings=("workspace: ../fixtures/repo",),
+        criteria=("[D] Exactly 1 file was created",
+                  "[D] No files were deleted",
+                  "[D] src/app.py was changed",
+                  '[D] A file named "CHANGELOG.md" exists'))
+
+    result = run_cli("check", "scenarios/coding.md", "--json")
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)[0]
+    assert [c["assertion"] for c in report["criteria"]] == [
+        "count(created.workspace.files) == 1",
+        "count(deleted.workspace.files) == 0",
+        'exists(changed.workspace.files[path == "src/app.py"])',
+        'exists(workspace.files[path == "CHANGELOG.md"])',
+    ]
+    assert {c["source"] for c in report["criteria"]} == {"pattern"}, "no model was needed"
+
+
+def test_a_workspace_that_does_not_exist_is_an_error_and_exits_1(project, run_cli):
+    """Reported like any other setup mistake, rather than run and scored zero."""
+    project.write_scenario("missing-tree", settings=("workspace: fixtures/nope",))
+
+    result = run_cli("check", "scenarios/missing-tree.md")
+
+    assert result.exit_code == 1
+    assert "workspace directory not found" in result.output
+
+
+def test_workspace_is_a_known_setting(project, run_cli):
+    (project.root / "tree").mkdir()
+    project.write_scenario("with-tree", settings=("workspace: ../tree",))
+
+    result = run_cli("check", "scenarios/with-tree.md")
+
+    assert result.exit_code == 0, result.output
+    assert "unknown setting" not in result.output
+
+
 # -- what counts as a scenario -------------------------------------------------
 
 

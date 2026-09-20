@@ -5,6 +5,13 @@ interception is on — a TLS proxy that routes the agent's calls to production
 hostnames (``https://api.github.com``) into those twins and applies an egress
 policy to everything else. Build it once and reuse it across runs: ``prepare()``
 resets every twin, so each run starts from exactly the scenario's seed.
+
+A sandbox may also hold a **workspace**: a temporary file tree the agent edits,
+for agents whose work is a diff rather than a sequence of API calls (see
+:mod:`checkpoint.workspace`). The two are orthogonal — a run may have twins, a
+workspace, or both — and the workspace shares the twins' lifecycle exactly: made
+on ``start()``, refilled from its seed on ``prepare()``, read back by ``views()``
+and ``state()`` under the key ``workspace``, removed on ``stop()``.
 """
 from __future__ import annotations
 
@@ -25,6 +32,8 @@ from typing import Any, Literal
 import httpx
 
 from checkpoint.twins import registry
+from checkpoint.workspace import NAMESPACE as WORKSPACE
+from checkpoint.workspace import Workspace, WorkspaceError
 
 from .agent import kill_tree
 
@@ -59,6 +68,10 @@ class Sandbox:
     intercept: bool = True
     egress: Egress = "llm"
     allow_hosts: Sequence[str] = ()
+    workspace: bool = False
+    """Give this sandbox a file tree for the agent to edit. Declared here rather
+    than passed to ``prepare()`` because a reused sandbox has to be built for it,
+    the same way it is built for a set of twins; the *seed* comes per run."""
 
     _host: subprocess.Popen | None = field(default=None, init=False, repr=False)
     _ports: dict[str, int] = field(default_factory=dict, init=False, repr=False)
@@ -66,6 +79,7 @@ class Sandbox:
     _workdir: Path | None = field(default=None, init=False, repr=False)
     _stderr_log: Path | None = field(default=None, init=False, repr=False)
     _client: httpx.Client | None = field(default=None, init=False, repr=False)
+    _workspace: Workspace | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         names: list[str] = []
@@ -98,6 +112,9 @@ class Sandbox:
         self._workdir = Path(tempfile.mkdtemp(prefix="checkpoint-sandbox-"))
         self._client = httpx.Client(timeout=15.0, trust_env=False)
         try:
+            if self.workspace:
+                self._workspace = Workspace()
+                self._workspace.start()
             self._start_twins()
             if self.intercept:
                 self._start_proxy()
@@ -106,6 +123,11 @@ class Sandbox:
             raise
 
     def stop(self) -> None:
+        if self._workspace is not None:
+            try:
+                self._workspace.stop()
+            finally:
+                self._workspace = None
         if self._proxy is not None:
             try:
                 self._proxy.stop()
@@ -202,9 +224,16 @@ class Sandbox:
             env.update(registry.get(name).agent_env(self.twin_url(name), intercepted=intercepting))
         env["CHECKPOINT_TWINS"] = ",".join(self.twins)
         env["CHECKPOINT_SANDBOX"] = "1"
+        if self._workspace is not None:
+            env.update(self._workspace.agent_env())
         if intercepting:
             env.update(self._proxy.client_env())
         return env
+
+    @property
+    def workspace_root(self) -> Path | None:
+        """Where the agent's file tree lives, or None if this sandbox has no workspace."""
+        return self._workspace.root if self._workspace is not None else None
 
     # -- per-run preparation and inspection -----------------------------------
 
@@ -214,9 +243,25 @@ class Sandbox:
         if self._proxy is not None:
             self._proxy.clear_events()
 
-    def prepare(self, setups: Mapping[str, TwinSetup] | None = None) -> None:
-        """Reset every twin, then apply each twin's seed and config."""
+    def prepare(self, setups: Mapping[str, TwinSetup] | None = None,
+                *, workspace_seed: str | Path | None = None) -> None:
+        """Reset every twin, then apply each twin's seed and config.
+
+        ``workspace_seed`` refills the file tree from that directory. It is
+        wiped first, so a reused sandbox never shows one run the previous run's
+        edits — the same guarantee ``reset()`` gives the twins.
+        """
         self.reset()
+        if self._workspace is not None:
+            try:
+                self._workspace.prepare(workspace_seed)
+            except WorkspaceError as e:
+                raise SandboxError(str(e)) from e
+        elif workspace_seed is not None:
+            raise SandboxError(
+                "a workspace seed was given, but this sandbox was built without a "
+                "workspace (Sandbox(..., workspace=True))"
+            )
         for name, setup in (setups or {}).items():
             twin = registry.get(name).name
             if twin not in self._ports:
@@ -229,11 +274,33 @@ class Sandbox:
                 self._post(twin, "/_config", json=setup.config, what="config")
 
     def views(self) -> dict[str, dict[str, dict]]:
-        """Each twin's normalized collections: ``{twin: {collection: {key, tombstone, nouns, items}}}``."""
-        return {name: self._get(name, "/_views")["collections"] for name in self.twins}
+        """Each namespace's normalized collections.
+
+        ``{twin: {collection: {key, tombstone, nouns, items}}}``, plus
+        ``workspace: {"files": ...}`` when this sandbox has a workspace — which
+        is the whole trick: the assertion language resolves ``workspace.files``
+        by exactly the lookup it uses for ``github.issues``.
+        """
+        views = {name: self._get(name, "/_views")["collections"] for name in self.twins}
+        if self._workspace is not None:
+            # A tree too big to hold is a sandbox failure, not a score of zero:
+            # an agent that left 100,000 files behind cannot be scored at all, and
+            # this must be reported on the run rather than raised past everyone.
+            try:
+                files = self._workspace.views()
+            except WorkspaceError as e:
+                raise SandboxError(str(e)) from e
+            views[WORKSPACE] = {name: view.to_json() for name, view in files.items()}
+        return views
 
     def state(self) -> dict[str, dict]:
-        return {name: self._get(name, "/_state") for name in self.twins}
+        state = {name: self._get(name, "/_state") for name in self.twins}
+        if self._workspace is not None:
+            try:
+                state[WORKSPACE] = self._workspace.state()
+            except WorkspaceError as e:
+                raise SandboxError(str(e)) from e
+        return state
 
     def trace(self) -> list[dict]:
         """Every API call the agent made, across twins, in order."""

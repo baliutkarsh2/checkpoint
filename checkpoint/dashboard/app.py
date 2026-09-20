@@ -253,9 +253,10 @@ def _build_scenario_summaries(scenarios_dir: Path) -> tuple[list[dict], dict]:
             continue
         d_crits = [c for c in scn.criteria if c.kind in ("D", "T")]
         p_crits = [c for c in scn.criteria if c.kind == "P"]
-        key = tuple(sorted(scn.twins))
+        key = (*sorted(scn.twins), *(("workspace",) if scn.workspace else ()))
         if key not in schemas:
-            schemas[key] = schema_for(scn.twins) if scn.twins else None
+            schemas[key] = (schema_for(scn.twins, workspace=bool(scn.workspace))
+                            if scn.twins or scn.workspace else None)
         schema = schemas[key]
         d_hits = sum(
             1 for c in d_crits

@@ -1,0 +1,20 @@
+# How Checkpoint runs and tests this agent.
+
+[agent]
+command = "python agent.py"
+# No `cwd`. That is the point: this scenario declares a workspace, so the agent
+# starts inside the copy of the tree it is meant to edit, and its relative
+# paths mean what they would mean in a real checkout. Setting `cwd` here would
+# override that; $CHECKPOINT_WORKSPACE would still point at the tree.
+
+[judge]
+model = "gpt-5.6-luna"
+
+[sandbox]
+# This agent talks to no services at all, so there is nothing to intercept and
+# nothing it needs to reach. A workspace does not imply twins, or the reverse.
+intercept = false
+egress = "none"
+
+[gate]
+runs = 16

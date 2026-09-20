@@ -10,11 +10,20 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from ..engine import Agent, RunOptions, Sandbox, SandboxError, scenario_setups, scenario_twins
+from ..engine import (
+    Agent,
+    RunOptions,
+    Sandbox,
+    SandboxError,
+    scenario_setups,
+    scenario_twins,
+    scenario_workspace,
+)
+from ..engine.run import run_state
 from ..llm import DEFAULT_MODEL
-from ..runner import RunResult, _evaluate, _merge_state_for_clones
+from ..runner import RunResult, _evaluate
 from .calibration import compute_calibration
 from .persona import Persona, UserTurn
 from .user import LLMSimulatedUser
@@ -62,16 +71,20 @@ def simulate(
     try:
         twins = scenario_twins(scenario)
         setups = scenario_setups(scenario, twins)
+        workspace_seed = scenario_workspace(scenario)
         sandbox = Sandbox(twins, intercept=opts.intercept, egress=opts.egress,
-                          allow_hosts=opts.allow_hosts)
+                          allow_hosts=opts.allow_hosts,
+                          workspace=workspace_seed is not None)
     except (SandboxError, KeyError) as e:
         return SimResult(persona.name, 0, error=f"sandbox setup failed: {e}")
 
     try:
         with sandbox:
-            sandbox.prepare(setups)
+            sandbox.prepare(setups, workspace_seed=workspace_seed)
             seed_views = sandbox.views()
             env = sandbox.agent_env()
+            if sandbox.workspace_root is not None and not agent.cwd:
+                agent = replace(agent, cwd=str(sandbox.workspace_root))
             timeout = opts.timeout or float(scenario.timeout)
             message = persona.goal or getattr(scenario, "prompt", "") or ""
 
@@ -111,7 +124,7 @@ def simulate(
         stderr="",
         exit_code=0,
         trace=trace,
-        state=_merge_state_for_clones(final_state) if final_state else {},
+        state=run_state(final_state),
         run_id=session_id,
         agent=agent.display_name,
         twins=list(twins),
