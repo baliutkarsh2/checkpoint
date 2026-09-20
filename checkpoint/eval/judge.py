@@ -222,6 +222,18 @@ class _Sample:
     error: str | None
 
 
+#: Shown when the model answered but under ids nobody asked about. The usual
+#: cause is a model too small to follow the instruction to echo each id, which
+#: then reaches for id-shaped strings in the evidence instead. Saying so turns
+#: a repeated "could not score" into one obvious fix, because the alternative
+#: reading -- that Checkpoint is broken -- is the one a user arrives at first.
+_WRONG_IDS_HINT = (
+    "The judge must echo each criterion id exactly; a smaller model often will "
+    "not, and copies ids out of the evidence instead. Try a larger judge with "
+    "--model."
+)
+
+
 def _read_verdicts(response: Any, items: Sequence[JudgeCriterion]) -> dict[str, _Sample]:
     """Turn one model response into a sample per criterion, aligned by id alone."""
     if not isinstance(response, dict):
@@ -247,7 +259,7 @@ def _read_verdicts(response: Any, items: Sequence[JudgeCriterion]) -> dict[str, 
             # inherit the next criterion's, which is how a FAIL became a PASS.
             out[c.id] = _err(
                 f"the judge returned no verdict for id {c.id!r} "
-                f"(ids returned: {sorted(by_id) or 'none'})")
+                f"(ids returned: {sorted(by_id) or 'none'}). {_WRONG_IDS_HINT}")
         elif len(matches) > 1:
             out[c.id] = _err(f"the judge returned {len(matches)} verdicts for id {c.id!r}")
         else:
