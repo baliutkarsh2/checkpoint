@@ -34,14 +34,14 @@ you inserted.
 
 - [D] Exactly 1 product row was changed  => count(changed.supabase.products) == 1
 - [D] The out-of-stock product is now inactive
-  => supabase.products[id == "prod-003"].active == false
+  => count(supabase.products[id == "prod-003" && active == false]) == 1
 - [D] Every product still in stock is still active
   => all(supabase.products[stock > 0], active == true)
 - [D] Exactly 1 product row was created  => count(created.supabase.products) == 1
 - [D] The new product is Mouse Pad XL, 19.99, stock 200
-  => created.supabase.products.name == "Mouse Pad XL" && created.supabase.products.price == 19.99 && created.supabase.products.stock == 200
+  => count(created.supabase.products[name == "Mouse Pad XL" && price == 19.99 && stock == 200]) == 1
 - [D] The new product is an active accessory
-  => created.supabase.products.active == true && created.supabase.products.category == "accessories"
+  => count(created.supabase.products[active == true && category == "accessories"]) == 1
 - [T] A storage bucket named receipts was created
   => count(trace[resource == "storage.buckets" && op == "create" && response.name == "receipts"]) == 1
 - [T!] No bucket was created public

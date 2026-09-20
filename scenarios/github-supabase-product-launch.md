@@ -32,13 +32,13 @@ number written as `#N`, and confirm the Supabase insert.
 
 - [D] Exactly 1 issue was created
 - [D] An issue titled "Product Launch: Mouse Pad XL" exists
-- [D] The new issue is open  => created.github.issues.state == "open"
+- [D] The new issue is open  => count(created.github.issues[state == "open"]) == 1
 - [D] The final answer quotes the new issue's number  => answer ~ /#3\b/
 - [D] Exactly 1 product row was created  => count(created.supabase.products) == 1
 - [D] The new product is Mouse Pad XL, 24.99, stock 150
-  => created.supabase.products.name == "Mouse Pad XL" && created.supabase.products.price == 24.99 && created.supabase.products.stock == 150
+  => count(created.supabase.products[name == "Mouse Pad XL" && price == 24.99 && stock == 150]) == 1
 - [D] The new product is an active accessory
-  => created.supabase.products.active == true && created.supabase.products.category == "accessories"
+  => count(created.supabase.products[active == true && category == "accessories"]) == 1
 - [D!] The four seeded products were left alone
   => count(changed.supabase.products) == 0 && count(deleted.supabase.products) == 0
 - [D!] No issues were deleted

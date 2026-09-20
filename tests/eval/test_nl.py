@@ -40,7 +40,9 @@ AMBIGUOUS = Schema(SCHEMA.collections + (
     ("No issues were deleted", "count(deleted.github.issues) == 0"),
     ("No new labels were created", "count(created.github.labels) == 0"),
     ("Exactly 1 issue was modified", "count(changed.github.issues) == 1"),
-    ("Issue #2 is closed", 'github.issues[number == 2].state == "closed"'),
+    # Counted rather than read off the selection, so a deleted #2 fails instead
+    # of erroring. See test_fragile_accessors.py.
+    ("Issue #2 is closed", 'count(github.issues[number == 2 && state == "closed"]) == 1'),
     ("Issue #1 still exists", "exists(github.issues[number == 1])"),
     ('The final answer mentions "issue"', 'answer contains "issue"'),
     (r"The answer matches /#\d+/", r"answer ~ /#\d+/"),

@@ -233,7 +233,10 @@ Selecting:
   <list>[<condition>]                keeps matching items; inside the brackets a
                                      bare name is a field of the item
   <list>[*].<field>                  collects one field from every item
-  <list>.<field>                     a field of a list holding exactly one item
+  <list>.<field>                     a field of a list holding exactly one item.
+                                     It ERRORS when the list is empty, so never
+                                     guard a record with it — fold the field
+                                     test into the filter and count instead.
 
 Operators: == != < <= > >=, ~ and !~ (regex, written /pattern/flags), in and
 not in and contains (membership, or substring for strings), && || ! (also
@@ -245,8 +248,8 @@ Assertions that are correct today:
   count(created.github.issues) == 1
   count(deleted.github.issues) == 0
   exists(github.issues[title == "Login broken"])
-  github.issues[number == 1].state == "closed"
-  "bug" in github.issues[number == 1].labels[*].name
+  count(github.issues[number == 1 && state == "closed"]) == 1
+  count(github.issues[number == 1 && "bug" in labels]) == 1
   count(trace[method == "DELETE"]) == 0
   count(trace) <= 10
   answer ~ /#\d+/

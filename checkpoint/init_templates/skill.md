@@ -60,7 +60,7 @@ means the criterion must pass whatever the rest score. Anything after `=>` is
 an explicit assertion, which makes the check deterministic and free:
 
 ```markdown
-- [D] The issue is still open  =>  github.issues[title == "Login broken"].state == "open"
+- [D] The issue is still open  =>  count(github.issues[title == "Login broken" && state == "open"]) == 1
 ```
 
 **The rule that matters:** a criterion must fail for an agent that did nothing.

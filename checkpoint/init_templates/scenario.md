@@ -33,7 +33,13 @@ the issue was created, and quote its number.
   Each check runs as an assertion; `checkpoint check scenarios/quickstart.md`
   shows the exact one. Pin your own after `=>` when you want no ambiguity:
 
-  - [D] The issue is still open  =>  github.issues[title == "Add login button"].state == "open"
+  - [D] The issue is still open
+    =>  count(github.issues[title == "Add login button" && state == "open"]) == 1
+
+  Count a guard like that rather than writing
+  `github.issues[...].state == "open"`: reading a field off a selection needs
+  exactly one match, so an agent that *deleted* the issue would error — "we
+  could not score this run" — instead of failing.
 
   Note what the first criterion does *not* say: "at least one issue exists"
   would already be true of the seed, so an agent that did nothing would pass.

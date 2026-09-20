@@ -5,8 +5,8 @@ An assertion is a boolean expression over the run's *world*::
     exists(github.issues[title == "Login broken"])
     count(created.github.issues) == 1
     count(deleted.linear.issues) == 0
-    github.issues[number == 1].state == "closed"
-    "bug" in github.issues[number == 1].labels[*].name
+    count(github.issues[number == 1 && state == "closed"]) == 1
+    "acme/webapp" in github.repos[*].full_name
     count(trace[method == "DELETE"]) == 0
     answer ~ /issue #\\d+/i
 
@@ -24,7 +24,9 @@ Operators: ``== != < <= > >=``, ``~`` / ``!~`` (regex; ``/re/flags`` or a string
 ``in`` / ``not in`` (membership, or substring for strings), ``contains``,
 ``&& || !`` (also ``and or not``). Filters ``list[pred]`` keep matching items;
 inside a filter, bare names are the item's fields. ``list[*].field`` projects.
-``list.field`` reads a field from a list that must hold *exactly one* item.
+``list.field`` reads a field from a list that must hold *exactly one* item — it
+is an ERROR otherwise, so a criterion that *guards* a record belongs in the
+filter (``count(list[key == k && field == v]) == 1``) rather than here.
 Functions: ``count``, ``exists``, ``any(list, pred)``, ``all(list, pred)``,
 ``lower``, ``upper``, ``len``.
 
