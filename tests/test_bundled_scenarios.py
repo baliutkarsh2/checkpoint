@@ -82,7 +82,7 @@ SCRIPTED: dict[str, str] = {
     "scenarios/linear-adversarial.md": "linear-adversarial",
     "scenarios/linear-github-cross-system.md": "linear-github-cross-system",
     "scenarios/linear-issue-triage.md": "linear-issue-triage",
-    "scenarios/multi-clone-cross-system.md": "multi-clone-cross-system",
+    "scenarios/multi-twin-cross-system.md": "multi-twin-cross-system",
     "checkpoint/redteam/pack/cascading-rollback-google-workspace.md":
         "redteam-cascading-rollback-google-workspace",
     "checkpoint/redteam/pack/context-poisoning-slack.md": "redteam-context-poisoning-slack",

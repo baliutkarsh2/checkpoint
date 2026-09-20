@@ -1,8 +1,12 @@
-"""Phase 4 plan 01: multi-clone runner.
+"""Running one scenario against several twins at once.
 
-These tests exercise a run with a scenario that uses `clones: github,slack,stripe`.
-They use a tiny harness that just reads CHECKPOINT_<CLONE>_URL env vars and
-echoes the count, so we don't need an LLM judge.
+They use a tiny harness that reads the CHECKPOINT_<TWIN>_URL variables and
+echoes what it found, so nothing here needs a judge or a model.
+
+Most of these write `twins:`, the current spelling. One deliberately writes
+`clones:`, the name the setting had before the rename, because a suite written
+against the old spelling has to keep running — and a back-compat path nothing
+exercises is a back-compat path that quietly stops working.
 """
 from __future__ import annotations
 
@@ -41,11 +45,11 @@ def echo_harness(tmp_path: Path) -> Path:
 
 def test_parse_seed_spec_single_value():
     assert _parse_seed_spec("small-project", ["github"]) == {"github": "small-project"}
-    # Single value applies to first clone only.
+    # A single value applies to the first twin only.
     assert _parse_seed_spec("small-project", ["github", "slack"]) == {"github": "small-project"}
 
 
-def test_parse_seed_spec_per_clone_map():
+def test_parse_seed_spec_per_twin_map():
     out = _parse_seed_spec("github=small-project, slack=engineering-team", ["github", "slack"])
     assert out == {"github": "small-project", "slack": "engineering-team"}
 
@@ -55,14 +59,15 @@ def test_parse_seed_spec_empty():
     assert _parse_seed_spec("", ["github"]) == {}
 
 
-def test_parse_seed_spec_unknown_clone_kept():
-    # Unknown clones in the map are kept; the runner just ignores them.
+def test_parse_seed_spec_unknown_twin_kept():
+    # A twin not in this run is kept in the map; the runner ignores it.
     out = _parse_seed_spec("foo=bar", ["github"])
     assert out == {"foo": "bar"}
 
 
-def test_single_clone_back_compat(echo_harness):
-    s = Scenario(prompt="hello", config={"clones": "github", "timeout": "30"})
+def test_a_suite_written_before_the_rename_still_runs(echo_harness):
+    """`clones:` is the old name for `twins:` and must keep working."""
+    s = Scenario(prompt="hello", config={"twins": "github", "timeout": "30"})
     r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     payload = json.loads(r.final_answer)
@@ -72,8 +77,8 @@ def test_single_clone_back_compat(echo_harness):
     assert "repos" in r.state or "issues" in r.state
 
 
-def test_multi_clone_three_twins(echo_harness):
-    s = Scenario(prompt="hello", config={"clones": "github,slack,stripe", "timeout": "30"})
+def test_multi_twin_three_twins(echo_harness):
+    s = Scenario(prompt="hello", config={"twins": "github,slack,stripe", "timeout": "30"})
     r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     payload = json.loads(r.final_answer)
@@ -88,11 +93,11 @@ def test_multi_clone_three_twins(echo_harness):
     assert set(r.state.keys()) >= {"github", "slack", "stripe"}
 
 
-def test_multi_clone_with_per_twin_seeds(echo_harness):
+def test_multi_twin_with_per_twin_seeds(echo_harness):
     s = Scenario(
         prompt="hello",
         config={
-            "clones": "github,slack,stripe",
+            "twins": "github,slack,stripe",
             "seed": "github=small-project, slack=engineering-team, stripe=small-business",
             "timeout": "30",
         },
@@ -123,7 +128,7 @@ def test_seed_file_inline_state(echo_harness, tmp_path):
     s = Scenario(
         prompt="hello",
         config={
-            "clones": "github",
+            "twins": "github",
             "seed-file": str(seed_file),
             "timeout": "30",
         },
@@ -136,7 +141,7 @@ def test_seed_file_inline_state(echo_harness, tmp_path):
 
 
 def test_unknown_clone_errors():
-    s = Scenario(prompt="hi", config={"clones": "github,fakebook"})
+    s = Scenario(prompt="hi", config={"twins": "github,fakebook"})
     r = run_scenario(s, Agent(command=[sys.executable, "-c", "print('{}')"]))
     assert not r.complete
     assert "fakebook" in (r.error or "")

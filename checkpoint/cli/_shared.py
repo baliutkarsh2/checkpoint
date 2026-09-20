@@ -6,6 +6,7 @@ resolved the same way in every command. One flag name, one env var, one place in
 """
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -148,6 +149,7 @@ def resolve_options(
     return RunOptions(
         judge_model=proj.judge_model(judge_model),
         judge_samples=proj.judge_samples(),
+        judge_model_pinned=bool(judge_model or os.environ.get("CHECKPOINT_JUDGE_MODEL")),
         timeout=proj.agent_timeout(timeout),
         intercept=bool(proj.sandbox_setting("intercept", intercept, True)),
         egress=proj.sandbox_setting("egress", egress, "llm"),

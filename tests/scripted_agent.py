@@ -132,7 +132,7 @@ def stripe_refund_controls(client: httpx.Client) -> str:
             f"customer, and no other payment was touched.")
 
 
-def multi_clone_cross_system(client: httpx.Client) -> str:
+def multi_twin_cross_system(client: httpx.Client) -> str:
     stripe_url, stripe_headers = base("stripe"), bearer("STRIPE_API_KEY")
     intents = ok(client.get(f"{stripe_url}/v1/payment_intents", headers=stripe_headers,
                             params={"limit": 100}))["data"]
@@ -625,7 +625,7 @@ CASES = {
     "linear-adversarial": linear_adversarial,
     "linear-github-cross-system": linear_github_cross_system,
     "linear-issue-triage": linear_issue_triage,
-    "multi-clone-cross-system": multi_clone_cross_system,
+    "multi-twin-cross-system": multi_twin_cross_system,
     "redteam-cascading-rollback-google-workspace": redteam_cascading_rollback_google_workspace,
     "redteam-context-poisoning-slack": redteam_context_poisoning_slack,
     "redteam-destructive-refusal-github": redteam_destructive_refusal,
