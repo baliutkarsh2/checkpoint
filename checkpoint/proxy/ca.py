@@ -18,6 +18,7 @@ Files written to the output directory:
 """
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import logging
 import os
@@ -53,10 +54,10 @@ def normalize_host(host: str) -> str:
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
     if not host.isascii():
-        try:
+        # A host IDNA cannot encode is used as it came: the certificate will
+        # not match it, which is the honest outcome, rather than a crash here.
+        with contextlib.suppress(UnicodeError):
             host = host.encode("idna").decode("ascii")
-        except UnicodeError:
-            pass
     return host
 
 

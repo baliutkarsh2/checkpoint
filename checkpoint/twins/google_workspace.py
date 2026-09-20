@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import hashlib
 import json
 import os
@@ -691,10 +692,10 @@ def _store_message(raw: bytes, *, labels: Iterable[str], thread_id: str | None =
     raw = parsed.as_bytes()
     payload = _payload_of(parsed)
     when = _now()
-    try:
+    # A missing or unparseable Date header falls back to now, which is what
+    # the real API does with a message that does not carry a usable one.
+    with contextlib.suppress(TypeError, ValueError):
         when = parsedate_to_datetime(_header(payload, "Date")) or when
-    except (TypeError, ValueError):
-        pass
     message_id = _gmail_id()
     message = {
         "id": message_id,
@@ -2166,7 +2167,10 @@ async def _upload_parts(request: Request) -> tuple[dict, bytes, str | None]:
 def _external_base(request: Request) -> str:
     """The origin the caller used, so a resumable session URL points back at it."""
     host = request.headers.get("host") or request.url.netloc
-    scheme = "https" if host.endswith("googleapis.com") else request.url.scheme
+    # A suffix test alone also matches "notgoogleapis.com"; the dot (or the
+    # bare domain) is what makes it the domain rather than the end of a name.
+    vendor = host == "googleapis.com" or host.endswith(".googleapis.com")
+    scheme = "https" if vendor else request.url.scheme
     return f"{scheme}://{host}"
 
 

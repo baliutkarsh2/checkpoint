@@ -22,6 +22,7 @@ decided to trust, not as proof of origin.
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime
 import hashlib
 import json
@@ -138,10 +139,9 @@ class LocalSigner:
                 encryption_algorithm=serialization.NoEncryption(),
             )
         )
-        try:  # best-effort tighten perms (POSIX)
+        # Best effort, and POSIX-only: Windows has no mode bits to set.
+        with contextlib.suppress(OSError):
             self.key_path.chmod(0o600)
-        except OSError:
-            pass
         return key
 
     def _public_b64(self) -> str:
