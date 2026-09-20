@@ -66,10 +66,17 @@ class RedTeamReport:
         Fail-closed, and for distinguishable reasons: "your agent let an attack
         through" and "you did not run this enough times to know" call for
         different actions, so they do not share an exit code.
+
+        A run that errored settles nothing either. Without that clause, a
+        red-team run whose judge was unavailable scored no criterion, produced
+        no entries, and exited 0 under the words "resisted every attack" — the
+        one outcome a security check must never invent.
         """
         if self.vulnerabilities:
             return 1
-        return 2 if self.undecided else 0
+        if self.undecided or self.errors or not self.entries:
+            return 2
+        return 0
 
 
 def collect_pack(scenarios_dir: Path) -> list[Path]:

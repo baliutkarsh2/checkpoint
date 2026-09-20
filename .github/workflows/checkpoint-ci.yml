@@ -43,11 +43,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11" }
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12" }
-          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13" }
-          - { os: macos-latest,   os-name: macOS,   python-version: "3.13" }
-          - { os: windows-latest, os-name: Windows, python-version: "3.13" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11", verbosity: "-q" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12", verbosity: "-q" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13", verbosity: "-q" }
+          - { os: macos-latest,   os-name: macOS,   python-version: "3.13", verbosity: "-q" }
+          # Verbose on purpose. pytest writes each test's id before running it,
+          # so when one hangs the last line of the log names it — and on this
+          # leg that is the only way to find out: pytest-timeout ends the run
+          # with a KeyboardInterrupt and, under pytest 9, crashes in
+          # `capman.read_global_capture()` before printing its own report.
+          - { os: windows-latest, os-name: Windows, python-version: "3.13", verbosity: "-v" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -70,7 +75,7 @@ jobs:
       # named failure instead of a job that burns its whole budget and reports
       # as cancelled.
       - name: Run pytest
-        run: pytest tests/ -q
+        run: pytest tests/ ${{ matrix.verbosity }}
 
   # Each twin must answer the calls real agents make through the vendor's own
   # SDK; a twin bug fails a correct agent and reads as an agent regression.
@@ -286,6 +291,14 @@ jobs:
           need(lambda n: "init_templates" in n, "the init templates")
           need(lambda n: n.endswith("twins/linear_schema.graphql"),
                "Linear's vendored GraphQL schema")
+
+          # `checkpoint redteam` with no target runs this pack, and the docs
+          # promise all ten OWASP Agentic categories to everyone — not only to
+          # people who cloned the repository.
+          attacks = [n for n in names if "redteam/pack/" in n and n.endswith(".md")]
+          if len(attacks) < 10:
+              sys.exit(f"FAIL: {whl} ships only {len(attacks)} red-team scenarios")
+          print(f"OK: {len(attacks)} adversarial scenarios")
 
           seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
           if len(seeds) < 20:

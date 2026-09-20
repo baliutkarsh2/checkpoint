@@ -129,6 +129,10 @@ include = ["checkpoint*"]
 # every seeded scenario 404s on a pip-only install.
 # Vendored vendor API schemas (Linear's GraphQL SDL) are read at runtime too.
 "checkpoint.twins" = ["*_seeds/*.json", "*_schema.graphql"]
+# The adversarial pack `checkpoint redteam` runs when a project has none of
+# its own. It lives inside the package for the same reason the seeds do:
+# anything read at runtime is missing from a pip-only install otherwise.
+"checkpoint.redteam" = ["pack/*.md", "pack/*.json"]
 
 [tool.ruff]
 target-version = "py311"
