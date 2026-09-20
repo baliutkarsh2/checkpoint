@@ -18,7 +18,7 @@ from rich.table import Table
 
 from checkpoint.scenario import KNOWN_SETTINGS, Scenario, parse_file
 
-from ._shared import console, fail, plain, project, resolve_targets
+from ._shared import console, fail, plain, project, resolve_targets, short_path
 
 _TEMPLATE = """\
 ---
@@ -93,8 +93,11 @@ def new(task, twins, seed, out_path, draft, model):
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    console.print(f"  [green]+[/green] {plain(path)}")
-    console.print(f"[dim]Next: edit the criteria, then `checkpoint check {plain(path)}`.[/dim]")
+    # Relative where it can be: an absolute path here wrapped over three ragged
+    # lines and buried the one word the reader needed, the file name.
+    shown = short_path(path)
+    console.print(f"  [green]+[/green] {plain(shown)}")
+    console.print(f"[dim]Next: edit the criteria, then `checkpoint check {plain(shown)}`.[/dim]")
 
 
 @click.command("check")

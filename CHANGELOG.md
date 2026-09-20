@@ -81,8 +81,9 @@ changed in those services, and repeats until the pass rate means something.
 - `--report-only` prints the verdict and exits 0, for adopting the gate on an
   existing project before it blocks anything. It announces itself on every run
   and is deliberately not a `checkpoint.toml` setting.
-- The runs of a scenario execute in parallel — four at once by default, or the
-  CPU count if lower. Scenarios still run in sequence.
+- `-j` runs a scenario's repeats in parallel, each in its own sandbox. The
+  verdict is unaffected by the worker count, and a test pins that. It defaults
+  to one: sandbox startup can still race on a port.
 
 ### Beyond the happy path
 

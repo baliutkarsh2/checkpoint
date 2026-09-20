@@ -81,7 +81,7 @@ works offline.
 | `regression_drop` | `0.20` | A fall of this much against the stored baseline reads as a regression. |
 | `allow_conditional` | `false` | Exit 0 on CONDITIONAL. Off by default: only SHIP is a green build. |
 | `strict` | `false` | Refuse CONDITIONAL even when `allow_conditional` is set. |
-| `concurrency` | `4` | Runs of one scenario to execute at once, each in its own sandbox. Scenarios still run one after another; this splits the N runs of each. The default is capped at the CPU count, because a worker holds a whole sandbox open and the ceiling is memory rather than cores. |
+| `concurrency` | `1` | Runs of one scenario to execute at once, each in its own sandbox. Scenarios still run one after another; this splits the N runs of each. Raising it is faster and the verdict is unaffected, but sandbox startup can still race on a port, so the default is one. |
 
 ## `[scenarios]` — where the tests are
 

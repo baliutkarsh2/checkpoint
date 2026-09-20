@@ -205,15 +205,28 @@ def _unicode_ok() -> bool:
     return True
 
 
-_MARKS = ({"pass": "✓", "fail": "✗", "error": "!"} if _unicode_ok()
-          else {"pass": "PASS", "fail": "FAIL", "error": "ERR"})
-_MARK_STYLES = {"pass": "green", "fail": "red", "error": "magenta"}
+# "uncertain" is a fail the judge could not commit to. It gets its own mark
+# because a reader scanning a column of ✗ cannot otherwise tell "the agent did
+# not do this" from "the judge could not tell" — and the product's whole claim
+# is that it does not blur those together. It is still a fail: fail-closed is
+# the right default for a gate.
+_MARKS = ({"pass": "✓", "fail": "✗", "uncertain": "?", "error": "!"} if _unicode_ok()
+          else {"pass": "PASS", "fail": "FAIL", "uncertain": "??", "error": "ERR"})
+_MARK_STYLES = {"pass": "green", "fail": "red", "uncertain": "yellow", "error": "magenta"}
 
 
 def mark(status: str) -> str:
     """A criterion's verdict, as rich markup."""
     style = _MARK_STYLES.get(status, "dim")
     return f"[{style}]{_MARKS.get(status, status)}[/{style}]"
+
+
+def criterion_mark(criterion: object) -> str:
+    """The mark for one scored criterion, distinguishing an undecided verdict."""
+    status = getattr(criterion, "status", "") or ""
+    if status == "fail" and getattr(criterion, "uncertain", False):
+        status = "uncertain"
+    return mark(status)
 
 
 def short_path(path: Path) -> str:

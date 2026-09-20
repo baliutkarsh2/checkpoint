@@ -134,7 +134,7 @@ is excluded:
 | `--confidence` | 0.95 | Confidence level for the interval |
 | `--regression-drop` | 0.20 | Pass-rate drop against the baseline that reads as a regression |
 | `--report-only` | off | Print the verdict and exit 0 whatever it was (see below) |
-| `-j`, `--concurrency` | 4 | Runs of one scenario at once, each in its own sandbox; scenarios still run in sequence. The CPU count, when that is lower |
+| `-j`, `--concurrency` | 1 | Runs of one scenario at once, each in its own sandbox; scenarios still run in sequence. Raising it is faster, but sandbox startup can still race on a port |
 
 `block_max` must stay below `ship_min`, or a scenario could be a confident pass
 and a confident fail at once; the gate refuses to start rather than pick one.
