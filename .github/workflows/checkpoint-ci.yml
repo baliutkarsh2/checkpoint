@@ -197,7 +197,10 @@ jobs:
           if-no-files-found: ignore
 
   build-and-test:
-    name: Run pytest + build SPA + verify wheel
+    # The name is load-bearing: branch protection on main requires a check with
+    # exactly this string, so renaming the job silently makes every pull request
+    # wait forever for a status that no longer reports. Change both together.
+    name: Build SPA + run pytest + verify wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
