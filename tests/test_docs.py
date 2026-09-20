@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import checkpoint.project as project
 from checkpoint.cli import SECTIONS
 from tests.test_readme import RETIRED
 
@@ -97,3 +98,45 @@ def test_the_index_lists_every_page() -> None:
     index = _text(ROOT / "docs" / "README.md")
     missing = [p.name for p in DOCS if p.name != "README.md" and p.name not in index]
     assert not missing, f"docs/README.md never links to: {sorted(missing)}"
+
+
+# --- the configuration reference -------------------------------------------
+
+REFERENCE = ROOT / "docs" / "configuration.md"
+
+
+def _documented_keys() -> set[str]:
+    """Every key named in a table row of the reference."""
+    return set(re.findall(r"^\| `([a-z_]+)`", _text(REFERENCE), re.M))
+
+
+SETTINGS = sorted(
+    (section, key)
+    for section, keys in {**project._SECTIONS, "twins.<name>": project._TWIN_KEYS}.items()
+    for key in keys
+)
+
+
+@pytest.mark.parametrize("section,key", SETTINGS, ids=lambda v: v if isinstance(v, str) else v)
+def test_every_setting_the_loader_accepts_is_documented(section: str, key: str) -> None:
+    """A setting nobody can find is a setting nobody uses.
+
+    checkpoint.toml rejects unknown keys, so a reader cannot discover a setting
+    by guessing — the reference is the only way to know it exists. Five of them
+    were reachable and undocumented before this page was written.
+    """
+    assert key in _documented_keys(), (
+        f"[{section}] {key} is accepted by checkpoint.toml but absent from "
+        f"docs/configuration.md, so nobody can find it")
+
+
+def test_the_reference_documents_nothing_that_does_not_exist() -> None:
+    """The other direction: a documented setting the loader would reject."""
+    real = set().union(*project._SECTIONS.values(), project._TWIN_KEYS)
+    # Environment variables and prose keys share the table shape; only compare
+    # against names that look like settings, which is what `real` bounds.
+    invented = {k for k in _documented_keys() if k.islower() and "_" in k or k.isalpha()} - real
+    # Anything left must be a genuine non-setting row (there are none today).
+    assert not invented - {"path", "paths"}, (
+        f"docs/configuration.md documents settings checkpoint.toml would "
+        f"reject: {sorted(invented)}")
