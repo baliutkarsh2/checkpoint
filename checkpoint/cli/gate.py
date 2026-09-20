@@ -254,6 +254,10 @@ def _progress(pass_threshold: float):
 
 
 def _render(result, policy, updated, certificate) -> None:
+    if not result.scenarios:
+        # An empty table with headers reads as "nothing passed". Nothing ran.
+        _render_outcome(result, updated, certificate)
+        return
     k = min(policy.runs, 8)
     table = Table(box=box.SIMPLE, show_edge=False)
     table.add_column("Scenario", overflow="fold")
@@ -276,6 +280,11 @@ def _render(result, policy, updated, certificate) -> None:
 
     for s in result.scenarios:
         console.print(f"  [dim]{plain(s.scenario)}: {plain(s.evidence())}[/dim]", highlight=False)
+    _render_outcome(result, updated, certificate)
+
+
+def _render_outcome(result, updated, certificate) -> None:
+    """The verdict, and everything that qualifies it."""
     for skipped in result.skipped:
         console.print(f"[dim]skipped {plain(skipped.path)}: {plain(skipped.reason)}[/dim]")
     for note in result.notes:
