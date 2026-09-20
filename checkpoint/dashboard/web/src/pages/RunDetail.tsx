@@ -317,11 +317,30 @@ function IdentityStrip({ report: t }: { report: TelemetryReport }) {
 }
 
 /** Quote so a shell passes this as one argument. Mirrors telemetry._as_one_argument.
- *  Double quotes, not single: a Windows path is full of backslashes, and single
- *  quotes are not stripped there, so the pasted line kept them. */
+ *
+ *  Double quotes, not single: a Windows path is full of backslashes and single
+ *  quotes are not stripped there, so the pasted line kept them. Backslashes are
+ *  literal inside double quotes except before a quote, and except at the very
+ *  end, where a run of them would escape the closing quote and leave the string
+ *  unterminated. Those runs are doubled. */
 function shellQuote(value: string): string {
-  if (!value || !/[\s"']/.test(value)) return value;
-  return '"' + value.replace(/"/g, '\\"') + '"';
+  if (!value || !/[\s"\\]/.test(value)) return value;
+  let out = "";
+  let backslashes = 0;
+  for (const ch of value) {
+    if (ch === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    if (ch === '"') {
+      out += "\\".repeat(backslashes * 2 + 1) + '"';
+    } else {
+      out += "\\".repeat(backslashes) + ch;
+    }
+    backslashes = 0;
+  }
+  out += "\\".repeat(backslashes * 2);
+  return '"' + out + '"';
 }
 
 /** The same commands `checkpoint.telemetry._cli_commands` emits, for the case

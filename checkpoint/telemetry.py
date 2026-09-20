@@ -117,17 +117,35 @@ def _summary(
 
 
 def _as_one_argument(value: str) -> str:
-    """Quote so a shell passes `value` as a single argument, readably.
+    """Quote so a shell passes `value` as one argument, readably and safely.
 
-    Double quotes rather than shlex.quote: the recorded command is already a
-    command string, and shlex wraps anything containing a backslash in single
-    quotes -- which Windows does not strip, so the pasted line ran an agent
-    whose name still carried the quotes.
+    Double quotes rather than shlex.quote: the value is already a command
+    string, and shlex wraps anything containing a backslash in single quotes,
+    which Windows does not strip — so the pasted line ran an agent whose name
+    still carried the quotes.
+
+    Backslashes are literal inside double quotes except immediately before a
+    quote, and except at the very end, where a run of them would escape the
+    closing quote and leave the string unterminated. Those runs are doubled,
+    which is the rule the Windows C runtime and POSIX shells both read back.
     """
-    needs_quoting = any(ch.isspace() or ch in "\"'" for ch in value)
-    if not value or not needs_quoting:
+    if not value or not any(ch.isspace() or ch in '"\\' for ch in value):
         return value
-    return '"' + value.replace('"', '\\"') + '"'
+    out: list[str] = []
+    backslashes = 0
+    for ch in value:
+        if ch == "\\":
+            backslashes += 1
+            continue
+        if ch == '"':
+            out.append("\\" * (backslashes * 2 + 1))
+            out.append('"')
+        else:
+            out.append("\\" * backslashes)
+            out.append(ch)
+        backslashes = 0
+    out.append("\\" * (backslashes * 2))  # a trailing run must not eat the quote
+    return '"' + "".join(out) + '"'
 
 
 def _cli_commands(record: dict) -> dict:
