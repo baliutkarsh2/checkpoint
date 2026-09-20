@@ -32,6 +32,13 @@ AMBIGUOUS = Schema(SCHEMA.collections + (
     ('An issue titled "Login broken" exists', 'exists(github.issues[title == "Login broken"])'),
     ('A channel named "incidents" exists', 'exists(slack.channels[name == "incidents"])'),
     ("Exactly 2 issues exist", "count(github.issues) == 2"),
+    # "An issue exists" is a claim that one is there. Reading it as
+    # `== 1` changes the sentence, and then fails a correct agent on any
+    # seed that already holds more than one.
+    ("An issue exists", "exists(github.issues)"),
+    ("A pull request exists", "exists(github.pulls)"),
+    # A delta keeps the strict reading: there the count is what the agent did.
+    ("An issue was created", "count(created.github.issues) == 1"),
     ("At least one issue exists", "count(github.issues) >= 1"),
     ("At most 3 pull requests exist", "count(github.pulls) <= 3"),
     ("No labels exist", "count(github.labels) == 0"),
