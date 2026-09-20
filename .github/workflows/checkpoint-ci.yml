@@ -27,14 +27,27 @@ jobs:
   # Note the legs really do differ: the intercept proxy (checkpoint/proxy)
   # drives TLS and sockets through the stdlib's ssl and asyncio directly, and
   # asyncio's server-shutdown semantics changed in 3.12.
+  #
+  # macOS and Windows are here because Checkpoint starts processes, binds
+  # sockets and kills process trees, and each platform does all three
+  # differently. Testing one of them is testing none: a teardown that killed
+  # Checkpoint's own process group was invisible for weeks because it cannot
+  # happen on Windows, which was the only platform anyone ran the suite on.
+  # One Python version each is enough — these legs are there for the operating
+  # system, and the version sweep above already covers the language.
   pytest-matrix:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    name: pytest (${{ matrix.os-name }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13" }
+          - { os: macos-latest,   os-name: macOS,   python-version: "3.13" }
+          - { os: windows-latest, os-name: Windows, python-version: "3.13" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
