@@ -34,12 +34,19 @@ def default_concurrency() -> int:
     starts from the same seed — so this is the one place parallelism is free of
     ordering questions.
 
-    Capped rather than simply ``cpu_count()``: a worker holds a sandbox open
-    (a twin process per twin, plus the proxy, plus the agent), so the ceiling
-    that matters is memory, not cores. Four is what a standard CI runner
-    carries comfortably. ``-j`` and ``[gate] concurrency`` override it.
+    **One, for now.** Parallel runs are correct -- the runs of a scenario are
+    independent and tests pin that the verdict cannot depend on the worker
+    count -- but sandbox startup is not yet safe to race: ports are chosen by
+    binding to port 0 and closing the socket before the twin host binds it, so
+    two workers starting at the same moment can be handed the same port. On a
+    Linux runner that surfaced immediately as `[Errno 98] address already in
+    use`, four failed runs, and an INCONCLUSIVE gate.
+
+    A default that races is worse than a slow one, so this stays at 1 until the
+    port handover is fixed. ``-j`` and ``[gate] concurrency`` still raise it for
+    anyone who wants the speed and can tolerate the retry.
     """
-    return max(1, min(4, os.cpu_count() or 1))
+    return 1
 
 
 # progress(scenario_name, run_index, total_runs, score, complete)

@@ -67,7 +67,7 @@ _CLASS_COLOR = {
               help="Neither compare against nor update the stored pass rates.")
 @click.option("--concurrency", "-j", type=int, default=None, metavar="N",
               help="Runs of a scenario to execute at once, each in its own "
-                   "sandbox. [default: 4, or the CPU count if lower]")
+                   "sandbox. [default: 1]")
 @click.option("--model", default=None, metavar="MODEL",
               help="Judge model for [P] criteria.")
 @click.option("--timeout", type=float, default=None, metavar="SECONDS",
