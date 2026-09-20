@@ -121,7 +121,9 @@ stdout and stderr, and any warnings. It is written to
 
 `checkpoint gate` runs the loop above N times per scenario and turns the
 resulting pass rates into one verdict, with baselines in
-`.checkpoint/baselines.json`. That layer is its own page:
+`.checkpoint/baselines.json`. Every run it makes is written as an ordinary run
+record stamped with the gate's id, so a verdict is something you can open
+rather than a number you have to trust. That layer is its own page:
 [The gate](gate.md).
 
 ## Where things live
