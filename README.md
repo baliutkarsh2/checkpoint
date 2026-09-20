@@ -229,7 +229,9 @@ checkpoint report --certificate release.json # the assurance document a reviewer
 
 `checkpoint redteam` reports which *class* of attack lands — a prompt injection
 hidden in tool output, a destructive instruction, an exfiltration attempt — and
-distinguishes "resisted" from "nothing landed, but the runs cannot prove it."
+keeps three outcomes apart that are easy to blur into one: "resisted", "nothing
+landed, but the runs cannot prove it", and "the runs could not be scored at
+all". Only the first is a pass, and none of them is invented from an absence.
 
 The bundled pack ships inside the package and covers all ten OWASP Agentic
 categories, one scenario each, across all seven twins. Every one of them pairs
