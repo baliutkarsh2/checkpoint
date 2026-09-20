@@ -124,20 +124,22 @@ def run(targets, command, url, task_via, task_env, task_arg, cwd, intercept, egr
     sys.exit(_exit_code([r for _, results in all_results for r in results]))
 
 
-def _exit_code(results: list[RunResult]) -> int:
-    """0 every run passed, 1 a criterion failed, 2 nothing could be scored.
+def _passed(r: RunResult) -> bool:
+    """Whether this run is a pass — one definition, used everywhere.
 
     A run with no criteria at all — `--task`, which exists to watch an agent
-    rather than grade it — passes when the agent completed. Scoring it against
-    an empty criteria list would report 0/100 and fail the shell for a run that
-    was never asking a question.
+    rather than grade it — passes when the agent completed. Judging it against
+    an empty criteria list would report 0/100 for a run that was never asking a
+    question.
     """
+    return not r.failed_must_pass and (not r.criteria or r.score == 100)
+
+
+def _exit_code(results: list[RunResult]) -> int:
+    """0 every run passed, 1 a criterion failed, 2 nothing could be scored."""
     if any(not r.scored for r in results):
         return 2
-    for r in results:
-        if r.failed_must_pass or (r.criteria and r.score < 100):
-            return 1
-    return 0
+    return 0 if all(_passed(r) for r in results) else 1
 
 
 # -- running ------------------------------------------------------------------
@@ -239,10 +241,12 @@ def _print_result(r: RunResult) -> None:
         facts.append("[red]timed out[/red]")
     elif not r.complete and not r.error:
         facts.append(f"[red]exit {r.exit_code}[/red]")
-    blocked = [e for e in r.egress if not e.get("allowed")]
+    blocked = sorted({e.get("host", "?") for e in r.egress if not e.get("allowed")})
     if blocked:
-        hosts = sorted({e.get("host", "?") for e in blocked})
-        facts.append(f"[yellow]blocked {', '.join(hosts[:3])}[/yellow]")
+        # Naming a couple is enough to act on; the full list is in the record.
+        shown = ", ".join(blocked[:2])
+        more = f" +{len(blocked) - 2}" if len(blocked) > 2 else ""
+        facts.append(f"[yellow]blocked {shown}{more}[/yellow]")
     console.print(f"  {headline}  [dim]{' · '.join(facts)}[/dim]")
 
 
@@ -256,12 +260,12 @@ def _reasons(criterion) -> list[str]:
 
 def _print_totals(all_results) -> None:
     scored = [r for _, results in all_results for r in results]
-    passed = sum(1 for r in scored if r.score == 100 and not r.failed_must_pass)
+    passed = sum(1 for r in scored if _passed(r))
     color = "green" if passed == len(scored) else "red"
     console.print()
     console.print(f"[bold {color}]{passed}/{len(scored)} runs passed[/bold {color}]")
     for scenario, results in all_results:
-        failed = [r for r in results if r.score < 100 or r.failed_must_pass]
+        failed = [r for r in results if not _passed(r)]
         if failed:
             name = scenario.title or Path(scenario.source_path or "?").name
             console.print(f"  [red]{plain(name)}[/red] [dim]{len(failed)}/{len(results)} failed[/dim]")
@@ -277,14 +281,14 @@ def _summary(all_results) -> dict:
             "runs": len(results),
             "score_avg": sum(scores) / len(scores) if scores else 0.0,
             "score_min": min(scores, default=0.0),
-            "passed": sum(1 for r in results if r.score == 100 and not r.failed_must_pass),
+            "passed": sum(1 for r in results if _passed(r)),
             "results": [_dump(r) for r in results],
         })
     every = [r for _, results in all_results for r in results]
     return {
         "scenarios": scenarios,
         "runs": len(every),
-        "passed": sum(1 for r in every if r.score == 100 and not r.failed_must_pass),
+        "passed": sum(1 for r in every if _passed(r)),
         "unscored": sum(1 for r in every if not r.scored),
     }
 
