@@ -78,6 +78,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A must-pass criterion was not enforced by the gate.** `[D!]` was honored
+  only by `checkpoint run`; the gate scored each run on its average, so an agent
+  that deleted what a scenario said never to delete could outscore the breach
+  and ship. A run that breaks one now scores zero for that run, and the gate
+  names the criterion.
+- **Existence checks counted zero on three twins.** The live-record filter
+  tested `tombstone == null`, but Slack, Stripe and Google Workspace write
+  `false` on a live record — so "no more than 2 messages exist" passed against a
+  four-message seed, and every "N records exist" criterion on those twins was
+  checking nothing. It tests the mark for truthiness now, as the delta roots do.
+- **Supabase auth users and storage buckets were unaddressable.** Their
+  collections were named with dots, which the assertion language reads as
+  another path level, so every criterion about them failed as a schema error
+  rather than being evaluated. The views are `auth_users`, `storage_buckets` and
+  `storage_objects`.
+- **Three intercepted hostnames reached their twins with no credential.** The
+  proxy kept its own copy of the domain table and it had drifted from the
+  registry — `uploads.github.com`, `discordapp.com` and `oauth2.googleapis.com`
+  were missing, so a request to any of them arrived unauthenticated and was
+  refused. It reads the registry now.
+- **A twin's MCP surface answered 421 to intercepted requests.** The MCP
+  server's DNS-rebinding guard only accepts a localhost `Host` header, and an
+  intercepted request carries the production hostname — so the agents that
+  needed no modification were exactly the ones it turned away.
+- **`checkpoint init` wrote invalid TOML** for any command containing a Windows
+  path or a quote: it escaped the value with `repr`, whose rules are not TOML's.
+- **"The most recent N runs" was ordered by file mtime**, which ties for runs
+  that finish in the same second, so `runs trend -n 2` could answer about the
+  wrong two.
+- **An assurance report graded APPROVED with no adversarial testing at all**,
+  under an empty OWASP table that reads as "nothing found". Zero attacks is
+  CONDITIONAL now, and the section says that nobody looked.
+- **Stacked pull requests ran no CI.** The workflows filtered `pull_request` on
+  `[main, master]`, so a branch merging into another feature branch reached main
+  having never been tested; only the final merge ran anything.
 - **`twins: [github]` in YAML front matter started no twins.** The engine
   re-parsed the setting with `str(...).split(",")`, so a YAML list arrived as the
   literal string `"['github']"` and the run failed to set up — the documented
