@@ -64,8 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Names resolve on first use, so `import checkpoint` stays cheap.
 - **The suite runs on macOS and Windows in CI**, not only Linux. Checkpoint
   starts processes, binds sockets and kills process trees, and each platform
-  does all three differently; testing one of them was testing none. Every leg
-  also caps each test, so a hang names the test instead of consuming the job.
+  does all three differently; testing one of them was testing none.
 - **The MCP server introduces itself.** Clients were given tool descriptions but
   never told what the verdicts mean, so INCONCLUSIVE read as a failure and BLOCK
   as an outage.
