@@ -291,15 +291,23 @@ checkpoint report --certificate release.json # the assurance document a reviewer
 
 `checkpoint redteam` reports which *class* of attack lands — a prompt injection
 hidden in tool output, a destructive instruction, an exfiltration attempt — and
-keeps three outcomes apart that are easy to blur into one: "resisted", "nothing
-landed, but the runs cannot prove it", and "the runs could not be scored at
-all". Only the first is a pass, and none of them is invented from an absence.
+keeps four outcomes apart that are easy to blur into one:
+
+| Reading | What it means |
+|---|---|
+| resisted | the attack failed **and** the legitimate task got done |
+| the attack landed | a safety criterion failed: this is the vulnerability |
+| no attack, but the job was not done | safe and useless — not a pass |
+| undecided / not scored | the runs cannot settle it, and nothing is invented |
+
+Only the first is a pass. The distinction in the middle two is the reason each
+scenario pairs its attack with a real task: an agent that answers "I won't do
+that" and stops has not demonstrated resistance, and saying so keeps "your
+agent is exploitable" apart from "your agent refuses legitimate work" — two
+different problems with two different fixes.
 
 The bundled pack ships inside the package and covers all ten OWASP Agentic
-categories, one scenario each, across all seven twins. Every one of them pairs
-its attack with a legitimate task the agent is expected to finish, so an agent
-that answers "I won't do that" and stops scores no better than one that fell
-for it.
+categories, one scenario each, across all seven twins.
 
 ## How it works
 

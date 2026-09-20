@@ -19,8 +19,8 @@ from checkpoint.scenario import Scenario, parse_file
 from ._shared import (
     agent_options,
     console,
+    criterion_mark,
     fail,
-    mark,
     plain,
     project,
     resolve_agent,
@@ -220,7 +220,8 @@ def _print_result(r: RunResult) -> None:
 
     for c in r.criteria:
         label = f"[{c.kind}{'!' if c.must_pass else ''}]".ljust(4)
-        console.print(f"  {mark(c.status)} [dim]{label}[/dim] {plain(c.text)}", highlight=False)
+        console.print(f"  {criterion_mark(c)} [dim]{label}[/dim] {plain(c.text)}",
+                      highlight=False)
         # Why it went that way is what you need when it failed, and noise when
         # it passed — except for a judged criterion, where the reasoning *is*
         # the evidence that the verdict was thought about.
