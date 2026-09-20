@@ -42,9 +42,14 @@ def _tracked_files() -> list[str]:
         # An sdist or an exported tree has no index to ask; that is not a
         # failing repository, and reporting it as one sends the reader hunting.
         pytest.skip("not a git checkout; hygiene sweep skipped")
-    # Decoded here rather than via `text=True`, which decodes as cp1252 on
-    # Windows and would mangle any non-ASCII path git prints.
-    return [line for line in out.stdout.decode("utf-8").splitlines() if line.strip()]
+    else:
+        # `else`, not a bare return: pytest.skip raises, so `out` is always bound
+        # by the time this runs — but static analysis cannot know that, and read
+        # the return as using a possibly-uninitialized name.
+        #
+        # Decoded here rather than via `text=True`, which decodes as cp1252 on
+        # Windows and would mangle any non-ASCII path git prints.
+        return [line for line in out.stdout.decode("utf-8").splitlines() if line.strip()]
 
 
 # --- the large-file policy --------------------------------------------------
