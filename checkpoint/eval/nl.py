@@ -152,16 +152,26 @@ def _collection(match: re.Match, schema: Schema) -> Collection | None:
 
 def _count(match: re.Match, schema: Schema, source: str) -> str | None:
     coll = _collection(match, schema)
-    n = _number(match.group("n") or "1")
+    raw = (match.group("n") or "1").strip().lower()
+    n = _number(raw)
     if coll is None or n is None:
         return None
     word = (match.group("cmp") or "").strip().lower()
-    if not word and (match.group("n") or "").lower() in ("no", "zero"):
+    if not word and raw in ("no", "zero"):
         word = "no"
-    op = _COMPARATORS.get(word, "==")
     # "exist" means the records that are still there: a soft-deleted record
     # (Linear archives instead of deleting) must not count towards it.
     target = coll.live if source == "" else f"{source}{coll.path}"
+    # "An issue exists" claims one is there, not that exactly one is. Reading it
+    # as `count(...) == 1` changes the sentence and then fails a correct agent:
+    # against any seeded twin the collection already holds more than one. The
+    # sibling patterns — "an issue titled X exists", "issue #3 still exists" —
+    # already compile to exists(), so this is also what keeps them consistent.
+    # A delta ("an issue was created") keeps the strict reading: there the count
+    # is what the agent did, and "exactly one" is the claim worth testing.
+    if not word and not source and raw in ("a", "an"):
+        return f"exists({target})"
+    op = _COMPARATORS.get(word, "==")
     return f"count({target}) {op} {n}"
 
 
