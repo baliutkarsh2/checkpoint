@@ -102,19 +102,19 @@ def merge_state_for_twins(per_twin_state: dict[str, dict]) -> dict:
     return dict(per_twin_state)
 
 
-def _parse_seed_spec(raw: str | None, clones: list[str]) -> dict[str, str]:
-    """Parse `seed:` / `seed-file:` config into a {clone: value} map.
+def _parse_seed_spec(raw: str | None, twins: list[str]) -> dict[str, str]:
+    """Parse `seed:` / `seed-file:` config into a {twin: value} map.
 
-    Single value (no `=`) applies to the first clone only (legacy v0 behavior).
-    Comma-separated `clone=value` pairs apply per-clone. Unknown clones are
-    ignored silently — they may be intentionally excluded from a run.
+    A single value with no `=` applies to the first twin. Comma-separated
+    `twin=value` pairs apply per twin. A name that is not in this run is
+    ignored rather than an error: a scenario may seed twins it does not
+    always start.
     """
     if not raw:
         return {}
     raw = raw.strip()
     if "=" not in raw:
-        # Single value: apply to first clone (legacy behavior).
-        return {clones[0]: raw} if clones else {}
+        return {twins[0]: raw} if twins else {}
     out: dict[str, str] = {}
     for piece in raw.split(","):
         piece = piece.strip()

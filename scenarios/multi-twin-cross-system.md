@@ -2,7 +2,7 @@
 twins: slack, stripe
 seed: slack=engineering-team, stripe=subscription-heavy
 timeout: 90
-tags: multi-clone, cross-system, slack, stripe
+tags: multi-twin, cross-system, slack, stripe
 ---
 # Multi-twin — refund in Stripe, confirm in Slack
 

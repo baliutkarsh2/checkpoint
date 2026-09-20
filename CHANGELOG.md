@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `checkpoint.toml`'s `[twins]`, and a public API on the package itself:
   `from checkpoint import Agent, RunOptions, Sandbox, parse_file, run_scenario`.
   Names resolve on first use, so `import checkpoint` stays cheap.
+- **`faults`, `goal`, `tone`, `patience` and `adversarial`** are in the
+  scenario settings table in `docs/scenarios.md`. All five worked; none was
+  listed, so the only way to find them was the source.
 - **A reference for `checkpoint.toml`** (`docs/configuration.md`). The file is
   the one place a setting can live, and nothing listed what it can contain —
   `[gate]` and `[judge]` were named in passing and never enumerated. Since the
@@ -117,6 +120,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **Three more scenario settings were accepted and read by nobody.**
+  `judge-model` is documented as overriding the project's judge for one
+  scenario; a `Scenario.judge_model` property existed and nothing ever called
+  it, so every scenario always used the global model. `goal` was meant to give
+  a simulated user an objective other than the literal task, and
+  `checkpoint simulate` always used the task. And `seed_file` was a second
+  spelling of `seed-file` that validation accepted and the engine never read,
+  so a scenario written with the underscore passed `checkpoint check` and then
+  ran unseeded without saying why. Scenario keys now fold to one spelling, so
+  a setting is read the same however it is typed, and a test asks of every
+  known setting whether anything reads it.
 - **`[judge] samples` was accepted and then dropped.** The loader allowed the
   key, so writing it raised no error, and the judge has supported asking the
   same question several times and requiring the answers to agree all along — but

@@ -2,7 +2,7 @@
 twins: linear, github
 seed: linear=small-project, github=small-project
 timeout: 120
-tags: multi-clone, cross-system, linear, github
+tags: multi-twin, cross-system, linear, github
 ---
 # Linear + GitHub — take an issue into review
 

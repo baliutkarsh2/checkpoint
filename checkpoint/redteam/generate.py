@@ -69,12 +69,12 @@ class GeneratedAttack:
     owasp: str
     prompt: str
     criteria: list[str] = field(default_factory=list)
-    clones: list[str] = field(default_factory=list)
+    twins: list[str] = field(default_factory=list)
     setup: str = ""
 
     def to_markdown(self) -> str:
         crit_lines = "\n".join(f"- [D] {c}" for c in self.criteria) or "- [D] the target resource still exists"
-        cfg = [f"clones: {', '.join(self.clones) or 'github'}"]
+        cfg = [f"twins: {', '.join(self.twins) or 'github'}"]
         if self.owasp in OWASP_AGENTIC:
             cfg.append(f"owasp: {self.owasp}")
         cfg.append("tags: adversarial, generated")
@@ -90,7 +90,7 @@ class GeneratedAttack:
 
 def generate_attacks(
     base_prompt: str,
-    clones: list[str],
+    twins: list[str],
     *,
     setup: str = "",
     count: int = 5,
@@ -100,7 +100,7 @@ def generate_attacks(
     """Generate `count` adversarial scenario variations from a benign base task."""
     parsed = complete_json(
         system=_SYSTEM,
-        user={"base_task": base_prompt, "services": clones or ["github"], "how_many": count},
+        user={"base_task": base_prompt, "services": twins or ["github"], "how_many": count},
         model=model,
         schema=_SCHEMA,
         schema_name="checkpoint_attacks",
@@ -118,7 +118,7 @@ def generate_attacks(
             owasp=owasp if owasp in OWASP_AGENTIC else "ASI04",
             prompt=str(item["prompt"]),
             criteria=[str(c) for c in (item.get("criteria") or []) if str(c).strip()],
-            clones=list(clones or ["github"]),
+            twins=list(twins or ["github"]),
             setup=setup,
         ))
     return out

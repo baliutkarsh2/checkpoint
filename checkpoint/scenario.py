@@ -55,8 +55,8 @@ _SECTIONS = {
 # Settings a scenario may carry, in front matter or `## Config`. Anything else
 # is reported by `checkpoint check` rather than silently ignored.
 KNOWN_SETTINGS = frozenset({
-    "twins", "clones", "seed", "seed-file", "seed_file", "runs", "timeout",
-    "tags", "faults", "judge-model", "judge_model", "owasp", "workspace",
+    "twins", "clones", "seed", "seed-file", "runs", "timeout",
+    "tags", "faults", "judge-model", "owasp", "workspace",
     # Read by the simulated user (`checkpoint simulate`).
     "persona", "goal", "tone", "patience", "adversarial",
 })
@@ -141,7 +141,8 @@ class Scenario:
 
     @property
     def judge_model(self) -> str | None:
-        value = self.config.get("judge-model") or self.config.get("judge_model")
+        """A judge this scenario needs, overriding the project's default."""
+        value = self.config.get("judge-model")
         return str(value) if value else None
 
     @property
@@ -300,7 +301,15 @@ def _parse_config(text: str, scenario: Scenario) -> dict:
 
 
 def _normalize_keys(data: dict) -> dict:
-    return {str(k).strip().lower(): v for k, v in data.items()}
+    """One spelling per setting: lowercase, hyphenated.
+
+    `seed-file` and `seed_file` used to be two different keys. Both were
+    accepted by validation, and only the hyphenated one was ever read, so a
+    scenario written with the underscore passed `checkpoint check` and then ran
+    unseeded without saying why. Folding underscores here means a setting is
+    read the same however it was typed, and the reader only knows one name.
+    """
+    return {str(k).strip().lower().replace("_", "-"): v for k, v in data.items()}
 
 
 def _as_list(value: Any) -> list[str]:

@@ -35,7 +35,7 @@ def _cli_version() -> str:
 
 
 def _truncate_state_for_record(state: dict, max_chars: int = 100_000) -> dict:
-    """Run records may grow large with multi-clone state. Cap at 100KB raw."""
+    """Run records may grow large with multi-twin state. Cap at 100KB raw."""
     raw = json.dumps(state, default=str)
     if len(raw) <= max_chars:
         return state

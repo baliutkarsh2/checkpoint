@@ -22,7 +22,7 @@ def test_trajectory_from_flat_and_nested_trace():
     assert len(flat) == 4
     nested = Trajectory.from_trace({"github": _TRACE, "slack": []})
     assert len(nested) == 4
-    assert nested.steps[0].clone == "github"
+    assert nested.steps[0].twin == "github"
 
 
 def test_metrics():

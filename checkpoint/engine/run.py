@@ -30,6 +30,8 @@ class RunOptions:
     judge_model: str = DEFAULT_MODEL
     judge_samples: int = 1
     """Times to ask the judge about each criterion. Samples must agree to pass."""
+    judge_model_pinned: bool = False
+    """The caller named the judge explicitly, so a scenario must not override it."""
     timeout: float | None = None
     """Seconds before the agent is killed; defaults to the scenario's ``timeout``."""
     intercept: bool = True
@@ -200,17 +202,21 @@ def run_scenario(
     if opts.evaluate:
         from checkpoint.runner import _evaluate
 
-        _evaluate(scenario, result, opts.judge_model, samples=opts.judge_samples)
+        # A scenario may pin the judge it needs. An explicit --model or
+        # CHECKPOINT_JUDGE_MODEL still wins: flag > scenario > project file.
+        model = opts.judge_model if opts.judge_model_pinned else (
+            scenario.judge_model or opts.judge_model)
+        _evaluate(scenario, result, model, samples=opts.judge_samples)
     return result
 
 
 def run_state(sandbox_state: Mapping[str, dict]) -> dict:
     """``RunResult.state`` from a sandbox snapshot.
 
-    The workspace is held back from the per-clone merge and put back afterwards.
-    It is not a clone, and without this a single-twin scenario that gains a
+    The workspace is held back from the per-twin merge and put back afterwards.
+    It is not a twin, and without this a single-twin scenario that gains a
     workspace would suddenly have two entries and be rendered in the nested
-    multi-clone shape — silently changing what every existing report reads.
+    multi-twin shape — silently changing what every existing report reads.
     """
     from checkpoint.runner import merge_state_for_twins
 

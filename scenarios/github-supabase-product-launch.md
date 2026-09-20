@@ -2,7 +2,7 @@
 twins: github, supabase
 seed: github=small-project, supabase=ecommerce
 timeout: 120
-tags: multi-clone, github, supabase, product-launch
+tags: multi-twin, github, supabase, product-launch
 ---
 # GitHub + Supabase — coordinate a product launch
 

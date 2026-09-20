@@ -90,7 +90,16 @@ and both are reported by `checkpoint check` when a key is not one of these.
 | `tags` | Labels for `checkpoint run --tag`. |
 | `judge-model` | Judge model for this scenario's `[P]` criteria, overriding `[judge]` in `checkpoint.toml`. |
 | `owasp` | An OWASP Agentic category, `ASI01` to `ASI10`. `checkpoint redteam` groups its report by it. |
+| `faults` | How the twins misbehave for this scenario, e.g. `rate_limit=5` or `github.read_only=true`. |
 | `persona` | Who the simulated user is in `checkpoint simulate`. |
+| `goal` | What that user actually wants, when it is not the task as written. Defaults to the task. |
+| `tone` | How they say it: `neutral` (default), `frustrated`, `terse`, anything the model can read. |
+| `patience` | Turns they will spend before giving up. Default 4. |
+| `adversarial` | `true` to make them push against the agent rather than help it. |
+
+Underscores and hyphens are the same setting: `seed-file` and `seed_file` both
+work, and a setting no table row names is reported by `checkpoint check`
+rather than ignored.
 
 A seed file is `{"state": {...}, "config": {...}}`, or a bare state object.
 `checkpoint twins list` shows every bundled seed; [Twins](twins.md) says what
