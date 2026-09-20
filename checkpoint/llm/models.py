@@ -11,7 +11,7 @@ structured outputs on Chat Completions — which is what makes a verdict
 attributable to the criterion that produced it. A release gate runs the judge
 once per criterion per repeat, so the cheap model is the one that can be run
 often enough to give the gate a distribution; users who want more judgment can
-pass ``--judge-model gpt-5.6-sol`` or ``--judge-model claude-sonnet-5``.
+pass ``--model gpt-5.6-sol`` or ``--model claude-sonnet-5``.
 
 Model ids verified against https://developers.openai.com/api/docs/models and
 https://platform.claude.com/docs/en/about-claude/models/overview.
