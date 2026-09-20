@@ -653,8 +653,11 @@ def create_app(
         try:
             proj = Project.load(project_dir)
         except ConfigError as e:
+            # Reporting the problem IS this endpoint: it is the reader's own
+            # checkpoint.toml, and ConfigError's text is written for them —
+            # which key, which section, what is supported instead.
             return {"path": str(project_dir / CONFIG_NAME), "exists": True,
-                    "problem": str(e), "sections": {}}
+                    "problem": e.args[0], "sections": {}}
         return {
             "path": str(proj.path) if proj.path else str(project_dir / CONFIG_NAME),
             "exists": proj.path is not None,
