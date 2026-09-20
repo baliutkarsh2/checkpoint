@@ -28,15 +28,15 @@ const out = resolve(web, "../static/.source-hash");
 // Everything the bundle's contents depend on. package-lock.json is in here
 // because a dependency bump changes the output without touching src/.
 const INPUTS = ["src", "index.html", "package.json", "package-lock.json",
-                "vite.config.ts", "tsconfig.json", "tsconfig.app.json",
-                "postcss.config.js", "tailwind.config.js"];
+                "vite.config.ts", "tsconfig.json", "tsconfig.node.json",
+                "postcss.config.js"];
 
 function files(path) {
   let stat;
   try {
     stat = statSync(path);
   } catch {
-    return []; // an optional config this project does not use
+    return []; // a config this project has not needed yet
   }
   if (!stat.isDirectory()) return [path];
   return readdirSync(path)
