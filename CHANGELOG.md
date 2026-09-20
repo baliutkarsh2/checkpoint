@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The dashboard's JSON API says `twins`.** The routes were the last surface
+  still spelling it the old way (`/api/clones/...`) while the CLI, the UI, the
+  docs and the config key had all moved on. They are `/api/twins/...` now.
 - **One config file: `checkpoint.toml`.** Settings used to live in
   `.checkpoint.json`, `harness.json` and `~/.checkpoint/config.json`, each read
   by a different command — and an audit found keys in them that nothing read at
@@ -59,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `checkpoint.toml`'s `[twins]`, and a public API on the package itself:
   `from checkpoint import Agent, RunOptions, Sandbox, parse_file, run_scenario`.
   Names resolve on first use, so `import checkpoint` stays cheap.
+- **The suite runs on macOS and Windows in CI**, not only Linux. Checkpoint
+  starts processes, binds sockets and kills process trees, and each platform
+  does all three differently; testing one of them was testing none. Every leg
+  also caps each test, so a hang names the test instead of consuming the job.
+- **The MCP server introduces itself.** Clients were given tool descriptions but
+  never told what the verdicts mean, so INCONCLUSIVE read as a failure and BLOCK
+  as an outage.
 
 ### Removed
 
@@ -78,6 +88,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Checkpoint killed itself at the end of every run on Linux and macOS.**
+  Stopping an agent means stopping its whole process group, or the children it
+  spawned keep mutating the sandbox. That is only safe when the child leads a
+  group of its own — and the twin host was spawned without asking for one, so
+  it inherited Checkpoint's group and the teardown sent SIGKILL there.
+  `checkpoint doctor` died before printing a row, every sandboxed run died at
+  the end, and the test suite died at 36% with nothing to report. Windows kills
+  a process tree by PID and was unaffected, which is why this survived: the
+  suite was green on the only platform anyone ran it on, and in CI the signal
+  took the step's shell with it, so the job read as *cancelled* rather than
+  failed. Every process Checkpoint starts is now isolated through one helper,
+  and `kill_tree` refuses to signal a group that is its own.
+- **A guard errored instead of failing when the agent deleted the record.**
+  `github.issues[key == "…"].state == "open"` reads a field off a selection that
+  must hold exactly one item, so the agent that deleted the issue produced
+  ERROR — which the gate reports as INCONCLUSIVE, not BLOCK. The most
+  destructive possible behaviour got the softest verdict. All 45 affected
+  criteria across the bundled scenarios, the demo and the examples now fold the
+  field test into the filter and count, so a missing record fails and a
+  duplicate fails too. The forms that *write* criteria were fixed at the same
+  time — the plain-English compiler, the LLM compiler's prompt, the scenario
+  generator, the docs and the `init` templates — and a test holds every bundled
+  scenario to it.
 - **A must-pass criterion was not enforced by the gate.** `[D!]` was honored
   only by `checkpoint run`; the gate scored each run on its average, so an agent
   that deleted what a scenario said never to delete could outscore the breach
