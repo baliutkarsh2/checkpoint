@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main, master]
+  # Every pull request, not only the ones targeting main: a stacked branch that
+  # merges into another feature branch used to reach main having never run CI.
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
