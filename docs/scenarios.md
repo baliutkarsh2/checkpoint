@@ -157,6 +157,18 @@ or when a gate has to score the same way across sixteen runs and across the six
 months before someone reads the certificate. The text on the left is still what
 people read in the report; the expression on the right is what decides.
 
+One trap, and it bites exactly where it hurts. `list.field` reads a field from a
+selection that must hold **exactly one** item, so the assertion above *errors*
+rather than failing if the agent deleted that issue — and an error reads as "we
+could not score this run", not as "the thing you were guarding against
+happened". Where the record going missing is itself the failure, say so:
+
+```
+- [D!] The issue is still open
+  =>  count(github.issues[title == "Add login button"]) == 1
+      && github.issues[title == "Add login button"].state == "open"
+```
+
 ## The assertion language
 
 An assertion is a boolean expression over the run. It is evaluated tri-state:
