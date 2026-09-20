@@ -138,6 +138,25 @@ checkpoint twins stop github
 
 Nothing a twin stores is real, and nothing it does leaves the machine.
 
+For a test suite in another language, `checkpoint twins start --json` returns
+the URL, the MCP endpoint and the credential as data rather than as text to
+scrape — which is what `@checkpoint/vitest` reads:
+
+```bash
+checkpoint twins start github --seed small-project --json
+```
+```json
+{
+  "twin": "github",
+  "url": "http://127.0.0.1:60225",
+  "mcp_url": "http://127.0.0.1:60225/mcp/",
+  "token": "ghp_CHECKPOINTFAKE...",
+  "token_env": ["GITHUB_TOKEN", "GH_TOKEN"],
+  "url_env": "CHECKPOINT_GITHUB_URL",
+  "seed": "small-project"
+}
+```
+
 ## Adding your own
 
 The seven cover the services most agents touch, and not yours. Point Checkpoint
