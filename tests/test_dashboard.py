@@ -244,11 +244,11 @@ def test_api_compare_404(client_with_data):
 # Long-lived twin sessions
 # ---------------------------------------------------------------------------
 
-def test_api_clones_without_a_sessions_file(client):
-    assert client.get("/api/clones").json() == []
+def test_api_twins_without_a_sessions_file(client):
+    assert client.get("/api/twins").json() == []
 
 
-def test_api_clones_lists_the_twins_in_the_sessions_file(tmp_path):
+def test_api_twins_lists_the_twins_in_the_sessions_file(tmp_path):
     runs_dir = tmp_path / "runs"; runs_dir.mkdir()
     scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
     sessions = tmp_path / "sessions.json"
@@ -265,13 +265,13 @@ def test_api_clones_lists_the_twins_in_the_sessions_file(tmp_path):
     }))
     app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, twin_sessions_file=sessions)
     c = TestClient(app)
-    data = c.get("/api/clones").json()
+    data = c.get("/api/twins").json()
     assert len(data) == 1
     assert data[0]["id"] == "github"
     assert data[0]["url"] == "http://127.0.0.1:18001"
 
 
-def test_api_clones_survives_a_half_written_sessions_file(tmp_path):
+def test_api_twins_survives_a_half_written_sessions_file(tmp_path):
     """The file is rewritten by another process; a torn read must not 500."""
     runs_dir = tmp_path / "runs"; runs_dir.mkdir()
     scn_dir = tmp_path / "scenarios"; scn_dir.mkdir()
@@ -279,7 +279,7 @@ def test_api_clones_survives_a_half_written_sessions_file(tmp_path):
     sessions.write_text("not valid json")
     app = create_app(runs_dir=runs_dir, scenarios_dir=scn_dir, twin_sessions_file=sessions)
     c = TestClient(app)
-    assert c.get("/api/clones").json() == []
+    assert c.get("/api/twins").json() == []
 
 
 # ---------------------------------------------------------------------------

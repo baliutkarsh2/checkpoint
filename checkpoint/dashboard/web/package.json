@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "checkpoint dashboard SPA",
+  "description": "Checkpoint dashboard SPA",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/stamp-source-hash.mjs",

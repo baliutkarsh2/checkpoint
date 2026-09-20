@@ -59,7 +59,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="max-w-[1280px] mx-auto px-8 flex items-center justify-between h-full">
           <div className="flex gap-4 items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_#2dff5c]" />
-            <span>checkpoint dashboard</span>
+            <span>Checkpoint dashboard</span>
           </div>
           <div className="flex gap-4 text-paper/60 max-md:hidden">
             <span>
@@ -80,7 +80,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="max-w-[1280px] mx-auto px-8 flex items-center h-full">
           <Link to="/" className="font-bold text-[15px] flex items-center gap-2.5">
             <span className="w-2.5 h-2.5 bg-accent border border-ink animate-blip" />
-            <span>checkpoint</span>
+            <span>Checkpoint</span>
           </Link>
           <div className="flex gap-6 ml-12 flex-1">
             <NavItem to="/">Runs</NavItem>
@@ -124,7 +124,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <footer className="mt-20 py-6 border-t border-paper-3 dark:border-ink-3 text-ink-3 dark:text-paper-3 text-[11px] uppercase tracking-wider font-mono">
         <div className="max-w-[1280px] mx-auto px-8 flex justify-between">
-          <span>checkpoint dashboard · v{meta?.version || "dev"}</span>
+          <span>Checkpoint dashboard · v{meta?.version || "dev"}</span>
           <span>
             <span className="kbd">?</span> for help · <span className="kbd">⌘K</span> to search
           </span>

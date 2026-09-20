@@ -388,31 +388,29 @@ export const api = {
     ),
   gate: (gateId: string) =>
     request<GateResult>(`/api/gates/${encodeURIComponent(gateId)}`),
-  // The twin routes still spell the path `/api/clones`; only the vocabulary
-  // the reader sees has moved on.
-  twins: () => request<TwinSession[]>("/api/clones"),
-  twinsSupported: () => request<SupportedTwin[]>("/api/clones/supported"),
+  twins: () => request<TwinSession[]>("/api/twins"),
+  twinsSupported: () => request<SupportedTwin[]>("/api/twins/supported"),
   twin: {
     start: (id: string) =>
-      request<TwinSession>(`/api/clones/${encodeURIComponent(id)}`, { method: "POST" }),
+      request<TwinSession>(`/api/twins/${encodeURIComponent(id)}`, { method: "POST" }),
     stop: (id: string) =>
       request<{ id: string; was_running: boolean }>(
-        `/api/clones/${encodeURIComponent(id)}`,
+        `/api/twins/${encodeURIComponent(id)}`,
         { method: "DELETE" },
       ),
     seed: (id: string, name: string) =>
       request<{ ok: boolean; status?: number; error?: string }>(
-        `/api/clones/${encodeURIComponent(id)}/seed/${encodeURIComponent(name)}`,
+        `/api/twins/${encodeURIComponent(id)}/seed/${encodeURIComponent(name)}`,
         { method: "POST" },
       ),
     reset: (id: string) =>
       request<{ ok: boolean; status?: number; error?: string }>(
-        `/api/clones/${encodeURIComponent(id)}/reset`,
+        `/api/twins/${encodeURIComponent(id)}/reset`,
         { method: "POST" },
       ),
     tools: (id: string) =>
       request<{ ok: boolean; tools: { name: string; description?: string }[] }>(
-        `/api/clones/${encodeURIComponent(id)}/tools`,
+        `/api/twins/${encodeURIComponent(id)}/tools`,
       ),
   },
   report: (params: { scenario?: string; limit?: number } = {}) => {
