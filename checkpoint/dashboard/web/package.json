@@ -6,10 +6,11 @@
   "description": "checkpoint dashboard SPA",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/stamp-source-hash.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "stamp": "node scripts/stamp-source-hash.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

@@ -174,12 +174,12 @@ def resolve_targets(proj: Project, targets: Sequence[str]) -> list[Path]:
         elif root.is_file():
             files.append(root)
         elif targets:
-            fail(f"no such scenario: {root}")
+            fail(f"no such scenario: {short_path(root)}")
         else:
-            fail(f"no scenarios found: {root} does not exist",
+            fail(f"no scenarios yet: {short_path(root)} does not exist",
                  hint="Create one with `checkpoint new \"<what the agent should do>\"`.")
     if not files:
-        where = ", ".join(str(r) for r in roots)
+        where = ", ".join(short_path(r) for r in roots)
         fail(f"no scenario files (*.md) under {where}",
              hint="Create one with `checkpoint new \"<what the agent should do>\"`.")
     # A file passed twice — say `scenarios` and `scenarios/one.md` — runs once.
@@ -211,6 +211,19 @@ def mark(status: str) -> str:
     """A criterion's verdict, as rich markup."""
     style = _MARK_STYLES.get(status, "dim")
     return f"[{style}]{_MARKS.get(status, status)}[/{style}]"
+
+
+def short_path(path: Path) -> str:
+    """A path the reader can place at a glance.
+
+    Relative to where they are standing when it is under it, absolute only when
+    it is genuinely somewhere else. A wrapped absolute path in an error message
+    is three lines of noise around the one word that matters.
+    """
+    try:
+        return Path(path).resolve().relative_to(Path.cwd()).as_posix()
+    except (ValueError, OSError):
+        return str(path)
 
 
 def score_color(score: float) -> str:
