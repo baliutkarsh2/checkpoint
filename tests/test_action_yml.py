@@ -118,8 +118,6 @@ def test_ci_still_defines_every_check_main_requires():
     The names are listed here rather than fetched so the test needs no network
     and no token. If protection changes, this list changes with it.
     """
-    import yaml
-
     required = {
         "Build SPA + run pytest + verify wheel",
         "Validate the GitHub Action",
@@ -149,10 +147,6 @@ def test_the_image_builds_the_spa_on_the_node_ci_tests():
     major than CI verifies, because then the image ships a bundle nobody
     tested. They had drifted to 22 and 24, with a comment still saying 20.
     """
-    import re
-
-    import yaml
-
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
     image = re.search(r"FROM node:(\d+)-", dockerfile)
     assert image, "the Dockerfile no longer builds the SPA on a pinned node image"
