@@ -184,9 +184,14 @@ checkpoint report --certificate build.cert.json --redteam redteam.json --out ass
 ```
 
 There is no `cert issue`: a certificate is issued by the run that earned it, so
-none can exist without the evidence behind it. `checkpoint report` assembles the
-verdict, the statistics, the adversarial results and the cross-references a
-reviewer asks for into one document.
+none can exist without the evidence behind it. An ERROR gate earns nothing —
+the sandbox, the judge or the scenarios broke before anything was measured — so
+`--certificate` writes no file and says so, rather than leaving you a document
+that verifies and attests to nothing. INCONCLUSIVE and BLOCK do get one: "not
+enough evidence to ship" and "the evidence says no" are both findings worth
+signing. `checkpoint report` assembles the verdict, the statistics, the
+adversarial results and the cross-references a reviewer asks for into one
+document.
 
 Its grade is the word a reader quotes without reading the rest of the page, so
 it is deliberately hard to earn. A certificate whose signature does not verify
