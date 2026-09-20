@@ -61,6 +61,19 @@ what a suite will cost before running it. A scenario whose criteria all show as
 `pattern:` or `pinned:` needs no key at all — which is why `checkpoint demo`
 works offline.
 
+**What a judge model has to be able to do.** `CHECKPOINT_LLM_BASE_URL` points at
+any OpenAI-compatible endpoint, including a local one — but the protocol is the
+easy half. The judge sends every criterion with an id and requires the model to
+echo each id back exactly, so that a verdict can never be attached to the wrong
+criterion. Small local models frequently cannot: they answer under ids copied
+out of the evidence instead.
+
+Checkpoint refuses those answers rather than guessing, so the result is a run
+that reports `1 not scored` and exits 2 — correct, but repeatable until you
+change the model. If you see that with a local judge, the model is the thing to
+change, not the scenario. A model in the class of the defaults handles it; a
+one-to-three-billion-parameter model generally does not.
+
 ## `[sandbox]` — the world the agent runs in
 
 | Key | Default | Means |
