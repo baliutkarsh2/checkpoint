@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from checkpoint.eval.nl import Collection, Schema, compile_criterion
+from checkpoint.workspace import FIELDS as FILE_FIELDS
 
 SCHEMA = Schema((
     Collection("github", "issues", ("issue", "issues"),
@@ -101,6 +102,68 @@ def test_schema_from_views_reads_nouns_and_fields():
     coll = schema.resolve("issues")
     assert coll is not None and coll.path == "github.issues"
     assert coll.fields == frozenset({"id", "title"})
+
+
+# -- workspace files ---------------------------------------------------------------
+#
+# A workspace is a namespace like any twin, so "file" resolves to
+# `workspace.files` through the ordinary noun lookup. Nothing below special-cases
+# the word; swap the collection out and the same criteria stop compiling.
+
+FILES = Schema((Collection("workspace", "files", ("file", "files"),
+                           frozenset(FILE_FIELDS), None, "path"),))
+
+
+@pytest.mark.parametrize(("criterion", "assertion"), [
+    ("Exactly 1 file was created", "count(created.workspace.files) == 1"),
+    ("No files were deleted", "count(deleted.workspace.files) == 0"),
+    ("At least 2 files were modified", "count(changed.workspace.files) >= 2"),
+    ("Exactly 3 files exist", "count(workspace.files) == 3"),
+    ('A file named "README.md" exists',
+     'exists(workspace.files[path == "README.md"])'),
+    ("src/app.py was changed", 'exists(changed.workspace.files[path == "src/app.py"])'),
+    ("src/app.py was modified", 'exists(changed.workspace.files[path == "src/app.py"])'),
+    ("The file docs/index.md was created",
+     'exists(created.workspace.files[path == "docs/index.md"])'),
+    ("obsolete.txt was deleted", 'exists(deleted.workspace.files[path == "obsolete.txt"])'),
+    ("README.md still exists", 'exists(workspace.files[path == "README.md"])'),
+    ("poetry.lock was not modified",
+     'count(changed.workspace.files[path == "poetry.lock"]) == 0'),
+    ("package-lock.json was not touched",
+     'count(changed.workspace.files[path == "package-lock.json"]) == 0'),
+])
+def test_file_criteria_compile(criterion, assertion):
+    compiled = compile_criterion(criterion, FILES)
+    assert compiled is not None, f"{criterion!r} did not compile"
+    assert compiled.assertion == assertion
+    assert compiled.source == "pattern"
+
+
+def test_a_path_needs_a_file_collection_to_resolve_against():
+    """With no workspace in the run there is nothing for a path to mean."""
+    assert compile_criterion("src/app.py was changed", SCHEMA) is None
+    assert compile_criterion('A file named "README.md" exists', SCHEMA) is None
+
+
+def test_a_generated_id_is_not_a_name():
+    """"named X" must not compile into a comparison against an id it can never equal."""
+    schema = Schema((Collection("github", "issues", ("issue",), frozenset({"id", "title"})),))
+    assert compile_criterion('An issue named "Login broken" exists', schema) is None
+
+
+def test_a_real_name_field_still_wins_over_the_key():
+    schema = Schema((Collection("slack", "channels", ("channel",),
+                                frozenset({"id", "name"}), None, "id"),))
+    compiled = compile_criterion('A channel named "incidents" exists', schema)
+    assert compiled is not None
+    assert compiled.assertion == 'exists(slack.channels[name == "incidents"])'
+
+
+def test_schema_from_views_reads_the_primary_key():
+    views = {"workspace": {"files": {"key": "path", "nouns": ["file", "files"],
+                                     "fields": list(FILE_FIELDS), "items": []}}}
+    coll = Schema.from_views(views).resolve("file")
+    assert coll is not None and coll.key == "path" and coll.path == "workspace.files"
 
 
 def test_scenario_comments_are_not_criteria():

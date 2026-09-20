@@ -1,6 +1,7 @@
 """The sandbox lifecycle and end-to-end scenario runs on the engine."""
 from __future__ import annotations
 
+import json
 import sys
 import textwrap
 from pathlib import Path
@@ -9,7 +10,7 @@ import httpx
 import pytest
 
 from checkpoint.engine import Agent, RunOptions, Sandbox, SandboxError, TwinSetup, run_scenario
-from checkpoint.scenario import parse
+from checkpoint.scenario import parse, parse_file
 from checkpoint.twins import registry
 
 PY = sys.executable
@@ -231,6 +232,209 @@ def test_an_allowed_host_is_let_through(tmp_path):
                           options=RunOptions(intercept=True, egress="llm",
                                              allow_hosts=("api.tavily.com",)))
     assert result.error is None
+
+
+# -- workspaces ---------------------------------------------------------------------
+#
+# A workspace is the other half of what an agent can be tested on: the tree it
+# edits, rather than the APIs it calls. It is orthogonal to twins — a run may
+# have either, both, or neither.
+
+WORKSPACE_SCENARIO = textwrap.dedent('''
+    ---
+    workspace: repo
+    ---
+    # Fix the bug
+
+    ## Task
+    Fix the bug in src/app.py and note it in the changelog.
+
+    ## Criteria
+    - [D] Exactly 1 file was created
+    - [D] src/app.py was changed
+    - [D] No files were deleted
+''')
+
+# Creates one file and edits another, entirely through relative paths — the way
+# a coding agent works when it believes it is sitting in a checkout.
+CODING_AGENT = textwrap.dedent('''
+    import pathlib
+    pathlib.Path("CHANGELOG.md").write_text("Fixed the bug.\\n", encoding="utf-8")
+    app = pathlib.Path("src/app.py")
+    app.write_text(app.read_text(encoding="utf-8").replace("1 / 0", "1"), encoding="utf-8")
+    print("edited the tree")
+''')
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """A scenario file with a small fixture tree beside it."""
+    seed = tmp_path / "repo"
+    (seed / "src").mkdir(parents=True)
+    (seed / "src" / "app.py").write_text("def main():\n    return 1 / 0\n", encoding="utf-8")
+    (seed / "README.md").write_text("# Demo\n", encoding="utf-8")
+    (tmp_path / "fix.md").write_text(WORKSPACE_SCENARIO, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.fixture
+def coding_agent(tmp_path: Path) -> Path:
+    path = tmp_path / "coding_agent.py"
+    path.write_text(CODING_AGENT, encoding="utf-8")
+    return path
+
+
+def test_a_workspace_exports_its_root_and_holds_the_seed():
+    with Sandbox([], intercept=False, workspace=True) as box:
+        box.prepare(workspace_seed=None)
+        root = Path(box.agent_env({})["CHECKPOINT_WORKSPACE"])
+
+        assert root == box.workspace_root and root.is_dir()
+        assert box.views()["workspace"]["files"]["items"] == []
+
+
+def test_the_workspace_collection_is_keyed_by_path(repo):
+    with Sandbox([], intercept=False, workspace=True) as box:
+        box.prepare(workspace_seed=repo / "repo")
+        files = box.views()["workspace"]["files"]
+
+        assert files["key"] == "path"
+        assert sorted(i["path"] for i in files["items"]) == ["README.md", "src/app.py"]
+        assert (box.workspace_root / "src" / "app.py").is_file(), "the tree is really there"
+
+
+def test_a_sandbox_without_a_workspace_says_so_rather_than_silently_skipping(repo):
+    with Sandbox([], intercept=False) as box:
+        assert box.workspace_root is None
+        with pytest.raises(SandboxError) as exc:
+            box.prepare(workspace_seed=repo / "repo")
+    assert "workspace=True" in str(exc.value)
+
+
+def test_the_agent_runs_inside_the_workspace(repo, coding_agent):
+    result = run_scenario(parse_file(repo / "fix.md"), Agent(command=[PY, str(coding_agent)]),
+                          options=RunOptions(intercept=False))
+
+    assert result.error is None, result.stderr
+    assert result.score == 100.0
+    files = {f["path"]: f for f in result.views["workspace"]["files"]["items"]}
+    assert "1 / 0" not in files["src/app.py"]["content"]
+    assert files["CHANGELOG.md"]["content"] == "Fixed the bug.\n"
+
+
+def test_an_explicit_cwd_wins_but_the_workspace_is_still_reachable(repo, tmp_path):
+    """Someone who set `[agent] cwd` meant it; the tree stays addressable by env var."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    reporter = tmp_path / "reporter.py"
+    # Reported from inside the run: the sandbox removes the tree on the way out,
+    # so whether the agent could reach it is only answerable while it is running.
+    reporter.write_text(textwrap.dedent('''
+        import json, os, pathlib
+        ws = pathlib.Path(os.environ["CHECKPOINT_WORKSPACE"])
+        print(json.dumps({"text": json.dumps({
+            "cwd": str(pathlib.Path.cwd()),
+            "reached": (ws / "src" / "app.py").is_file(),
+        })}))
+    '''), encoding="utf-8")
+
+    result = run_scenario(parse_file(repo / "fix.md"),
+                          Agent(command=[PY, str(reporter)], cwd=str(elsewhere)),
+                          options=RunOptions(intercept=False, evaluate=False))
+
+    reported = json.loads(result.final_answer)
+    assert Path(reported["cwd"]) == elsewhere.resolve()
+    assert reported["reached"] is True
+
+
+def test_each_run_gets_a_fresh_copy_of_the_tree(repo, coding_agent):
+    """What the gate relies on: run two must not inherit run one's edits."""
+    scenario = parse_file(repo / "fix.md")
+    agent = Agent(command=[PY, str(coding_agent)])
+    with Sandbox([], intercept=False, workspace=True) as box:
+        first = run_scenario(scenario, agent, sandbox=box)
+        seed_paths = sorted(i["path"] for i in first.seed_views["workspace"]["files"]["items"])
+        second = run_scenario(scenario, agent, sandbox=box)
+
+    assert first.error is None and second.error is None, second.stderr
+    assert first.score == second.score == 100.0
+    assert seed_paths == ["README.md", "src/app.py"], "the seed has no CHANGELOG.md"
+    assert sorted(i["path"] for i in second.seed_views["workspace"]["files"]["items"]) == (
+        seed_paths), "run two started from the seed, not from run one's tree"
+
+
+def test_a_missing_workspace_directory_is_a_setup_error_not_a_zero(repo, coding_agent):
+    """A typo'd path must be reported, never scored as an agent that failed."""
+    (repo / "fix.md").write_text(
+        WORKSPACE_SCENARIO.replace("workspace: repo", "workspace: no-such-tree"),
+        encoding="utf-8")
+
+    result = run_scenario(parse_file(repo / "fix.md"), Agent(command=[PY, str(coding_agent)]),
+                          options=RunOptions(intercept=False))
+
+    assert result.setup_error
+    assert "workspace directory not found" in result.error
+    assert result.criteria == []
+
+
+def test_an_idle_agent_fails_what_it_should_and_passes_what_it_should(repo):
+    """The negative case that decides whether file criteria are worth anything.
+
+    `exists(workspace.files[...])` is about the seed as much as the agent: a file
+    that shipped in the fixture exists whether or not the agent ran. Only the
+    delta roots can catch an agent that did nothing, which is why the docs tell
+    authors to write `count(created.workspace.files) == 1`.
+    """
+    (repo / "fix.md").write_text(WORKSPACE_SCENARIO.replace(
+        "- [D] Exactly 1 file was created",
+        '- [D] Exactly 1 file was created\n'
+        '- [D] README.md is present  =>  exists(workspace.files[path == "README.md"])',
+    ), encoding="utf-8")
+    idle = repo / "idle.py"
+    idle.write_text('print("I had a look and everything seemed fine")', encoding="utf-8")
+
+    result = run_scenario(parse_file(repo / "fix.md"), Agent(command=[PY, str(idle)]),
+                          options=RunOptions(intercept=False))
+
+    verdicts = {c.assertion: c.passed for c in result.criteria}
+    assert verdicts['count(created.workspace.files) == 1'] is False
+    assert verdicts['exists(workspace.files[path == "README.md"])'] is True, (
+        "a seeded file exists no matter what the agent did — which is the trap")
+    assert verdicts['exists(changed.workspace.files[path == "src/app.py"])'] is False
+    assert result.score < 100.0
+
+
+def test_a_tree_too_big_to_hold_is_reported_not_raised(repo, tmp_path, monkeypatch):
+    """An agent that floods the tree cannot be scored, so the run says so."""
+    monkeypatch.setattr("checkpoint.workspace.MAX_FILES", 3)
+    flooder = tmp_path / "flooder.py"
+    flooder.write_text(textwrap.dedent('''
+        import pathlib
+        for i in range(10):
+            pathlib.Path(f"junk{i}.txt").write_text("x", encoding="utf-8")
+        print("flooded")
+    '''), encoding="utf-8")
+
+    result = run_scenario(parse_file(repo / "fix.md"), Agent(command=[PY, str(flooder)]),
+                          options=RunOptions(intercept=False))
+
+    assert result.setup_error
+    assert "more than the limit of 3" in result.error
+
+
+def test_twins_and_a_workspace_coexist(repo, agent_path):
+    """Neither implies the other, and a single-twin run keeps its flat state shape."""
+    scenario = parse(SCENARIO + "\nworkspace: " + str(repo / "repo").replace("\\", "/") + "\n")
+
+    result = run_scenario(scenario, Agent(command=[PY, str(agent_path)]),
+                          options=RunOptions(intercept=False))
+
+    assert result.error is None, result.stderr
+    assert result.score == 100.0
+    assert sorted(i["path"] for i in result.views["workspace"]["files"]["items"]) == [
+        "README.md", "src/app.py"]
+    assert "issues" in result.state, "the twin's state is still flat, not nested per clone"
+    assert result.state["workspace"]["files"]
 
 
 def test_a_twins_mcp_surface_is_reachable_through_interception():

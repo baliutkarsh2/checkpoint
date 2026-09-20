@@ -56,7 +56,7 @@ _SECTIONS = {
 # is reported by `checkpoint check` rather than silently ignored.
 KNOWN_SETTINGS = frozenset({
     "twins", "clones", "seed", "seed-file", "seed_file", "runs", "timeout",
-    "tags", "faults", "judge-model", "judge_model", "owasp",
+    "tags", "faults", "judge-model", "judge_model", "owasp", "workspace",
     # Read by the simulated user (`checkpoint simulate`).
     "persona", "goal", "tone", "patience", "adversarial",
 })
@@ -132,6 +132,12 @@ class Scenario:
     def faults(self) -> dict[str, dict]:
         faults = self.config.get("faults") or {}
         return faults if isinstance(faults, dict) else {}
+
+    @property
+    def workspace(self) -> str | None:
+        """The file tree the agent edits, as written; resolved by the engine."""
+        value = self.config.get("workspace")
+        return str(value) if value else None
 
     @property
     def judge_model(self) -> str | None:
