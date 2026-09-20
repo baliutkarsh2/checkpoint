@@ -9,10 +9,42 @@ the conventions are still marked experimental.
 
 Accepts either a list of spans as simple dicts (`{"name", "attributes": {...},
 "status": {...}}`) or OTLP-JSON attributes (a list of `{"key", "value": {...}}`).
+Use :func:`spans_from_export` first when what you have is a whole exported file,
+which wraps its spans in resource and scope envelopes.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from .model import Trajectory, TrajectoryStep
+
+
+def spans_from_export(data: Any) -> list[dict]:
+    """The spans inside whatever an OTLP exporter wrote.
+
+    A collector writes ``{"resourceSpans": [{"scopeSpans": [{"spans": [...]}]}]}``
+    — nested twice so one file can carry several services and instrumentation
+    libraries. Neither envelope means anything to a single agent's trajectory,
+    so they are flattened away here. A bare list, or ``{"spans": [...]}``, is
+    passed through, because both are what people hand-write.
+    """
+    if isinstance(data, list):
+        return [span for span in data if isinstance(span, dict)]
+    if not isinstance(data, dict):
+        return []
+    if isinstance(data.get("spans"), list):
+        return [span for span in data["spans"] if isinstance(span, dict)]
+    spans: list[dict] = []
+    for resource in data.get("resourceSpans") or []:
+        if not isinstance(resource, dict):
+            continue
+        # The field was renamed between OTLP versions; exporters in the wild
+        # still write the old one.
+        scopes = resource.get("scopeSpans") or resource.get("instrumentationLibrarySpans") or []
+        for scope in scopes:
+            if isinstance(scope, dict):
+                spans.extend(s for s in (scope.get("spans") or []) if isinstance(s, dict))
+    return spans
 
 
 def _attr_value(v):

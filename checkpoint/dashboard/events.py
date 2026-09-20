@@ -1,10 +1,10 @@
 """In-process pub/sub event bus + filesystem watcher.
 
 The dashboard publishes named events ("run.created", "run.updated",
-"clones.changed", "job.updated") to any number of asyncio subscribers. The
+"twins.changed", "job.updated") to any number of asyncio subscribers. The
 SSE endpoint in app.py creates one subscriber per connected client.
 
-A background watcher polls RUNS_DIR + the clone registry for changes (mtime +
+A background watcher polls RUNS_DIR + the twin sessions file for changes (mtime +
 filename diff) and publishes events when it detects them. Polling beats
 filesystem-watch APIs here because:
   - It's cross-platform (Windows, macOS, Linux behave identically)
@@ -73,18 +73,18 @@ class EventBus:
 
 
 class FilesystemWatcher:
-    """Polls runs_dir + clone registry; publishes events on changes."""
+    """Polls runs_dir + the twin sessions file; publishes events on changes."""
 
     def __init__(
         self,
         bus: EventBus,
         runs_dir: Path,
-        clone_registry_path: Path | None,
+        twin_sessions_file: Path | None,
         poll_interval: float = 1.0,
     ) -> None:
         self.bus = bus
         self.runs_dir = runs_dir
-        self.clone_registry_path = clone_registry_path
+        self.twin_sessions_file = twin_sessions_file
         self.poll_interval = poll_interval
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
@@ -108,7 +108,7 @@ class FilesystemWatcher:
         log.info(
             "fs watcher started: runs=%s registry=%s",
             self.runs_dir,
-            self.clone_registry_path,
+            self.twin_sessions_file,
         )
         while not self._stop.is_set():
             try:
@@ -126,7 +126,7 @@ class FilesystemWatcher:
                 cur_registry = self._read_registry()
                 if cur_registry != prev_registry:
                     await self.bus.publish(
-                        "clones.changed", {"count": len(cur_registry)}
+                        "twins.changed", {"count": len(cur_registry)}
                     )
                     prev_registry = cur_registry
             except Exception as e:  # noqa: BLE001
@@ -151,9 +151,9 @@ class FilesystemWatcher:
         return out
 
     def _read_registry(self) -> dict[str, Any]:
-        if not self.clone_registry_path or not self.clone_registry_path.exists():
+        if not self.twin_sessions_file or not self.twin_sessions_file.exists():
             return {}
         try:
-            return json.loads(self.clone_registry_path.read_text(encoding="utf-8"))
+            return json.loads(self.twin_sessions_file.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}

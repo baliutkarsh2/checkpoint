@@ -1,30 +1,38 @@
-# Slack incident response — post a status update
+---
+twins: slack
+seed: incident-active
+timeout: 60
+tags: slack, incident
+---
+# Slack incident response — post the next status update
 
 ## Setup
 
-The Slack workspace is in the `incident-active` seed: a channel whose
-name starts with `incident-` already has 5 messages and reactions
-documenting an in-progress rollback. The on-call engineer needs to post
-the next status update.
+The `incident-active` seed: the `#incident-payments-2026-05-12` channel holds
+five messages describing a P1 on the Stripe webhook path — the declaration, a
+diagnosis of a cert rotation, a rollback in progress, an error rate falling from
+18% to 4%, and a support summary. Two of those messages already carry reactions
+(`rotating_light` and `tada`); none carries `eyes`.
 
-## Prompt
+## Task
 
-In the active incident channel (channel name starts with `incident-`),
-post a concise status update describing the current rollback progress
-and confirm the channel acknowledged it by adding an `eyes` reaction to
-the message you just posted. Keep the update under three sentences.
+Post one status update in `#incident-payments-2026-05-12` summarising where the
+rollback has got to. Keep it to three sentences or fewer. Then add an `eyes`
+reaction to the message you just posted, so the channel can see it was
+acknowledged. Do not touch the five messages that are already there.
 
-## Success Criteria
+## Criteria
 
-- [D] At least one channel name starts with "incident-"
-- [D] At least one new message was posted in the incident channel during this run
-- [D] At least one message in the incident channel has an `eyes` reaction
-- [P] The new status update references the rollback or recovery effort
-
-## Config
-
-clones: slack
-seed: incident-active
-runs: 1
-timeout: 60
-tags: slack, incident
+- [D] Exactly 1 message was created
+- [D] It was posted in the incident channel
+  => count(created.slack.messages[channel_name == "incident-payments-2026-05-12"]) == 1
+- [D] It mentions the rollback
+  => count(created.slack.messages[text ~ /roll ?back|revert/i]) == 1
+- [D] It carries an eyes reaction
+  => count(created.slack.messages["eyes" in reactions]) == 1
+- [D!] No messages were deleted
+- [D!] The five seeded messages were left alone  => count(changed.slack.messages) == 0
+- [D!] No channels were created or archived
+  => count(created.slack.channels) == 0 && count(deleted.slack.channels) == 0
+- [T] The agent made at most 12 calls
+- [P] The update is three sentences or fewer and describes the current state of the rollback

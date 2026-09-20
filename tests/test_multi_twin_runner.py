@@ -1,0 +1,147 @@
+"""Running one scenario against several twins at once.
+
+They use a tiny harness that reads the CHECKPOINT_<TWIN>_URL variables and
+echoes what it found, so nothing here needs a judge or a model.
+
+Most of these write `twins:`, the current spelling. One deliberately writes
+`clones:`, the name the setting had before the rename, because a suite written
+against the old spelling has to keep running — and a back-compat path nothing
+exercises is a back-compat path that quietly stops working.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from checkpoint.engine import Agent, run_scenario
+from checkpoint.runner import _parse_seed_spec
+from checkpoint.scenario import Scenario
+
+HARNESS_ECHO = textwrap.dedent(
+    """
+    import json, os, sys
+    out = {
+        "github": os.environ.get("CHECKPOINT_GITHUB_URL"),
+        "slack": os.environ.get("CHECKPOINT_SLACK_URL"),
+        "stripe": os.environ.get("CHECKPOINT_STRIPE_URL"),
+    }
+    # `_extract_final_answer` would strip a top-level `text` field, so we
+    # wrap the payload as a JSON-string under `text` to survive the extractor.
+    sys.stdout.write(json.dumps({"text": json.dumps(out)}))
+    """
+).strip()
+
+
+@pytest.fixture
+def echo_harness(tmp_path: Path) -> Path:
+    p = tmp_path / "echo.py"
+    p.write_text(HARNESS_ECHO)
+    return p
+
+
+def test_parse_seed_spec_single_value():
+    assert _parse_seed_spec("small-project", ["github"]) == {"github": "small-project"}
+    # A single value applies to the first twin only.
+    assert _parse_seed_spec("small-project", ["github", "slack"]) == {"github": "small-project"}
+
+
+def test_parse_seed_spec_per_twin_map():
+    out = _parse_seed_spec("github=small-project, slack=engineering-team", ["github", "slack"])
+    assert out == {"github": "small-project", "slack": "engineering-team"}
+
+
+def test_parse_seed_spec_empty():
+    assert _parse_seed_spec(None, ["github"]) == {}
+    assert _parse_seed_spec("", ["github"]) == {}
+
+
+def test_parse_seed_spec_unknown_twin_kept():
+    # A twin not in this run is kept in the map; the runner ignores it.
+    out = _parse_seed_spec("foo=bar", ["github"])
+    assert out == {"foo": "bar"}
+
+
+def test_a_suite_written_before_the_rename_still_runs(echo_harness):
+    """`clones:` is the old name for `twins:` and must keep working."""
+    s = Scenario(prompt="hello", config={"twins": "github", "timeout": "30"})
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
+    assert r.complete, f"runner failed: {r.error} / {r.stderr}"
+    payload = json.loads(r.final_answer)
+    assert payload["github"], "CHECKPOINT_GITHUB_URL not set"
+    assert payload["slack"] is None
+    # Single-clone state stays flat: top-level should have github twin keys.
+    assert "repos" in r.state or "issues" in r.state
+
+
+def test_multi_twin_three_twins(echo_harness):
+    s = Scenario(prompt="hello", config={"twins": "github,slack,stripe", "timeout": "30"})
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
+    assert r.complete, f"runner failed: {r.error} / {r.stderr}"
+    payload = json.loads(r.final_answer)
+    assert payload["github"], "CHECKPOINT_GITHUB_URL missing"
+    assert payload["slack"], "CHECKPOINT_SLACK_URL missing"
+    assert payload["stripe"], "CHECKPOINT_STRIPE_URL missing"
+    # Three different ports.
+    urls = {payload["github"], payload["slack"], payload["stripe"]}
+    assert len(urls) == 3, f"expected 3 distinct twin URLs, got {urls}"
+    # BASE_URL == first clone.
+    # Multi-clone state shape is nested {clone: state}.
+    assert set(r.state.keys()) >= {"github", "slack", "stripe"}
+
+
+def test_multi_twin_with_per_twin_seeds(echo_harness):
+    s = Scenario(
+        prompt="hello",
+        config={
+            "twins": "github,slack,stripe",
+            "seed": "github=small-project, slack=engineering-team, stripe=small-business",
+            "timeout": "30",
+        },
+    )
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
+    assert r.complete, f"runner failed: {r.error} / {r.stderr}"
+    # Confirm seeds actually loaded — small-project should have ≥1 repo.
+    gh_state = r.state["github"]
+    assert gh_state.get("repos") or gh_state.get("issues"), "github seed did not populate"
+    # engineering-team has channels.
+    sl_state = r.state["slack"]
+    assert sl_state.get("channels"), "slack seed did not populate channels"
+    # small-business has customers.
+    st_state = r.state["stripe"]
+    assert st_state.get("customers"), "stripe seed did not populate customers"
+
+
+def test_seed_file_inline_state(echo_harness, tmp_path):
+    """A seed-file pointing to a JSON file replaces the twin's state."""
+    seed_file = tmp_path / "gh_seed.json"
+    seed_file.write_text(json.dumps({
+        "state": {
+            "issues": {
+                "1": {"number": 1, "title": "Custom seeded", "state": "open", "labels": []},
+            }
+        }
+    }))
+    s = Scenario(
+        prompt="hello",
+        config={
+            "twins": "github",
+            "seed-file": str(seed_file),
+            "timeout": "30",
+        },
+    )
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
+    assert r.complete, f"runner failed: {r.error} / {r.stderr}"
+    issues = r.state.get("issues") or {}
+    # Single-clone flat state.
+    assert any(i.get("title") == "Custom seeded" for i in issues.values()), f"got issues={issues}"
+
+
+def test_unknown_clone_errors():
+    s = Scenario(prompt="hi", config={"twins": "github,fakebook"})
+    r = run_scenario(s, Agent(command=[sys.executable, "-c", "print('{}')"]))
+    assert not r.complete
+    assert "fakebook" in (r.error or "")

@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   });
 
-  // Live updates: when a run completes or a clone changes, invalidate the
+  // Live updates: when a run completes or a twin changes, invalidate the
   // affected queries so any open page refetches automatically. This is the
   // "feels alive" wiring that the old Jinja dashboard couldn't do.
   useEventSource("/api/events", {
@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ["report"] });
       qc.invalidateQueries({ queryKey: ["summary"] });
     },
-    "clones.changed": () => qc.invalidateQueries({ queryKey: ["clones"] }),
+    "twins.changed": () => qc.invalidateQueries({ queryKey: ["twins"] }),
     "job.updated": () => qc.invalidateQueries({ queryKey: ["jobs"] }),
   });
 
@@ -45,8 +45,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   });
   useSequence(["g", "r"], () => navigate("/"));
   useSequence(["g", "s"], () => navigate("/scenarios"));
-  useSequence(["g", "a"], () => navigate("/agents"));
-  useSequence(["g", "c"], () => navigate("/clones"));
+  useSequence(["g", "g"], () => navigate("/gates"));
+  useSequence(["g", "t"], () => navigate("/twins"));
   useSequence(["g", "p"], () => navigate("/report"));
   useSequence(["g", "x"], () => navigate("/setup"));
   useHotkey("?", () => setPaletteOpen(true));
@@ -59,7 +59,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="max-w-[1280px] mx-auto px-8 flex items-center justify-between h-full">
           <div className="flex gap-4 items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_#2dff5c]" />
-            <span>checkpoint dashboard</span>
+            <span>Checkpoint dashboard</span>
           </div>
           <div className="flex gap-4 text-paper/60 max-md:hidden">
             <span>
@@ -80,13 +80,13 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="max-w-[1280px] mx-auto px-8 flex items-center h-full">
           <Link to="/" className="font-bold text-[15px] flex items-center gap-2.5">
             <span className="w-2.5 h-2.5 bg-accent border border-ink animate-blip" />
-            <span>checkpoint</span>
+            <span>Checkpoint</span>
           </Link>
           <div className="flex gap-6 ml-12 flex-1">
             <NavItem to="/">Runs</NavItem>
+            <NavItem to="/gates">Gate</NavItem>
             <NavItem to="/scenarios">Scenarios</NavItem>
-            <NavItem to="/agents">Agents</NavItem>
-            <NavItem to="/clones">Clones</NavItem>
+            <NavItem to="/twins">Twins</NavItem>
             <NavItem to="/report">Report</NavItem>
             <NavItem to="/setup">Setup</NavItem>
           </div>
@@ -124,7 +124,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <footer className="mt-20 py-6 border-t border-paper-3 dark:border-ink-3 text-ink-3 dark:text-paper-3 text-[11px] uppercase tracking-wider font-mono">
         <div className="max-w-[1280px] mx-auto px-8 flex justify-between">
-          <span>checkpoint dashboard · v{meta?.version || "dev"}</span>
+          <span>Checkpoint dashboard · v{meta?.version || "dev"}</span>
           <span>
             <span className="kbd">?</span> for help · <span className="kbd">⌘K</span> to search
           </span>

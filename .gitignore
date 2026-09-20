@@ -24,9 +24,6 @@ dist/
 # The committed bundle lives at checkpoint/dashboard/static/ (shipped in the wheel).
 checkpoint/dashboard/web/node_modules/
 checkpoint/dashboard/web/dist/
-checkpoint/dashboard/web/*.tsbuildinfo
-checkpoint/dashboard/web/vite.config.d.ts
-checkpoint/dashboard/web/vite.config.js
 
 # Local pytest output dumps from this session
 pytest-out.txt
@@ -41,3 +38,10 @@ checkpoint/dashboard/web/test-results/
 checkpoint/dashboard/web/playwright-report/
 checkpoint/dashboard/web/blob-report/
 checkpoint/dashboard/web/playwright/.cache/
+
+# Coverage data and the local project cache.
+.coverage
+.coverage.*
+
+# Scratch worktrees created by local tooling.
+.claude/worktrees/

@@ -1,39 +1,53 @@
-name: Checkpoint Agent Eval
+name: CI
 
 on:
   push:
     branches: [main, master]
+  # Every pull request, not only the ones targeting main: a stacked branch that
+  # merges into another feature branch used to reach main having never run CI.
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
-    inputs:
-      scenario:
-        description: "Path to a single scenario file (leave empty to run all)"
-        required: false
-        default: ""
-      clone:
-        description: "Override clone (e.g. linear, supabase, github)"
-        required: false
-        default: ""
 
 permissions:
   contents: read
+
+# Pushing three times to a branch queued three full matrix runs, and the answer
+# anyone wanted was the last one. Superseded runs are cancelled on a pull
+# request; a push to main is left alone, because that is the run a release is
+# read from.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # The package advertises 3.11/3.12/3.13, so all three must actually run the
   # suite. Deliberately lean: no SPA build, no Playwright, no wheel check —
   # those are Python-version-independent packaging concerns already covered by
   # build-and-test, and conditioning them per-leg would break the wheel step.
-  # Note the dependency graph really does differ: mitmproxy >=11.1.3 requires
-  # Python >=3.12, so 3.11 resolves a different major than 3.12/3.13.
+  # Note the legs really do differ: the intercept proxy (checkpoint/proxy)
+  # drives TLS and sockets through the stdlib's ssl and asyncio directly, and
+  # asyncio's server-shutdown semantics changed in 3.12.
+  #
+  # macOS and Windows are here because Checkpoint starts processes, binds
+  # sockets and kills process trees, and each platform does all three
+  # differently. Testing one of them is testing none: a teardown that killed
+  # Checkpoint's own process group was invisible for weeks because it cannot
+  # happen on Windows, which was the only platform anyone ran the suite on.
+  # One Python version each is enough — these legs are there for the operating
+  # system, and the version sweep above already covers the language.
   pytest-matrix:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    name: pytest (${{ matrix.os-name }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.11" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.12" }
+          - { os: ubuntu-latest,  os-name: Linux,   python-version: "3.13" }
+          - { os: macos-latest,   os-name: macOS,   python-version: "3.13" }
+          - { os: windows-latest, os-name: Windows, python-version: "3.13" }
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -49,14 +63,55 @@ jobs:
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
+      # The per-test cap lives in pyproject.toml (timeout = 300), so it applies
+      # here and on a contributor's machine alike. `--capture=tee-sys` is what
+      # makes it useful: pytest's faulthandler writes its stack dump to the real
+      # stderr, and under the default fd-level capture that dump lands in a
+      # buffer a test which never finishes never flushes. Capturing at sys level
+      # lets it reach the log, which is the difference between "one of these
+      # 1800 tests hung" and knowing which.
       - name: Run pytest
-        run: pytest tests/ -q
+        run: pytest tests/ -q --capture=tee-sys
 
-  # The container images back three documented deployment paths and the default
-  # run mode, but nothing built them — a broken base image or dependency
-  # conflict would ship undetected. Build only; no registry credentials needed.
+  # Each twin must answer the calls real agents make through the vendor's own
+  # SDK; a twin bug fails a correct agent and reads as an agent regression.
+  twin-conformance:
+    name: Twin conformance (official SDKs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package and vendor SDKs
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install --group twin-conformance
+
+      # Linear ships no Python SDK, so its conformance test drives the twin with
+      # the official TypeScript client through the runner's Node.
+      - name: Install @linear/sdk
+        run: npm install --no-audit --no-fund @linear/sdk
+
+      - name: Run conformance suite
+        env:
+          CHECKPOINT_LINEAR_SDK_DIR: ${{ github.workspace }}
+        run: pytest tests/sdk -m sdk -q
+
+  # The dashboard image backs three documented deployment paths, and nothing
+  # else builds it — a broken base image or dependency conflict would ship
+  # undetected. Build only; no registry credentials needed.
   docker-build:
-    name: Build container images
+    name: Build the dashboard image
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -67,9 +122,6 @@ jobs:
 
       - name: Build the runtime image
         run: docker build -f Dockerfile -t checkpoint:ci .
-
-      - name: Build the TLS sidecar image
-        run: docker build -f checkpoint/proxy/Dockerfile -t checkpoint-sidecar:ci .
 
   # Fast feedback: a lint failure should not wait behind the full build.
   lint:
@@ -92,10 +144,15 @@ jobs:
       - name: ruff check
         run: ruff check --output-format=github checkpoint/ tests/
 
-  eval:
-    name: Run checkpoint scenarios
+  # Checkpoint, gating Checkpoint's own agent. Every criterion in the demo
+  # scenario is decided by an assertion, so this needs no API key and runs on
+  # fork pull requests too: if the product stops working end to end — twins,
+  # interception, scoring, the verdict, the signature — this is the job that
+  # says so, and it is the same command a user runs.
+  self-gate:
+    name: Gate the bundled agent
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -105,71 +162,44 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: pip
 
-      - name: Install checkpoint and dependencies
-        run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+      - name: Install checkpoint
+        run: pip install -e .
 
-      # Detect whether the repo has an OPENAI_API_KEY secret configured.
-      # Fork PRs and repos that haven't set the secret will skip the LLM-
-      # dependent steps below cleanly instead of failing the whole workflow.
-      - name: Check for OPENAI_API_KEY
-        id: api_key_check
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::warning::OPENAI_API_KEY secret not set; skipping LLM-judged scenario run."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run checkpoint doctor
-        if: steps.api_key_check.outputs.skip != 'true'
+      - name: Check the environment
         run: checkpoint doctor
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Run scenario against a bundled example agent (Docker mode)
-        if: steps.api_key_check.outputs.skip != 'true'
-        run: |
-          # GitHub-hosted ubuntu runners ship a working Docker daemon, so this
-          # exercises the real out-of-the-box path: the TLS sidecar image
-          # auto-builds, the example agent runs unmodified against the twins,
-          # and checkpoint injects the per-clone bootstrap tokens itself (no
-          # manual token env needed). A single cheap scenario keeps CI fast.
-          SCENARIO="${{ github.event.inputs.scenario }}"
-          if [ -z "$SCENARIO" ]; then
-            SCENARIO="scenarios/github-happy-path.md"
-          fi
-          checkpoint run "$SCENARIO" \
-            --harness-dir examples/agents/openai-tools \
-            --docker-logs \
-            --trace-out ci-traces.json
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # 16 runs is the fewest that can reach SHIP at the default thresholds;
+      # anything less would only be testing the gate's refusal to decide.
+      # No baseline: a fresh runner has no history, and inventing one here
+      # would make the first real regression look like the normal state.
+      - name: Gate
+        run: >-
+          checkpoint gate checkpoint/demo/smoke-scenario.md
+          --command "python -m checkpoint.demo.harness_fake"
+          --runs 16 --no-baseline
+          --certificate checkpoint-certificate.json
 
-      - name: Upload trace artifact
-        if: always() && steps.api_key_check.outputs.skip != 'true'
+      - name: Verify the certificate it issued
+        run: checkpoint cert verify checkpoint-certificate.json
+
+      - name: Upload the evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: checkpoint-traces-${{ github.run_id }}
-          path: ci-traces.json
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Upload run records
-        if: always() && steps.api_key_check.outputs.skip != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: checkpoint-run-records-${{ github.run_id }}
-          path: .checkpoint/cache/runs/
+          name: checkpoint-evidence-${{ github.run_id }}
+          path: |
+            checkpoint-certificate.json
+            .checkpoint/cache/runs/
           retention-days: 30
           if-no-files-found: ignore
 
   build-and-test:
+    # The name is load-bearing: branch protection on main requires a check with
+    # exactly this string, so renaming the job silently makes every pull request
+    # wait forever for a status that no longer reports. Change both together.
     name: Build SPA + run pytest + verify wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -183,7 +213,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: checkpoint/dashboard/web/package-lock.json
 
@@ -193,40 +223,15 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # 1. Build the SPA from source. The bundle is NOT committed
-      # (checkpoint/dashboard/static/ is gitignored); it is produced here and
-      # packaged into the wheel by the "Build sdist + wheel" step below, so the
-      # published artifact always ships a fresh dashboard built on this runner.
-      - name: Build dashboard SPA
-        working-directory: checkpoint/dashboard/web
-        run: |
-          npm ci
-          npm run build
-
-      # The built bundle is committed so `pip install` from git (and any source
-      # checkout) has a working dashboard without needing Node. That only stays
-      # true if it matches the source, so rebuild and compare byte-for-byte.
-      - name: Verify the committed SPA bundle is current
-        run: |
-          if ! git diff --quiet -- checkpoint/dashboard/static/; then
-            echo "::error::checkpoint/dashboard/static/ is stale."
-            echo "Rebuild and commit it:"
-            echo "  cd checkpoint/dashboard/web && npm ci && npm run build"
-            git diff --stat -- checkpoint/dashboard/static/
-            exit 1
-          fi
-          echo "OK: committed bundle matches a fresh build"
-
-      # 1b. Render smoke test: serve the freshly built bundle headlessly and
-      # assert it mounts, routes, and is styled by Tailwind. This is the
-      # automated stand-in for a manual click-through of UI-framework upgrades.
-      - name: Dashboard render smoke test (Playwright)
-        working-directory: checkpoint/dashboard/web
-        run: |
-          npx playwright install --with-deps chromium
-          npm run test:e2e
-
-      # 2. Install Python deps + run the full pytest suite.
+      # 1. Run the suite FIRST, against the checkout exactly as committed.
+      #
+      # Order matters here. tests/test_spa_bundle.py is what proves the
+      # committed dashboard bundle matches the committed SPA source, and it
+      # does that by recomputing the stamp `npm run build` writes. Build the
+      # SPA before pytest and that stamp is rewritten from the current source,
+      # so the check compares the tree to itself and passes no matter how stale
+      # the bundle is. That is how the old CI-step version of this guard was
+      # silently vacuous; keep the build below the tests.
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
@@ -240,6 +245,22 @@ jobs:
           name: coverage-${{ github.run_id }}
           path: coverage.xml
           retention-days: 14
+
+      # 2. Prove the SPA still builds, and give the wheel a bundle built here.
+      - name: Build dashboard SPA
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npm ci
+          npm run build
+
+      # 2b. Render smoke test: serve the freshly built bundle headlessly and
+      # assert it mounts, routes, and is styled by Tailwind. This is the
+      # automated stand-in for a manual click-through of UI-framework upgrades.
+      - name: Dashboard render smoke test (Playwright)
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
 
       # 3. Build sdist + wheel and prove the SPA is inside.
       - name: Build sdist + wheel
@@ -265,9 +286,18 @@ jobs:
 
           need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
           need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
-          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
-          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo agent")
           need(lambda n: "init_templates" in n, "the init templates")
+          need(lambda n: n.endswith("twins/linear_schema.graphql"),
+               "Linear's vendored GraphQL schema")
+
+          # `checkpoint redteam` with no target runs this pack, and the docs
+          # promise all ten OWASP Agentic categories to everyone — not only to
+          # people who cloned the repository.
+          attacks = [n for n in names if "redteam/pack/" in n and n.endswith(".md")]
+          if len(attacks) < 10:
+              sys.exit(f"FAIL: {whl} ships only {len(attacks)} red-team scenarios")
+          print(f"OK: {len(attacks)} adversarial scenarios")
 
           seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
           if len(seeds) < 20:
@@ -318,14 +348,17 @@ jobs:
         uses: ./
         with:
           target: checkpoint/demo/smoke-scenario.md
-          harness: python -m checkpoint.demo.harness_fake
-          runs: "3"
+          command: python -m checkpoint.demo.harness_fake
+          # SHIP needs ceil(ship_min*z^2/(1-ship_min)) = 16 clean runs at the
+          # default ship_min 0.80; fewer is INCONCLUSIVE and fails the step, so
+          # a smaller number here would test nothing but the gate's refusal.
+          runs: "16"
           pass-threshold: "80"
 
       - name: Assert the action reported a verdict
         run: |
           echo "verdict=${{ steps.gate.outputs.verdict }}"
           case "${{ steps.gate.outputs.verdict }}" in
-            SHIP|CONDITIONAL|BLOCK) echo "OK: action produced a valid verdict" ;;
+            SHIP|CONDITIONAL|INCONCLUSIVE|BLOCK|ERROR) echo "OK: action produced a valid verdict" ;;
             *) echo "FAIL: action did not report a verdict"; exit 1 ;;
           esac

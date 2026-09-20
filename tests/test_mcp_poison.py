@@ -1,4 +1,10 @@
-"""Poisoned MCP server (OWASP MCP Top 10) attack surface."""
+"""The poisoned MCP server must really be poisoned, whichever technique is asked for.
+
+An agent that trusts tool metadata can be driven by whoever wrote it. These
+tests pin that the bundled attack server hides an instruction in a benign tool's
+description, exposes the destructive tool that instruction points at, records
+when the trap is taken, and never quietly degrades into a harmless server.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -44,7 +50,30 @@ def test_poisoned_server_trap_records_invocation():
     assert result is not None
 
 
-def test_redteam_mcp_command_registered():
-    r = CliRunner().invoke(main, ["redteam-mcp", "--help"])
-    assert r.exit_code == 0
-    assert "POISONED" in r.output
+def test_serve_poisoned_serves_the_technique_it_was_asked_for(monkeypatch):
+    """The flag has to reach the server: an un-poisoned server tests nothing."""
+    import checkpoint.redteam as redteam_pkg
+
+    seen: dict = {}
+
+    class _Server:
+        def run(self, transport):
+            seen["transport"] = transport
+
+    def _build(**kwargs):
+        seen.update(kwargs)
+        return _Server(), {}
+
+    monkeypatch.setattr(redteam_pkg, "build_poisoned_server", _build)
+    r = CliRunner().invoke(main, ["redteam", "serve-poisoned", "--technique", "MCP06"])
+    assert r.exit_code == 0, r.output
+    assert seen["technique"] == "MCP06"
+    # stdout is the MCP transport, so the command must not write to it.
+    assert seen["transport"] == "stdio"
+    assert r.output == ""
+
+
+def test_serve_poisoned_refuses_a_technique_it_does_not_implement():
+    r = CliRunner().invoke(main, ["redteam", "serve-poisoned", "--technique", "MCP99"])
+    assert r.exit_code != 0
+    assert "MCP99" in r.output

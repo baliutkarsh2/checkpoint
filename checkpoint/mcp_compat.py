@@ -37,6 +37,29 @@ except ModuleNotFoundError:  # mcp < 2.0
 __all__ = ["FastMCP", "MCP_MAJOR", "client_streams", "make_server", "streamable_http_app"]
 
 
+def _transport_security() -> Any:
+    """Let an intercepted request through the DNS-rebinding check.
+
+    The check exists so a web page cannot make a browser drive an MCP server on
+    localhost, and it does that by requiring a localhost ``Host`` header. An
+    agent whose traffic Checkpoint intercepts sends ``Host: api.github.com`` —
+    the production hostname, which is the whole point — so the twin answered
+    421 and its MCP surface was unreachable exactly when it mattered.
+
+    The hostnames Checkpoint intercepts are added to the allowlist rather than
+    turning the protection off: a page that is not one of those still cannot
+    reach a twin.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    from checkpoint.twins import registry
+
+    hosts = ["localhost", "localhost:*", "127.0.0.1", "127.0.0.1:*", "[::1]", "[::1]:*"]
+    for domain in sorted(registry.domains()):
+        hosts += [domain, f"{domain}:*", f"*.{domain}", f"*.{domain}:*"]
+    return TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=["*"])
+
+
 def make_server(
     name: str,
     instructions: str | None = None,
@@ -44,21 +67,33 @@ def make_server(
     stateless_http: bool = True,
     streamable_http_path: str = "/",
 ) -> Any:
-    """Build a server, putting transport options where this major expects them."""
+    """Build a server, putting transport options where this major expects them.
+
+    Every server reports Checkpoint's version. A client shows it beside the
+    server name, and "which Checkpoint is this agent talking to?" is the first
+    question asked when a tool behaves differently than its description says.
+    """
+    from checkpoint import __version__
+
     if MCP_MAJOR >= 2:
-        # 2.x takes transport options on the app/run methods instead; they are
-        # applied by streamable_http_app() below.
-        server = FastMCP(name=name, instructions=instructions)
+        # 2.x takes every transport option on the app/run methods instead of the
+        # constructor — including transport_security, which 1.x wants up front.
+        # Passing it here raises TypeError, and only against a 2.x install, so
+        # the repo's own environment would not see it.
+        server = FastMCP(name=name, instructions=instructions, version=__version__)
         server._checkpoint_transport = {
             "stateless_http": stateless_http,
             "streamable_http_path": streamable_http_path,
+            "transport_security": _transport_security(),
         }
         return server
     return FastMCP(
         name=name,
         instructions=instructions,
+        version=__version__,
         stateless_http=stateless_http,
         streamable_http_path=streamable_http_path,
+        transport_security=_transport_security(),
     )
 
 

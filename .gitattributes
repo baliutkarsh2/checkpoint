@@ -1,7 +1,6 @@
 # Normalize line endings so the repo behaves identically on Windows, macOS, and
 # Linux. Shell scripts and Dockerfiles MUST stay LF or they break inside Linux
-# containers. The SPA bundle itself is not committed (it is built in CI); these
-# rules keep the dashboard *sources* LF so the build is byte-identical anywhere.
+# containers.
 * text=auto
 
 *.sh    text eol=lf
@@ -16,6 +15,8 @@
 *.js    text eol=lf
 *.ts    text eol=lf
 *.tsx   text eol=lf
+*.graphql text eol=lf
+*.mjs   text eol=lf
 Dockerfile      text eol=lf
 entrypoint.sh   text eol=lf
 
@@ -26,7 +27,7 @@ entrypoint.sh   text eol=lf
 *.woff2 binary
 *.ttf   binary
 
-# The committed SPA bundle is a build artifact compared byte-for-byte against a
-# fresh `npm run build` in CI. Mark it binary so no platform rewrites its line
-# endings and makes an identical build look stale.
+# The committed SPA bundle is a build artifact. Mark it binary so no platform
+# rewrites its line endings; what it is checked against is a hash of the SPA
+# sources (tests/test_spa_bundle.py), not its own bytes.
 checkpoint/dashboard/static/** -text

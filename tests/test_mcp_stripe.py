@@ -15,6 +15,8 @@ import time
 import httpx
 import pytest
 
+from checkpoint.fake_credentials import FAKE_STRIPE_KEY
+
 STRIPE_TOOL_NAMES = {
     # Customers
     "create_customer", "list_customers",
@@ -91,7 +93,7 @@ def stripe_twin():
 
 
 @pytest.mark.asyncio
-async def test_stripe_mcp_lists_archal_tool_set(stripe_twin):
+async def test_stripe_mcp_exposes_the_documented_tool_set(stripe_twin):
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams
@@ -140,13 +142,23 @@ async def test_stripe_mcp_representative_tools_callable(stripe_twin):
             state = httpx.get(state_url).json()
             assert state["products"], "create_product should mutate STATE.products"
 
-            # 4. create_refund (no real payment_intent — refund records anyway)
+            # 4. create_refund against a real payment. The MCP surface has no
+            # tool that takes a payment, so the REST side makes one first —
+            # both write to the same STATE.
+            intent = httpx.post(
+                f"http://127.0.0.1:{stripe_twin}/v1/payment_intents",
+                headers={"Authorization": f"Bearer {FAKE_STRIPE_KEY}"},
+                data={"amount": 1500, "currency": "usd", "customer": customer_id,
+                      "payment_method": "pm_card_visa", "confirm": "true"},
+            ).json()
+            assert intent["status"] == "succeeded"
             await session.call_tool(
                 "create_refund",
-                {"payment_intent": "pi_does_not_exist", "amount": 500},
+                {"payment_intent": intent["id"], "amount": 500},
             )
             state = httpx.get(state_url).json()
             assert state["refunds"], "create_refund should mutate STATE.refunds"
+            assert state["charges"][intent["latest_charge"]]["amount_refunded"] == 500
 
             # 5. retrieve_balance (read-only)
             bal = await session.call_tool("retrieve_balance", {})
@@ -156,7 +168,7 @@ async def test_stripe_mcp_representative_tools_callable(stripe_twin):
 
 @pytest.mark.asyncio
 async def test_stripe_mcp_documented_stubs_return_inert_envelopes(stripe_twin):
-    """The three Archal-documented stubs return ok-but-empty payloads."""
+    """The three documented stubs return ok-but-empty payloads."""
     from mcp import ClientSession
 
     from checkpoint.mcp_compat import client_streams

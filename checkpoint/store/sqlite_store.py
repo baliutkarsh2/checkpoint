@@ -88,6 +88,11 @@ class SqliteRunStore:
         self._conn.commit()
         return gid
 
+    def get_gate(self, gate_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT blob FROM gates WHERE gate_id = ?", (gate_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
     def list_gates(self, *, target: str | None = None, limit: int = 50) -> list[dict]:
         q = "SELECT gate_id, target, verdict, created_at FROM gates"
         params: list = []

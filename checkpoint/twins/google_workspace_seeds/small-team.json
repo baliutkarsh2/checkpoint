@@ -2,165 +2,343 @@
   "state": {
     "user_profile": {
       "emailAddress": "alice@acme.test",
-      "messagesTotal": 3,
-      "threadsTotal": 2,
+      "displayName": "Alice Chen",
       "historyId": "42"
     },
     "gmail_labels": {
-      "INBOX": {"id": "INBOX", "name": "INBOX", "type": "system", "messagesTotal": 2, "messagesUnread": 1, "threadsTotal": 1, "threadsUnread": 1},
-      "SENT": {"id": "SENT", "name": "SENT", "type": "system", "messagesTotal": 1, "messagesUnread": 0, "threadsTotal": 1, "threadsUnread": 0},
-      "DRAFT": {"id": "DRAFT", "name": "DRAFT", "type": "system", "messagesTotal": 0, "messagesUnread": 0, "threadsTotal": 0, "threadsUnread": 0},
-      "TRASH": {"id": "TRASH", "name": "TRASH", "type": "system", "messagesTotal": 0, "messagesUnread": 0, "threadsTotal": 0, "threadsUnread": 0},
-      "STARRED": {"id": "STARRED", "name": "STARRED", "type": "system", "messagesTotal": 0, "messagesUnread": 0, "threadsTotal": 0, "threadsUnread": 0},
-      "UNREAD": {"id": "UNREAD", "name": "UNREAD", "type": "system", "messagesTotal": 1, "messagesUnread": 1, "threadsTotal": 1, "threadsUnread": 1},
-      "IMPORTANT": {"id": "IMPORTANT", "name": "IMPORTANT", "type": "system", "messagesTotal": 1, "messagesUnread": 1, "threadsTotal": 1, "threadsUnread": 1},
-      "CATEGORY_PERSONAL": {"id": "CATEGORY_PERSONAL", "name": "CATEGORY_PERSONAL", "type": "system"},
-      "CATEGORY_SOCIAL": {"id": "CATEGORY_SOCIAL", "name": "CATEGORY_SOCIAL", "type": "system"},
-      "CATEGORY_PROMOTIONS": {"id": "CATEGORY_PROMOTIONS", "name": "CATEGORY_PROMOTIONS", "type": "system"},
-      "CATEGORY_UPDATES": {"id": "CATEGORY_UPDATES", "name": "CATEGORY_UPDATES", "type": "system"},
-      "CATEGORY_FORUMS": {"id": "CATEGORY_FORUMS", "name": "CATEGORY_FORUMS", "type": "system"},
-      "Label_team": {"id": "Label_team", "name": "Team", "type": "user", "messagesTotal": 1, "messagesUnread": 0, "threadsTotal": 1, "threadsUnread": 0}
-    },
-    "gmail_threads": {
-      "thread-001": {
-        "id": "thread-001",
-        "snippet": "Q1 planning meeting scheduled for next Monday",
-        "historyId": "38",
-        "labelIds": ["INBOX", "IMPORTANT", "UNREAD"],
-        "messageIds": ["msg-001", "msg-002"]
-      },
-      "thread-002": {
-        "id": "thread-002",
-        "snippet": "Re: Code review feedback",
-        "historyId": "42",
-        "labelIds": ["SENT", "Label_team"],
-        "messageIds": ["msg-003"]
+      "Label_team": {
+        "id": "Label_team",
+        "name": "Team",
+        "type": "user",
+        "messageListVisibility": "show",
+        "labelListVisibility": "labelShow"
       }
     },
     "gmail_messages": {
       "msg-001": {
         "id": "msg-001",
         "threadId": "thread-001",
-        "labelIds": ["INBOX", "IMPORTANT", "UNREAD"],
-        "snippet": "Q1 planning meeting scheduled for next Monday at 10am.",
-        "historyId": "38",
-        "internalDate": "1737369600000",
+        "labelIds": [
+          "INBOX",
+          "IMPORTANT",
+          "UNREAD"
+        ],
         "payload": {
-          "headers": [
-            {"name": "From", "value": "bob@acme.test"},
-            {"name": "To", "value": "alice@acme.test"},
-            {"name": "Subject", "value": "Q1 Planning Meeting"},
-            {"name": "Date", "value": "2025-01-20T10:00:00+00:00"}
-          ],
           "mimeType": "text/plain",
-          "body": {"size": 52, "data": "Q1 planning meeting scheduled for next Monday at 10am."}
-        },
-        "sizeEstimate": 52
+          "headers": [
+            {
+              "name": "From",
+              "value": "Bob Smith <bob@acme.test>"
+            },
+            {
+              "name": "To",
+              "value": "alice@acme.test"
+            },
+            {
+              "name": "Subject",
+              "value": "Q1 Planning Meeting"
+            },
+            {
+              "name": "Date",
+              "value": "Mon, 20 Jan 2025 10:00:00 +0000"
+            },
+            {
+              "name": "Message-ID",
+              "value": "<q1-planning-1@acme.test>"
+            }
+          ],
+          "body": {
+            "data": "SGkgQWxpY2UsCgpRMSBwbGFubmluZyBpcyBzZXQgZm9yIG5leHQgTW9uZGF5IGF0IDEwYW0gaW4gdGhlIFZlZ2Egcm9vbS4gQWdlbmRhIHRvIGZvbGxvdy4KClRoYW5rcywKQm9iCg=="
+          }
+        }
       },
       "msg-002": {
         "id": "msg-002",
         "threadId": "thread-001",
-        "labelIds": ["INBOX"],
-        "snippet": "Confirmed, I'll send the agenda shortly.",
-        "historyId": "40",
-        "internalDate": "1737373200000",
+        "labelIds": [
+          "INBOX"
+        ],
         "payload": {
-          "headers": [
-            {"name": "From", "value": "carol@acme.test"},
-            {"name": "To", "value": "alice@acme.test"},
-            {"name": "Subject", "value": "Re: Q1 Planning Meeting"},
-            {"name": "Date", "value": "2025-01-20T11:00:00+00:00"}
-          ],
           "mimeType": "text/plain",
-          "body": {"size": 37, "data": "Confirmed, I'll send the agenda shortly."}
-        },
-        "sizeEstimate": 37
+          "headers": [
+            {
+              "name": "From",
+              "value": "Carol Diaz <carol@acme.test>"
+            },
+            {
+              "name": "To",
+              "value": "alice@acme.test"
+            },
+            {
+              "name": "Subject",
+              "value": "Re: Q1 Planning Meeting"
+            },
+            {
+              "name": "Date",
+              "value": "Mon, 20 Jan 2025 11:00:00 +0000"
+            },
+            {
+              "name": "Message-ID",
+              "value": "<q1-planning-2@acme.test>"
+            },
+            {
+              "name": "In-Reply-To",
+              "value": "<q1-planning-1@acme.test>"
+            },
+            {
+              "name": "References",
+              "value": "<q1-planning-1@acme.test>"
+            }
+          ],
+          "body": {
+            "data": "Q29uZmlybWVkLCBJJ2xsIHNlbmQgdGhlIGFnZW5kYSBzaG9ydGx5LgoKQ2Fyb2wK"
+          }
+        }
       },
       "msg-003": {
         "id": "msg-003",
         "threadId": "thread-002",
-        "labelIds": ["SENT", "Label_team"],
-        "snippet": "LGTM, merging after CI passes.",
-        "historyId": "42",
-        "internalDate": "1737388800000",
+        "labelIds": [
+          "SENT",
+          "Label_team"
+        ],
         "payload": {
-          "headers": [
-            {"name": "From", "value": "alice@acme.test"},
-            {"name": "To", "value": "bob@acme.test"},
-            {"name": "Subject", "value": "Re: Code review feedback"},
-            {"name": "Date", "value": "2025-01-20T15:00:00+00:00"}
-          ],
           "mimeType": "text/plain",
-          "body": {"size": 31, "data": "LGTM, merging after CI passes."}
-        },
-        "sizeEstimate": 31
+          "headers": [
+            {
+              "name": "From",
+              "value": "Alice Chen <alice@acme.test>"
+            },
+            {
+              "name": "To",
+              "value": "bob@acme.test"
+            },
+            {
+              "name": "Subject",
+              "value": "Re: Code review feedback"
+            },
+            {
+              "name": "Date",
+              "value": "Mon, 20 Jan 2025 15:00:00 +0000"
+            },
+            {
+              "name": "Message-ID",
+              "value": "<code-review-2@acme.test>"
+            }
+          ],
+          "body": {
+            "data": "TEdUTSwgbWVyZ2luZyBhZnRlciBDSSBwYXNzZXMuCgpBbGljZQo="
+          }
+        }
+      },
+      "msg-004": {
+        "id": "msg-004",
+        "threadId": "thread-003",
+        "labelIds": [
+          "INBOX",
+          "UNREAD",
+          "CATEGORY_UPDATES"
+        ],
+        "payload": {
+          "mimeType": "multipart/mixed",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Dana Reed <dana@northwind.test>"
+            },
+            {
+              "name": "To",
+              "value": "alice@acme.test"
+            },
+            {
+              "name": "Subject",
+              "value": "Invoice NW-1042 for January"
+            },
+            {
+              "name": "Date",
+              "value": "Thu, 23 Jan 2025 08:30:00 +0000"
+            },
+            {
+              "name": "Message-ID",
+              "value": "<invoice-1042@northwind.test>"
+            }
+          ],
+          "parts": [
+            {
+              "mimeType": "text/plain",
+              "body": {
+                "data": "SGkgQWxpY2UsCgpQbGVhc2UgZmluZCBKYW51YXJ5J3MgaG9zdGluZyBpbnZvaWNlIGF0dGFjaGVkLgoKUmVnYXJkcywKRGFuYSAoTm9ydGh3aW5kIENsb3VkKQo="
+              }
+            },
+            {
+              "mimeType": "application/pdf",
+              "filename": "invoice-NW-1042.pdf",
+              "body": {
+                "data": "Tm9ydGh3aW5kIENsb3VkCkludm9pY2UgTlctMTA0MgpBbW91bnQgZHVlOiAkMSwyNDAuMDAKRHVlIGRhdGU6IDIwMjUtMDItMTUK"
+              }
+            }
+          ]
+        }
       }
     },
+    "gmail_threads": {},
     "gmail_drafts": {},
     "drive_files": {
       "file-001": {
         "id": "file-001",
         "name": "Q1 Roadmap",
         "mimeType": "application/vnd.google-apps.spreadsheet",
-        "parents": ["root"],
-        "createdTime": "2025-01-01T00:00:00+00:00",
-        "modifiedTime": "2025-01-15T10:00:00+00:00",
-        "size": "0",
-        "webViewLink": "https://docs.google.com/spreadsheets/d/file-001/view",
-        "starred": true,
-        "trashed": false,
-        "shared": true,
-        "ownedByMe": true,
+        "parents": [
+          "root"
+        ],
+        "createdTime": "2025-01-01T00:00:00.000Z",
+        "modifiedTime": "2025-01-15T10:00:00.000Z",
         "description": "Engineering Q1 2025 roadmap",
-        "owners": [{"emailAddress": "alice@acme.test", "displayName": "Alice Chen"}]
+        "starred": true,
+        "trashed": false
       },
       "file-002": {
         "id": "file-002",
         "name": "Architecture Decision Records",
         "mimeType": "application/vnd.google-apps.document",
-        "parents": ["root"],
-        "createdTime": "2025-01-05T00:00:00+00:00",
-        "modifiedTime": "2025-01-18T09:00:00+00:00",
-        "size": "0",
-        "webViewLink": "https://docs.google.com/document/d/file-002/view",
-        "starred": false,
-        "trashed": false,
-        "shared": false,
-        "ownedByMe": true,
+        "parents": [
+          "root"
+        ],
+        "createdTime": "2025-01-05T00:00:00.000Z",
+        "modifiedTime": "2025-01-18T09:00:00.000Z",
         "description": "ADR document for the engineering team",
-        "owners": [{"emailAddress": "alice@acme.test", "displayName": "Alice Chen"}]
+        "starred": false,
+        "trashed": false
       },
       "folder-001": {
         "id": "folder-001",
         "name": "Engineering Docs",
         "mimeType": "application/vnd.google-apps.folder",
-        "parents": ["root"],
-        "createdTime": "2025-01-01T00:00:00+00:00",
-        "modifiedTime": "2025-01-01T00:00:00+00:00",
-        "size": "0",
-        "webViewLink": "https://drive.google.com/folders/folder-001/view",
+        "parents": [
+          "root"
+        ],
+        "createdTime": "2025-01-01T00:00:00.000Z",
+        "modifiedTime": "2025-01-01T00:00:00.000Z",
         "starred": false,
-        "trashed": false,
-        "shared": true,
-        "ownedByMe": true,
-        "description": "",
-        "owners": [{"emailAddress": "alice@acme.test", "displayName": "Alice Chen"}]
+        "trashed": false
+      },
+      "file-003": {
+        "id": "file-003",
+        "name": "onboarding.md",
+        "mimeType": "text/markdown",
+        "parents": [
+          "folder-001"
+        ],
+        "createdTime": "2025-01-08T12:00:00.000Z",
+        "modifiedTime": "2025-01-12T16:30:00.000Z",
+        "starred": false,
+        "trashed": false
       }
+    },
+    "drive_content": {
+      "file-001": "Quarter,Theme,Owner\nQ1,Reliability,alice@acme.test\nQ1,Onboarding,bob@acme.test\n",
+      "file-002": "ADR-001: Use Postgres for the primary store.\nADR-002: Ship the API gateway behind a feature flag.\n",
+      "file-003": "# Onboarding\n\n1. Request access\n2. Clone the repo\n3. Run the tests\n"
     },
     "drive_permissions": {
       "file-001": {
-        "perm-owner": {"id": "perm-owner", "type": "user", "role": "owner", "emailAddress": "alice@acme.test", "displayName": "Alice Chen", "kind": "drive#permission"},
-        "perm-bob": {"id": "perm-bob", "type": "user", "role": "editor", "emailAddress": "bob@acme.test", "displayName": "Bob Smith", "kind": "drive#permission"}
+        "perm-owner": {
+          "id": "perm-owner",
+          "type": "user",
+          "role": "owner",
+          "emailAddress": "alice@acme.test",
+          "displayName": "Alice Chen",
+          "kind": "drive#permission"
+        },
+        "perm-bob": {
+          "id": "perm-bob",
+          "type": "user",
+          "role": "writer",
+          "emailAddress": "bob@acme.test",
+          "displayName": "Bob Smith",
+          "kind": "drive#permission"
+        }
       },
       "file-002": {
-        "perm-owner": {"id": "perm-owner", "type": "user", "role": "owner", "emailAddress": "alice@acme.test", "displayName": "Alice Chen", "kind": "drive#permission"}
+        "perm-owner": {
+          "id": "perm-owner",
+          "type": "user",
+          "role": "owner",
+          "emailAddress": "alice@acme.test",
+          "displayName": "Alice Chen",
+          "kind": "drive#permission"
+        }
       },
       "folder-001": {
-        "perm-owner": {"id": "perm-owner", "type": "user", "role": "owner", "emailAddress": "alice@acme.test", "displayName": "Alice Chen", "kind": "drive#permission"},
-        "perm-team": {"id": "perm-team", "type": "domain", "role": "reader", "domain": "acme.test", "kind": "drive#permission"}
+        "perm-owner": {
+          "id": "perm-owner",
+          "type": "user",
+          "role": "owner",
+          "emailAddress": "alice@acme.test",
+          "displayName": "Alice Chen",
+          "kind": "drive#permission"
+        },
+        "perm-team": {
+          "id": "perm-team",
+          "type": "domain",
+          "role": "reader",
+          "domain": "acme.test",
+          "allowFileDiscovery": true,
+          "kind": "drive#permission"
+        }
+      },
+      "file-003": {
+        "perm-owner": {
+          "id": "perm-owner",
+          "type": "user",
+          "role": "owner",
+          "emailAddress": "alice@acme.test",
+          "displayName": "Alice Chen",
+          "kind": "drive#permission"
+        }
       }
     },
-    "_counters": {"requests": 0}
+    "calendar_events": {
+      "evt-q1-planning": {
+        "id": "evt-q1-planning",
+        "summary": "Q1 Planning Meeting",
+        "description": "Agenda in the Q1 Roadmap sheet.",
+        "location": "Vega room",
+        "start": {
+          "dateTime": "2025-01-27T10:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2025-01-27T11:00:00Z",
+          "timeZone": "UTC"
+        },
+        "attendees": [
+          {
+            "email": "bob@acme.test",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "carol@acme.test",
+            "responseStatus": "needsAction"
+          }
+        ]
+      },
+      "evt-standup": {
+        "id": "evt-standup",
+        "summary": "Engineering standup",
+        "start": {
+          "dateTime": "2025-01-27T09:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2025-01-27T09:15:00Z",
+          "timeZone": "UTC"
+        },
+        "recurrence": [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+        ]
+      }
+    }
   },
   "config": {}
 }

@@ -11,7 +11,14 @@ import {
   TerminalSquare,
   Wrench,
 } from "lucide-react";
-import { ApiError, api, type RunRecord, type TelemetryReport } from "@/lib/api";
+import {
+  ApiError,
+  agentOf,
+  api,
+  type AgentRef,
+  type RunRecord,
+  type TelemetryReport,
+} from "@/lib/api";
 import { fmtTimestamp, scoreColor, stableStringify } from "@/lib/format";
 import {
   Badge,
@@ -32,7 +39,7 @@ function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
   const apiCalls = trace.map((ev, index) => ({
     ...ev,
     index,
-    clone: ev._clone || (ev as { clone?: string }).clone || null,
+    twin: ev.twin || ev._clone || (ev as { clone?: string }).clone || null,
     raw: ev,
   }));
   const judgeCriteria = criteria.map((c, index) => ({
@@ -85,7 +92,7 @@ function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
       label: `${call.method || "UNKNOWN"} ${call.path || ""}`,
       timestamp: call.timestamp || null,
       status: typeof call.status === "number" && call.status >= 400 ? "error" : "ok",
-      detail: `${call.status || "-"} ${call.clone || ""}`.trim(),
+      detail: `${call.status || "-"} ${call.twin || ""}`.trim(),
       ref: { section: "api_calls", index: call.index },
     })),
     ...judgeCriteria.map((c) => ({
@@ -120,7 +127,7 @@ function buildTelemetryFromRecord(r: RunRecord): TelemetryReport {
       duration_ms: r.duration_ms ?? null,
       timestamp,
       exit_code: r.exit_code,
-      harness: r.harness || {},
+      agent: agentOf(r),
     },
     cli: buildCliCommands(r),
     chat: {
@@ -234,8 +241,8 @@ export default function RunDetail() {
           <div className="card-title !text-warn">Telemetry endpoint fallback</div>
           <div className="text-sm">
             The dashboard could not load <code className="font-mono">/api/runs/{r.run_id}/telemetry</code>, so this view
-            is derived locally from the run record. Restart <code className="font-mono">checkpoint serve</code> to expose
-            the canonical telemetry API from the updated backend.
+            is derived locally from the run record. Restart <code className="font-mono">checkpoint view</code> to serve
+            the telemetry endpoint from the current backend.
           </div>
         </div>
       )}
@@ -292,13 +299,12 @@ export default function RunDetail() {
 }
 
 function IdentityStrip({ report: t }: { report: TelemetryReport }) {
-  const h = t.summary.harness || {};
+  const a = (t.summary.agent || t.summary.harness || {}) as AgentRef;
   return (
     <div className="card mb-5">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <Identity label="Scenario" value={t.summary.scenario || "(inline)"} sub={t.summary.scenario_path} />
-        <Identity label="Agent" value={String(h.name || "unknown")} sub={String(h.dir || h.cmd || "")} />
-        <Identity label="Mode" value={String(h.mode || "-")} />
+        <Identity label="Agent" value={String(a.name || "unknown")} sub={String(a.cmd || a.dir || "")} />
         <Identity label="Judge" value={t.judge.model || "-"} sub={t.judge.model_source} />
         <Identity
           label="Duration"
@@ -310,24 +316,23 @@ function IdentityStrip({ report: t }: { report: TelemetryReport }) {
   );
 }
 
+/** The same commands `checkpoint.telemetry._cli_commands` emits, for the case
+ *  where the telemetry endpoint could not be reached and this page has only
+ *  the record to work from. */
 function buildCliCommands(r: RunRecord): Record<string, string> {
   const runId = r.run_id || "<run-id>";
   const scenarioPath = r.scenario_path || "<scenario.md>";
-  const h = r.harness || {};
-  const replay = `checkpoint replay ${runId}`;
+  const agent = agentOf(r);
   const rerun = ["checkpoint", "run", scenarioPath];
-  if (h.mode === "docker") {
-    rerun.push("--docker");
-    if (h.dir) rerun.push("--harness-dir", h.dir);
-  } else if (h.cmd) {
-    rerun.push("--harness", h.cmd, "--no-docker");
-  }
+  // A recorded command is only worth repeating when it is not the one
+  // checkpoint.toml would supply anyway.
+  if (agent.cmd) rerun.push("--command", String(agent.cmd));
   return {
-    detail: `checkpoint traces detail ${runId}`,
-    telemetry: `checkpoint traces telemetry ${runId}`,
-    replay,
-    replay_json: `${replay} --json`,
-    export: `checkpoint traces export ${runId} --output ${runId}.json`,
+    detail: `checkpoint runs show ${runId}`,
+    trace: `checkpoint runs trace ${runId}`,
+    trace_json: `checkpoint runs trace ${runId} --json`,
+    export: `checkpoint runs export ${runId} --output ${runId}.json`,
+    view: "checkpoint view",
     rerun: rerun.join(" "),
   };
 }
@@ -460,14 +465,18 @@ function brief(value: unknown, limit = 220): string {
 }
 
 function CommandShelf({ commands }: { commands: Record<string, string> }) {
-  const rows = ["detail", "telemetry", "replay", "replay_json", "export", "rerun"]
+  // Ordered by what a reader reaches for next; any other key the backend adds
+  // is appended rather than dropped.
+  const order = ["detail", "trace", "trace_json", "export", "rerun", "view"];
+  const keys = [...order, ...Object.keys(commands).filter((k) => !order.includes(k))];
+  const rows = keys
     .map((key) => [key, commands[key]] as const)
     .filter(([, value]) => value);
   if (rows.length === 0) return null;
   return (
     <div className="card-tight mb-5">
       <div className="px-4 py-2 border-b border-ink bg-paper-2 dark:bg-ink text-label font-mono uppercase text-ink-3 dark:text-paper-3">
-        CLI parity
+        Same run, on the command line
       </div>
       <div className="divide-y divide-paper-3 dark:divide-ink-3">
         {rows.map(([key, cmd]) => (

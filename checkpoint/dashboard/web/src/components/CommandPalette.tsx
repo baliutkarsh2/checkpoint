@@ -55,15 +55,33 @@ export default function CommandPalette({
       },
       {
         kind: "page",
+        label: "Gate",
+        hint: "Verdicts and what they were decided on",
+        perform: () => navigate("/gates"),
+      },
+      {
+        kind: "page",
         label: "Scenarios",
-        hint: "All bundled + local scenarios",
+        hint: "Everything this project can run",
         perform: () => navigate("/scenarios"),
+      },
+      {
+        kind: "page",
+        label: "Twins",
+        hint: "Start, seed and inspect a twin",
+        perform: () => navigate("/twins"),
       },
       {
         kind: "page",
         label: "Report",
         hint: "Trend + flaky criteria",
         perform: () => navigate("/report"),
+      },
+      {
+        kind: "page",
+        label: "Setup",
+        hint: "Config, doctor, scenario linting",
+        perform: () => navigate("/setup"),
       },
     ];
     runs?.rows.forEach((r) =>

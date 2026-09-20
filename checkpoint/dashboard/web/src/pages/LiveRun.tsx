@@ -47,12 +47,10 @@ export default function LiveRun() {
           ? "info"
           : "warn";
 
-  // Derive agent + mode straight from the cmd args.
-  const harnessDir = (() => {
-    const i = j.cmd.indexOf("--harness-dir");
-    return i >= 0 && i + 1 < j.cmd.length ? j.cmd[i + 1] : null;
+  const runs = (() => {
+    const i = j.cmd.indexOf("--runs");
+    return i >= 0 && i + 1 < j.cmd.length ? j.cmd[i + 1] : "1";
   })();
-  const isDocker = j.cmd.includes("--docker");
 
   return (
     <>
@@ -98,21 +96,19 @@ export default function LiveRun() {
               Agent
             </div>
             <div className="font-medium text-base mt-0.5">
-              {harnessDir ? harnessDir.split(/[\\/]/).pop() : "default (.checkpoint.json)"}
+              from checkpoint.toml
             </div>
-            {harnessDir && (
-              <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3 truncate mt-0.5">
-                {harnessDir}
-              </div>
-            )}
+            <div className="text-[11px] font-mono text-ink-4 dark:text-paper-3 truncate mt-0.5">
+              <Link to="/setup?tab=config" className="hover:underline">
+                [agent] command
+              </Link>
+            </div>
           </div>
           <div>
             <div className="text-[10px] uppercase font-mono tracking-wider text-ink-3 dark:text-paper-3">
-              Mode
+              Runs
             </div>
-            <div className="font-medium text-base mt-0.5">
-              {isDocker ? "docker" : "subprocess"}
-            </div>
+            <div className="font-medium text-base mt-0.5">{runs}</div>
           </div>
         </div>
       </div>

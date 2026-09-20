@@ -29,7 +29,8 @@ export function classNames(
   return xs.filter(Boolean).join(" ");
 }
 
-// Build a curl reproduction for a trace event.
+// Build a curl reproduction for a trace event. `_clone` is the wire name for
+// which twin served the call.
 export function eventToCurl(e: {
   method: string;
   path: string;

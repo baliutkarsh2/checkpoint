@@ -1,4 +1,11 @@
-"""Multi-turn simulated users: persona, calibration, and the conversation loop."""
+"""A simulated user is a proxy for a person, and the score has to say so.
+
+An agent that handles turn one can still lose the thread by turn four, so the
+conversation runs against one sandbox and the criteria are checked against the
+state it left behind. These tests pin that accumulation, the persona and
+patience that drive the user, and the calibration number that keeps the score
+from being read as evidence about a real customer.
+"""
 from __future__ import annotations
 
 import json
@@ -19,13 +26,14 @@ from checkpoint.simuser import (
 from checkpoint.simuser.calibration import compute_calibration
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FAKE_HARNESS = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"
+DEMO_AGENT = REPO_ROOT / "checkpoint" / "demo" / "harness_fake.py"
 
 _SCENARIO = (
-    "# multi-turn\n## Setup\nfresh\n## Prompt\n"
+    "# multi-turn\n## Setup\nThe small-project seed, which already has acme/webapp.\n"
+    "## Prompt\n"
     "Create a GitHub issue in acme/webapp titled \"hello world\".\n"
     "## Success Criteria\n- [D] An issue titled \"hello world\" exists\n"
-    "## Config\nclones: github\n"
+    "## Config\nclones: github\nseed: small-project\n"
 )
 
 
@@ -67,12 +75,12 @@ def test_llm_user_parses_client_json():
 
 # --- end-to-end conversation (offline: scripted user + fake harness) --------
 
-@pytest.mark.skipif(not FAKE_HARNESS.is_file(), reason="fake harness missing")
+@pytest.mark.skipif(not DEMO_AGENT.is_file(), reason="demo agent missing")
 def test_simulate_satisfied_in_one_turn(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     persona = Persona(name="alice", goal='Create a GitHub issue in acme/webapp titled "hello world".', patience=3)
     user = ScriptedUser([UserTurn(satisfied=True, message="thanks!")])
-    res = simulate(_scn(), [sys.executable, str(FAKE_HARNESS)], persona,
+    res = simulate(_scn(), [sys.executable, str(DEMO_AGENT)], persona,
                    user=user, max_turns=4)
     assert res.error is None, res.error
     assert res.satisfied is True
@@ -84,22 +92,22 @@ def test_simulate_satisfied_in_one_turn(monkeypatch):
     assert any(t["role"] == "assistant" for t in res.transcript)
 
 
-@pytest.mark.skipif(not FAKE_HARNESS.is_file(), reason="fake harness missing")
+@pytest.mark.skipif(not DEMO_AGENT.is_file(), reason="demo agent missing")
 def test_simulate_runs_multiple_turns(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     persona = Persona(name="bob", goal='Create a GitHub issue in acme/webapp titled "hello world".', patience=5)
     user = ScriptedUser([UserTurn(message="and confirm it exists"), UserTurn(satisfied=True)])
-    res = simulate(_scn(), [sys.executable, str(FAKE_HARNESS)], persona,
+    res = simulate(_scn(), [sys.executable, str(DEMO_AGENT)], persona,
                    user=user, max_turns=5)
     assert res.error is None, res.error
     assert res.turns == 2
     assert res.satisfied is True
 
 
-def test_simulate_unknown_clone_errors():
+def test_simulate_unknown_twin_errors():
     scn = parse("# x\n## Prompt\np\n## Success Criteria\n- [D] x\n## Config\nclones: notaclone\n")
     res = simulate(scn, ["python", "x"], Persona("u", "g"))
-    assert res.error and "Unknown clones" in res.error
+    assert res.error and "unknown twin 'notaclone'" in res.error
 
 
 def test_simulate_cli_json(tmp_path, monkeypatch):
@@ -124,7 +132,7 @@ def test_simulate_cli_json(tmp_path, monkeypatch):
     scn = tmp_path / "s.md"
     scn.write_text(_SCENARIO)
     result = CliRunner().invoke(main, [
-        "simulate", str(scn), "--harness", "python agent.py", "-o", "json",
+        "simulate", str(scn), "--command", "python agent.py", "--json",
     ])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)

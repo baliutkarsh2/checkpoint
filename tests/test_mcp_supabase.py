@@ -5,6 +5,7 @@ key tools — confirming mutations are visible via REST /_state.
 """
 from __future__ import annotations
 
+import base64
 import socket
 import subprocess
 import sys
@@ -112,14 +113,18 @@ async def test_supabase_mcp_key_tools(supabase_twin):
     url = f"http://127.0.0.1:{supabase_twin}/mcp/"
     state_url = f"http://127.0.0.1:{supabase_twin}/_state"
 
+    # The database only has the tables a seed declares, exactly like a real project.
+    httpx.post(f"http://127.0.0.1:{supabase_twin}/_seed-file", json={"state": {"tables": {
+        "tasks": {"columns": ["id", "title", "done"], "primary_key": "id", "rows": []}}}})
+
     async with client_streams(url) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # 1. list_tables (empty)
+            # 1. list_tables
             result = await session.call_tool("supabase_list_tables", {})
             text = "".join(getattr(c, "text", "") for c in result.content)
-            assert text is not None
+            assert "tasks" in text
 
             # 2. insert a row
             result = await session.call_tool("supabase_insert", {
@@ -127,20 +132,34 @@ async def test_supabase_mcp_key_tools(supabase_twin):
                 "data": {"title": "MCP task", "done": False},
             })
             text = "".join(getattr(c, "text", "") for c in result.content)
-            assert text  # any response
+            assert "MCP task" in text
 
             # Verify state mutation
             state = httpx.get(state_url).json()
-            assert "tasks" in state["tables"]
             rows = state["tables"]["tasks"]["rows"]
             assert any(r.get("title") == "MCP task" for r in rows)
 
-            # 3. query
+            # 3. query with a filter
             result = await session.call_tool("supabase_query", {
                 "table": "tasks",
+                "filters": {"done.eq": "false"},
             })
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "MCP task" in text
+
+            # 4. update through a filter, then delete only the matching row
+            await session.call_tool("supabase_update", {
+                "table": "tasks", "data": {"done": True}, "filters": {"title.eq": "MCP task"},
+            })
+            rows = httpx.get(state_url).json()["tables"]["tasks"]["rows"]
+            assert rows[0]["done"] is True
+
+            await session.call_tool("supabase_delete", {
+                "table": "tasks", "filters": {"title.eq": "nothing matches"},
+            })
+            assert httpx.get(state_url).json()["tables"]["tasks"]["rows"], (
+                "a filter that matches nothing must not empty the table"
+            )
 
             # 4. create_auth_user
             result = await session.call_tool("supabase_create_auth_user", {
@@ -158,7 +177,6 @@ async def test_supabase_mcp_key_tools(supabase_twin):
 
             # 5. create_bucket
             result = await session.call_tool("supabase_create_bucket", {
-                "bucket_id": "test-bucket",
                 "name": "test-bucket",
                 "public": True,
             })
@@ -173,7 +191,24 @@ async def test_supabase_mcp_key_tools(supabase_twin):
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "test-bucket" in text
 
-            # 7. list_auth_users
+            # 7. upload an object and read its content back
+            await session.call_tool("supabase_upload_object", {
+                "bucket_id": "test-bucket",
+                "path": "notes/hello.txt",
+                "content": "hello from mcp",
+                "content_type": "text/plain",
+            })
+            stored = httpx.get(state_url).json()["storage"]["objects"]
+            key = "test-bucket/notes/hello.txt"
+            assert base64.b64decode(stored[key]["_content_b64"]) == b"hello from mcp"
+
+            result = await session.call_tool("supabase_list_objects", {
+                "bucket_id": "test-bucket", "prefix": "notes",
+            })
+            text = "".join(getattr(c, "text", "") for c in result.content)
+            assert "hello.txt" in text
+
+            # 8. list_auth_users
             result = await session.call_tool("supabase_list_auth_users", {})
             text = "".join(getattr(c, "text", "") for c in result.content)
             assert "mcp@test.com" in text

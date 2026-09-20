@@ -23,7 +23,7 @@ body:
       description: The exact commands you ran. A scenario file helps enormously.
       placeholder: |
         1. checkpoint init --command "python my_agent.py"
-        2. checkpoint gate scenarios/ --harness "python my_agent.py" -n 5
+        2. checkpoint run scenarios/quickstart.md
         3. ...
     validations:
       required: true
@@ -46,13 +46,14 @@ body:
   - type: dropdown
     id: mode
     attributes:
-      label: Run mode
+      label: Where it happened
       options:
         - "checkpoint demo"
-        - "subprocess (--no-docker)"
-        - "Docker (TLS sidecar)"
-        - "gate"
-        - "dashboard (serve)"
+        - "checkpoint run"
+        - "checkpoint gate"
+        - "checkpoint redteam or simulate"
+        - "the dashboard (checkpoint view)"
+        - "the Python API or pytest plugin"
         - other
     validations:
       required: true

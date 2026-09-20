@@ -5,35 +5,52 @@
         "id": 1, "name": "webapp", "full_name": "acme/webapp",
         "owner": {"login": "acme", "id": 1, "type": "Organization"},
         "default_branch": "main", "private": false,
+        "description": "Customer-facing web application",
         "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-05-12T00:00:00Z",
-        "html_url": "http://localhost/acme/webapp",
         "branches": {
-          "main":    {"name": "main",    "sha": "main0000000000000000000000000000000000a", "protected": false},
-          "feature": {"name": "feature", "sha": "feat0000000000000000000000000000000000b", "protected": false}
+          "main":    {"name": "main",    "sha": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111", "protected": false},
+          "feature": {"name": "feature", "sha": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222", "protected": false}
         },
         "commits": [
-          {"sha": "main0000000000000000000000000000000000a", "commit": {"message": "main: edit config.yml", "author": {"name": "alice", "date": "2026-05-10T00:00:00Z"}}, "files": [{"filename": "config.yml", "status": "modified", "sha": "main-cfg"}]},
-          {"sha": "feat0000000000000000000000000000000000b", "commit": {"message": "feature: also edit config.yml", "author": {"name": "bob",   "date": "2026-05-09T00:00:00Z"}}, "files": [{"filename": "config.yml", "status": "modified", "sha": "feat-cfg"}]}
+          {"sha": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+           "parents": ["cccc0000cccc0000cccc0000cccc0000cccc0000"],
+           "commit": {"message": "main: bump config to the 2.0 layout",
+                      "author": {"name": "alice", "email": "alice@acme.test", "date": "2026-05-10T00:00:00Z"}},
+           "files": [{"filename": "config.yml", "status": "modified"}]},
+          {"sha": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+           "parents": ["cccc0000cccc0000cccc0000cccc0000cccc0000"],
+           "commit": {"message": "feature: rewrite config for the new deploy target",
+                      "author": {"name": "bob", "email": "bob@acme.test", "date": "2026-05-09T00:00:00Z"}},
+           "files": [{"filename": "config.yml", "status": "modified"}]},
+          {"sha": "cccc0000cccc0000cccc0000cccc0000cccc0000",
+           "parents": [],
+           "commit": {"message": "Initial commit",
+                      "author": {"name": "acme", "email": "dev@acme.test", "date": "2026-01-01T00:00:00Z"}},
+           "files": [],
+           "tree": {"config.yml": {"content": "version: 1.0\ntarget: staging\n"}}}
         ],
-        "files": {"config.yml": {"content": "version: main\n", "sha": "main-cfg"}}
+        "files": {"config.yml": {"content": "version: 2.0\ntarget: production\n"}},
+        "branch_files": {
+          "feature": {"config.yml": {"content": "version: 1.9\ntarget: staging\nregion: eu\n"}}
+        }
       }
     },
     "pulls": {
       "acme/webapp#1": {
-        "number": 1, "title": "Update config", "body": "edits config.yml differently",
+        "number": 1, "title": "Update config", "body": "Edits config.yml differently from main.",
         "state": "open", "merged": false, "draft": false,
-        "head": {"ref": "feature", "sha": "feat0000000000000000000000000000000000b"},
-        "base": {"ref": "main",    "sha": "main0000000000000000000000000000000000a"},
+        "head": {"ref": "feature", "sha": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"},
+        "base": {"ref": "main",    "sha": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"},
         "user": {"login": "bob", "id": 2, "type": "User"},
         "created_at": "2026-05-09T00:00:00Z", "updated_at": "2026-05-10T00:00:00Z",
-        "merged_at": null, "html_url": "http://localhost/acme/webapp/pull/1",
-        "mergeable": false, "mergeable_state": "dirty",
-        "_commits": [], "_reviews": [],
-        "_files": [{"filename": "config.yml", "status": "modified", "sha": "feat-cfg"}],
-        "_comments": [], "_status": {"state": "pending", "statuses": []}
+        "merged_at": null
       }
     },
-    "_counters": {"issue_number_per_repo": {}, "pull_number_per_repo": {"acme/webapp": 1}, "comment_id": 0, "review_id": 0, "repo_id": 1, "run_id": 0, "sha_seq_per_repo": {"acme/webapp": 3}, "requests": 0}
+    "users": {
+      "acme":  {"login": "acme",  "id": 1, "type": "Organization"},
+      "bob":   {"login": "bob",   "id": 2, "type": "User", "name": "Bob Silva"},
+      "alice": {"login": "alice", "id": 3, "type": "User", "name": "Alice Nguyen"}
+    }
   },
   "config": {"rate_limit": null, "permissions_denied": false}
 }

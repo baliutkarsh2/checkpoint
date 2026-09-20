@@ -2,9 +2,9 @@
 
 The run record is the durable source of truth. This module builds a stable,
 dashboard-friendly report from records of different ages and harness styles.
-It is deliberately tolerant of arbitrary ``agent_trace`` shapes: harnesses can
-write whatever they know, and Checkpoint will surface the useful chat/tool
-fragments without throwing away the original raw payload.
+It is deliberately tolerant of arbitrary ``agent_trace`` shapes: an agent writes
+whatever it knows to ``$CHECKPOINT_AGENT_TRACE_FILE``, and Checkpoint surfaces
+the chat and tool fragments it recognizes without discarding the raw payload.
 """
 from __future__ import annotations
 
@@ -59,9 +59,9 @@ def build_telemetry_report(record: dict) -> dict:
             "messages": chat_messages,
             "raw": agent_trace,
             "capture_note": (
-                "Agent chat and model reasoning are shown when the harness writes "
-                "ARCHAL_AGENT_TRACE_FILE. Hidden provider internals are not present "
-                "unless the agent explicitly emits a summary or trace event."
+                "The agent's own messages and tool calls appear here when it "
+                "writes them to $CHECKPOINT_AGENT_TRACE_FILE. What a provider does "
+                "internally is not visible to Checkpoint and is never inferred."
             ),
         },
         "transcript": {
@@ -112,31 +112,32 @@ def _summary(
         "duration_ms": record.get("duration_ms"),
         "timestamp": (record.get("env") or {}).get("timestamp"),
         "exit_code": record.get("exit_code"),
-        "harness": record.get("harness") or {},
+        "agent": record.get("agent") or record.get("harness") or {},
     }
 
 
 def _cli_commands(record: dict) -> dict:
+    """The commands that take a reader from this record to the next question.
+
+    Rendered in the dashboard next to the run, so each one has to be something
+    they can paste unchanged.
+    """
     run_id = record.get("run_id") or "<run-id>"
     scenario_path = record.get("scenario_path") or "<scenario.md>"
-    harness = record.get("harness") or {}
-    replay_base = f"checkpoint replay {run_id}"
+    agent = record.get("agent") or record.get("harness") or {}
     commands = {
-        "detail": f"checkpoint traces detail {run_id}",
-        "telemetry": f"checkpoint traces telemetry {run_id}",
-        "export": f"checkpoint traces export {run_id} --output {run_id}.json",
-        "replay": replay_base,
-        "replay_json": f"{replay_base} --json",
-        "serve": "checkpoint serve",
+        "detail": f"checkpoint runs show {run_id}",
+        "trace": f"checkpoint runs trace {run_id}",
+        "trace_json": f"checkpoint runs trace {run_id} --json",
+        "export": f"checkpoint runs export {run_id} --output {run_id}.json",
+        "view": "checkpoint view",
     }
-    run_parts = ["checkpoint", "run", scenario_path]
-    if harness.get("mode") == "docker":
-        run_parts.append("--docker")
-        if harness.get("dir"):
-            run_parts.extend(["--harness-dir", str(harness["dir"])])
-    elif harness.get("cmd"):
-        run_parts.extend(["--harness", str(harness["cmd"]), "--no-docker"])
-    commands["rerun"] = " ".join(run_parts)
+    rerun = ["checkpoint", "run", scenario_path]
+    # A recorded command is only worth repeating when it is not the one
+    # checkpoint.toml would supply anyway.
+    if agent.get("cmd"):
+        rerun.extend(["--command", str(agent["cmd"])])
+    commands["rerun"] = " ".join(rerun)
     return commands
 
 
@@ -160,11 +161,29 @@ def _normalize_metrics(metrics: dict, record: dict, api_calls: list, tool_calls:
     }
 
 
+#: Every name a trace event has used for "which twin served this call". The
+#: engine writes `twin`; records made before the rename carry the others. A
+#: reader that knows only one of them silently drops the field — which is how
+#: the dashboard's Twin column came to be empty for every current run while
+#: `checkpoint runs trace` printed it correctly.
+TWIN_KEYS = ("twin", "_twin", "clone", "_clone")
+
+
+def twin_of(event: Any) -> str | None:
+    """Which twin served a call, whichever name the writer used."""
+    if not isinstance(event, dict):
+        return None
+    for key in TWIN_KEYS:
+        if event.get(key):
+            return event[key]
+    return None
+
+
 def _normalize_api_call(index: int, event: Any) -> dict:
     ev = event if isinstance(event, dict) else {"raw": event}
     return {
         "index": index,
-        "clone": ev.get("_clone") or ev.get("clone"),
+        "twin": twin_of(ev),
         "method": ev.get("method") or ev.get("type") or "UNKNOWN",
         "path": ev.get("path") or ev.get("url") or "",
         "status": ev.get("status") or ev.get("status_code"),
@@ -241,7 +260,7 @@ def _build_timeline(
             "label": f"{call.get('method')} {call.get('path')}",
             "timestamp": call.get("timestamp"),
             "status": "error" if isinstance(status, int) and status >= 400 else "ok",
-            "detail": f"{status or '-'} {call.get('clone') or ''}".strip(),
+            "detail": f"{status or '-'} {call.get('twin') or ''}".strip(),
             "ref": {"section": "api_calls", "index": call.get("index")},
         })
     for step in judge_steps:
@@ -407,11 +426,14 @@ def _as_list(value: Any) -> list:
     if isinstance(value, list):
         return value
     if isinstance(value, dict):
+        # A multi-twin trace: {twin_name: [events]}. Tag each event with the
+        # twin it came from, under the name every reader prefers, unless it
+        # already says so under one of the names this field has had.
         out: list = []
-        for clone, events in value.items():
+        for twin, events in value.items():
             for ev in _as_list(events):
-                if isinstance(ev, dict) and "_clone" not in ev:
-                    out.append({**ev, "_clone": clone})
+                if isinstance(ev, dict) and not any(k in ev for k in TWIN_KEYS):
+                    out.append({**ev, "twin": twin})
                 else:
                     out.append(ev)
         return out

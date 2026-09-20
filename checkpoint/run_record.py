@@ -1,20 +1,14 @@
-"""EV-06: Run-record persistence.
+"""Run records: one JSON file per agent run.
 
-After every ``checkpoint run`` invocation we write:
-  - ``.checkpoint/cache/runs/<run-id>.json`` — full run record.
-  - ``.checkpoint/cache/last-run.json`` — pointer ``{"run_id": "..."}``.
-
-``<run-id>`` = ``sha256(scenario_path + iso_timestamp)[:12]``.
-
-Schema is documented at the top of ``Plan 05-03``; see that file for the
-canonical shape. The cache lives under ``.checkpoint/`` which is in
-``.gitignore``.
+Every run is written to ``.checkpoint/cache/runs/<run-id>.json`` and
+``.checkpoint/cache/last-run.json`` points at the newest one. These files feed
+the dashboard, every `checkpoint runs` subcommand, and CI artifacts.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
+import uuid
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,23 +23,19 @@ def _utc_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def make_run_id(scenario_path: str | None, timestamp: str | None = None) -> str:
-    """Stable per-invocation id. ``scenario_path`` may be None (inline task)."""
-    src = (scenario_path or "<inline>") + "|" + (timestamp or _utc_iso())
-    return hashlib.sha256(src.encode()).hexdigest()[:12]
+def make_run_id() -> str:
+    """A fresh, unique run id (runs of one scenario can start in the same second)."""
+    return uuid.uuid4().hex[:12]
 
 
 def _cli_version() -> str:
-    try:
-        from importlib.metadata import version
+    from checkpoint import __version__
 
-        return version("checkpoint")
-    except Exception:
-        return "0.0.0"
+    return __version__
 
 
 def _truncate_state_for_record(state: dict, max_chars: int = 100_000) -> dict:
-    """Run records may grow large with multi-clone state. Cap at 100KB raw."""
+    """Run records may grow large with multi-twin state. Cap at 100KB raw."""
     raw = json.dumps(state, default=str)
     if len(raw) <= max_chars:
         return state
@@ -54,6 +44,14 @@ def _truncate_state_for_record(state: dict, max_chars: int = 100_000) -> dict:
 
 
 def _serialize_criterion(c: Any) -> dict:
+    """A criterion in the shape the record stores.
+
+    A plain dict passes through unchanged. It used to fall to the last branch
+    and be stored as `{"raw": "<the dict, stringified>"}` — a silent data loss
+    that no caller could see until it read the record back.
+    """
+    if isinstance(c, dict):
+        return dict(c)
     if is_dataclass(c):
         return asdict(c)
     if hasattr(c, "__dict__"):
@@ -81,13 +79,15 @@ def build_record(
     failure_analysis: dict[str, str] | None = None,
     run_id: str | None = None,
     timestamp: str | None = None,
-    # Agent + mode metadata (added v0.2; older records will be missing these
-    # fields and the dashboard renders them as "—").
-    harness: dict | None = None,
+    agent: dict | None = None,
     duration_ms: float | None = None,
+    warnings: list[str] | None = None,
+    egress: list[dict] | None = None,
+    twins: list[str] | None = None,
+    gate_id: str | None = None,
 ) -> dict:
     ts = timestamp or _utc_iso()
-    rid = run_id or make_run_id(scenario_path, ts)
+    rid = run_id or make_run_id()
     record: dict = {
         "run_id": rid,
         "scenario": scenario_name,
@@ -104,8 +104,15 @@ def build_record(
         "state": _truncate_state_for_record(state),
         "error": error,
         "exit_code": exit_code,
-        "harness": harness,             # {name, dir, mode: docker|subprocess, cmd}
+        # {name, cmd} — what was run. Still written under the old key as well,
+        # so a records directory written before the rename keeps opening.
+        "agent": agent,
+        "harness": agent,
         "duration_ms": duration_ms,
+        "twins": twins or [],
+        "warnings": warnings or [],
+        "egress": egress or [],
+        "gate_id": gate_id,
         "env": {
             "timestamp": ts,
             "host": platform.node(),
@@ -121,8 +128,13 @@ def build_record(
     return record
 
 
-def write_record(record: dict, *, root: Path | None = None) -> Path:
-    """Persist ``record`` and update the last-run pointer.
+def write_record(record: dict, *, root: Path | None = None, pointer: bool = True) -> Path:
+    """Persist ``record``, and by default point "the last run" at it.
+
+    ``pointer=False`` for runs that arrive in bulk. A gate writes sixteen runs
+    per scenario, often from several threads at once: moving the pointer for
+    each would race on one file, and "the last run" would end up meaning an
+    arbitrary member of the batch rather than the run somebody just did by hand.
 
     Returns the absolute path of the written record.
     """
@@ -131,9 +143,11 @@ def write_record(record: dict, *, root: Path | None = None) -> Path:
     runs_dir.mkdir(parents=True, exist_ok=True)
     rid = record["run_id"]
     path = runs_dir / f"{rid}.json"
-    path.write_text(json.dumps(record, indent=2, default=str))
-    pointer = cache_root / "last-run.json"
-    pointer.write_text(json.dumps({"run_id": rid, "path": str(path)}, indent=2))
+    path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+    if pointer:
+        last = cache_root / "last-run.json"
+        last.write_text(json.dumps({"run_id": rid, "path": str(path)}, indent=2),
+                        encoding="utf-8")
     return path
 
 
@@ -143,7 +157,7 @@ def load_last_run(root: Path | None = None) -> dict | None:
     if not pointer.exists():
         return None
     try:
-        ptr = json.loads(pointer.read_text())
+        ptr = json.loads(pointer.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     rid = ptr.get("run_id")
@@ -153,6 +167,6 @@ def load_last_run(root: Path | None = None) -> dict | None:
     if not record_path.exists():
         return None
     try:
-        return json.loads(record_path.read_text())
+        return json.loads(record_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None

@@ -1,5 +1,5 @@
 name: "Checkpoint Agent Gate"
-description: "Statistically gate an AI agent in CI — run each scenario N times and return SHIP / CONDITIONAL / BLOCK (non-zero exit blocks the build)."
+description: "Statistically gate an AI agent in CI — run each scenario N times and return SHIP / CONDITIONAL / INCONCLUSIVE / BLOCK / ERROR (only SHIP passes the build)."
 author: "Checkpoint"
 branding:
   icon: "check-circle"
@@ -10,30 +10,35 @@ inputs:
     description: "Scenario file or directory to gate."
     required: false
     default: "scenarios/"
-  harness:
-    description: "Command that runs your agent, e.g. 'python my_agent.py'."
-    required: true
-  runs:
-    description: "Runs per scenario."
+  command:
+    description: "Command that runs your agent, e.g. 'python my_agent.py'. Optional when checkpoint.toml declares one."
     required: false
-    default: "20"
+    default: ""
+  runs:
+    description: "Runs per scenario. Fewer than 16 cannot reach SHIP at the default thresholds."
+    required: false
+    default: "16"
   pass-threshold:
     description: "Score (0-100) a single run needs to count as a pass."
     required: false
     default: "80"
+  allow-conditional:
+    description: "Pass the build on CONDITIONAL (flaky but not failing). Never covers INCONCLUSIVE, BLOCK or ERROR."
+    required: false
+    default: "false"
   strict:
-    description: "Fail the build on CONDITIONAL as well as BLOCK."
+    description: "Refuse CONDITIONAL even when allow-conditional is set. Already the default; use it to tighten a shared config."
     required: false
     default: "false"
   certificate:
     description: "Path to write a signed Trust Certificate (optional)."
     required: false
     default: ""
-  judge-model:
-    description: "Model for [P] LLM-judged criteria (needs the matching API key in env)."
+  model:
+    description: "Judge model for [P] criteria (needs the matching API key in env)."
     required: false
     default: ""
-  agent:
+  name:
     description: "Agent name recorded in the Trust Certificate. Defaults to the target path's stem."
     required: false
     default: ""
@@ -42,13 +47,13 @@ inputs:
     required: false
     default: ""
   python-version:
-    description: "Python version to set up. Leave empty (default) to use the job's existing Python, so the action does not change the interpreter your harness runs under."
+    description: "Python version to set up. Leave empty (default) to use the job's existing Python, so the action does not change the interpreter your agent runs under."
     required: false
     default: ""
 
 outputs:
   verdict:
-    description: "SHIP, CONDITIONAL, or BLOCK."
+    description: "SHIP, CONDITIONAL, INCONCLUSIVE, BLOCK, or ERROR."
     value: ${{ steps.gate.outputs.verdict }}
 
 runs:
@@ -56,7 +61,7 @@ runs:
   steps:
     # Only set up Python when the caller asks for a specific version: this step
     # prepends its toolcache to PATH for the whole job, which would otherwise
-    # silently change the interpreter the user's own harness runs under.
+    # silently change the interpreter the agent under test runs under.
     - name: Set up Python
       if: inputs.python-version != ''
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
@@ -91,32 +96,38 @@ runs:
       # Inputs are passed as environment variables, never interpolated into the
       # script body: `${{ }}` is textually pasted before bash parses the script,
       # so a value containing $(...), a quote, or a newline would execute on the
-      # runner — and a legitimately quoted harness command would be mangled.
+      # runner — and a legitimately quoted agent command would be mangled.
       env:
         TARGET: ${{ inputs.target }}
-        HARNESS: ${{ inputs.harness }}
+        COMMAND: ${{ inputs.command }}
         RUNS: ${{ inputs.runs }}
         PASS_THRESHOLD: ${{ inputs.pass-threshold }}
+        ALLOW_CONDITIONAL: ${{ inputs.allow-conditional }}
         STRICT: ${{ inputs.strict }}
         CERTIFICATE: ${{ inputs.certificate }}
-        JUDGE_MODEL: ${{ inputs.judge-model }}
-        AGENT: ${{ inputs.agent }}
+        MODEL: ${{ inputs.model }}
+        NAME: ${{ inputs.name }}
       run: |
-        args=(--harness "$HARNESS" -n "$RUNS" --pass-threshold "$PASS_THRESHOLD" -o json)
-        # CI is ephemeral: a pass-rate baseline written into the workspace is
-        # never carried between runs, so regression detection would be noise.
+        args=(-n "$RUNS" --pass-threshold "$PASS_THRESHOLD" --json)
+        # Without a command here, the gate reads [agent] from checkpoint.toml.
+        if [ -n "$COMMAND" ]; then args+=(--command "$COMMAND"); fi
+        # Baselines live in .checkpoint/baselines.json, keyed by the target's
+        # path relative to the workspace — restore that file with actions/cache
+        # (or commit it) to get regression detection in CI. Left off here because
+        # a fresh runner has no history to compare against.
         args+=(--no-baseline)
+        if [ "$ALLOW_CONDITIONAL" = "true" ]; then args+=(--allow-conditional); fi
         if [ "$STRICT" = "true" ]; then args+=(--strict); fi
         if [ -n "$CERTIFICATE" ]; then
           mkdir -p "$(dirname "$CERTIFICATE")"
           args+=(--certificate "$CERTIFICATE")
         fi
-        if [ -n "$JUDGE_MODEL" ]; then args+=(--judge-model "$JUDGE_MODEL"); fi
-        if [ -n "$AGENT" ]; then args+=(--agent "$AGENT"); fi
+        if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+        if [ -n "$NAME" ]; then args+=(--name "$NAME"); fi
 
-        # The gate's exit code (1 = BLOCK, or CONDITIONAL under --strict) is what
-        # fails the build. Capture stdout to a file so the verdict can still be
-        # published as a step output on the failing path.
+        # The gate's exit code fails the build: only SHIP is 0 (BLOCK 1,
+        # CONDITIONAL 2, INCONCLUSIVE 3, ERROR 4). Capture stdout to a file so
+        # the verdict can still be published as a step output on the failing path.
         set +e
         checkpoint gate "$TARGET" "${args[@]}" > checkpoint-gate.json
         code=$?

@@ -1,0 +1,17 @@
+# How Checkpoint runs and tests this agent.
+
+[agent]
+command = "python agent.py"
+
+[judge]
+model = "gpt-5.6-luna"
+
+[sandbox]
+# This agent reaches the twin at the address the sandbox gave it, so it does not
+# depend on interception. Leaving it on still routes anything else the process
+# tries to reach at api.github.com, and records what it did.
+intercept = true
+egress = "llm"
+
+[gate]
+runs = 16

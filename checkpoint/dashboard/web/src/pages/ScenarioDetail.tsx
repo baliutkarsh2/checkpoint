@@ -17,8 +17,8 @@ import {
  * One scenario in full: sections (prompt / setup / criteria / config),
  * raw markdown, and the run history that this scenario has produced.
  *
- * The "Run with…" button opens a thin agent picker so the user can pick any
- * discovered agent (or stick with the default first one).
+ * The Run button starts it against the agent in checkpoint.toml; the settings
+ * panel beside it exposes the `checkpoint run` options worth changing per run.
  */
 export default function ScenarioDetail() {
   const [params] = useSearchParams();
@@ -49,10 +49,10 @@ export default function ScenarioDetail() {
         sub={
           <>
             <code className="font-mono">{s.path}</code>
-            {s.clones.length > 0 && (
+            {s.twins.length > 0 && (
               <>
-                {" · clones: "}
-                {s.clones.map((c, i) => (
+                {" · twins: "}
+                {s.twins.map((c, i) => (
                   <span key={c}>
                     {i > 0 && ", "}
                     <span className="font-mono">{c}</span>
@@ -114,7 +114,7 @@ export default function ScenarioDetail() {
       <div className="section-title">Recent runs ({s.runs.length})</div>
       {s.runs.length === 0 ? (
         <div className="card text-center text-ink-3 dark:text-paper-3">
-          No runs yet for this scenario. Click <strong>Run with default agent</strong> above.
+          No runs yet for this scenario. Click <strong>Run</strong> above.
         </div>
       ) : (
         <div className="card-tight mb-7">
@@ -125,7 +125,6 @@ export default function ScenarioDetail() {
                 <th>Agent</th>
                 <th>Score</th>
                 <th>Criteria</th>
-                <th>Mode</th>
                 <th>Duration</th>
                 <th>When</th>
               </tr>
@@ -144,15 +143,6 @@ export default function ScenarioDetail() {
                   </td>
                   <td className="font-mono text-xs">
                     {r.criteria_pass}/{r.criteria_total}
-                  </td>
-                  <td>
-                    {r.mode === "docker" ? (
-                      <Badge variant="info">docker</Badge>
-                    ) : r.mode === "subprocess" ? (
-                      <Badge>subproc</Badge>
-                    ) : (
-                      "—"
-                    )}
                   </td>
                   <td className="font-mono text-xs">
                     {r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
@@ -178,29 +168,23 @@ function RunButton({ scenarioPath }: { scenarioPath: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [advanced, setAdvanced] = useState(false);
-  const [docker, setDocker] = useState(true);
   const [runs, setRuns] = useState(1);
   const [timeout, setTimeoutValue] = useState("");
   const [model, setModel] = useState("");
-  const [clone, setClone] = useState("");
   const [rateLimit, setRateLimit] = useState("");
   const [readOnly, setReadOnly] = useState(false);
   const [keepState, setKeepState] = useState(false);
-  const [noFailureAnalysis, setNoFailureAnalysis] = useState(false);
-  const agentsQ = useQuery({ queryKey: ["agents"], queryFn: api.agents });
+  const [explain, setExplain] = useState(false);
   const startMut = useMutation({
-    mutationFn: (harness: string) =>
+    mutationFn: () =>
       api.jobs.start(scenarioPath, {
-        docker,
-        harness,
         runs,
         timeout: timeout ? Number(timeout) : undefined,
         model: model || undefined,
-        clone: clone || undefined,
         rate_limit: rateLimit ? Number(rateLimit) : undefined,
         read_only: readOnly,
         keep_state: keepState,
-        no_failure_analysis: noFailureAnalysis,
+        explain,
       }),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -208,27 +192,9 @@ function RunButton({ scenarioPath }: { scenarioPath: string }) {
     },
   });
 
-  const agents = agentsQ.data || [];
-  if (agents.length === 0) {
-    return (
-      <span className="text-xs text-ink-3 dark:text-paper-3">No agents discovered</span>
-    );
-  }
-
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center gap-2">
-        <select
-          id="agent-pick"
-          className="input !text-xs max-w-[220px]"
-          defaultValue={agents[0].path}
-        >
-          {agents.map((a) => (
-            <option key={a.id} value={a.path}>
-              [{a.source}] {a.name}
-            </option>
-          ))}
-        </select>
         <button
           type="button"
           className="btn-outline"
@@ -241,10 +207,7 @@ function RunButton({ scenarioPath }: { scenarioPath: string }) {
           type="button"
           className="btn-accent"
           disabled={startMut.isPending}
-          onClick={() => {
-            const sel = document.getElementById("agent-pick") as HTMLSelectElement | null;
-            startMut.mutate(sel?.value || agents[0].path);
-          }}
+          onClick={() => startMut.mutate()}
         >
           <Play size={14} />
           {startMut.isPending ? "Starting…" : "Run"}
@@ -254,37 +217,26 @@ function RunButton({ scenarioPath }: { scenarioPath: string }) {
         <div className="card-flat !p-3 w-[min(680px,calc(100vw-2rem))]">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <label className="text-xs">
-              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Mode</span>
-              <select className="input w-full" value={docker ? "docker" : "subprocess"} onChange={(e) => setDocker(e.target.value === "docker")}>
-                <option value="docker">docker</option>
-                <option value="subprocess">subprocess</option>
-              </select>
-            </label>
-            <label className="text-xs">
               <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Runs</span>
               <input className="input w-full" type="number" min={1} value={runs} onChange={(e) => setRuns(Math.max(1, Number(e.target.value) || 1))} />
             </label>
             <label className="text-xs">
               <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Timeout</span>
-              <input className="input w-full" type="number" min={1} value={timeout} onChange={(e) => setTimeoutValue(e.target.value)} />
+              <input className="input w-full" type="number" min={1} value={timeout} onChange={(e) => setTimeoutValue(e.target.value)} placeholder="seconds" />
             </label>
             <label className="text-xs">
               <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Rate limit</span>
-              <input className="input w-full" type="number" min={1} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} />
+              <input className="input w-full" type="number" min={1} value={rateLimit} onChange={(e) => setRateLimit(e.target.value)} placeholder="calls per twin" />
             </label>
-            <label className="text-xs md:col-span-2">
+            <label className="text-xs">
               <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Judge model</span>
               <input className="input w-full" value={model} onChange={(e) => setModel(e.target.value)} placeholder="default" />
             </label>
-            <label className="text-xs md:col-span-2">
-              <span className="block font-mono text-[10px] uppercase text-ink-4 dark:text-paper-3 mb-1">Clone override</span>
-              <input className="input w-full" value={clone} onChange={(e) => setClone(e.target.value)} placeholder="github,slack" />
-            </label>
           </div>
           <div className="flex flex-wrap gap-3 mt-3 text-xs">
-            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> read-only</label>
-            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={keepState} onChange={(e) => setKeepState(e.target.checked)} /> keep state</label>
-            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={noFailureAnalysis} onChange={(e) => setNoFailureAnalysis(e.target.checked)} /> skip failure analysis</label>
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> refuse every write</label>
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={keepState} onChange={(e) => setKeepState(e.target.checked)} /> do not reseed the twins</label>
+            <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={explain} onChange={(e) => setExplain(e.target.checked)} /> explain failed criteria</label>
           </div>
         </div>
       )}

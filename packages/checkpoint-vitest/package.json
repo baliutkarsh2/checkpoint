@@ -20,6 +20,13 @@
     "test-doubles"
   ],
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/baliutkarsh2/checkpoint.git",
+    "directory": "packages/checkpoint-vitest"
+  },
+  "homepage": "https://github.com/baliutkarsh2/checkpoint/tree/main/packages/checkpoint-vitest#readme",
+  "bugs": "https://github.com/baliutkarsh2/checkpoint/issues",
   "engines": {
     "node": ">=18"
   }

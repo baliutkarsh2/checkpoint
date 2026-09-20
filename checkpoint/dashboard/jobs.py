@@ -5,7 +5,7 @@ line-by-line, store the last N lines in a ring buffer, and broadcast each line
 via the SSE bus so the LiveRun page can stream it without polling.
 
 The job manager is intentionally in-process and ephemeral. There's no
-persistence — restarting `checkpoint serve` clears running jobs. That matches
+persistence — restarting `checkpoint view` clears running jobs. That matches
 what users expect from a local dev tool.
 
 Concurrency: one global asyncio.Semaphore caps how many jobs can run at once
@@ -89,22 +89,18 @@ class JobManager:
         self,
         scenario: str,
         *,
-        docker: bool = False,
-        harness_dir: str | None = None,
         model: str | None = None,
         timeout: int | None = None,
-        clone: str | None = None,
         runs: int | None = None,
         rate_limit: int | None = None,
         read_only: bool = False,
-        no_failure_analysis: bool = False,
-        seed_file: str | None = None,
-        setup_file: str | None = None,
         keep_state: bool = False,
-        fresh_seed: bool = False,
-        docker_logs: bool = False,
+        explain: bool = False,
     ) -> Job:
         job_id = uuid.uuid4().hex
+        # Every element below is either a literal or a value the request model
+        # already constrained to an int — the agent's own command never appears
+        # here, because `checkpoint run` takes it from checkpoint.toml.
         cmd = [
             sys.executable,
             "-m",
@@ -112,44 +108,20 @@ class JobManager:
             "run",
             scenario,
         ]
-        if docker:
-            cmd.append("--docker")
-        else:
-            cmd.append("--no-docker")
-        if harness_dir:
-            if docker:
-                cmd.extend(["--harness-dir", harness_dir])
-            else:
-                # Subprocess mode: run the directory's harness.py. `harness_dir`
-                # is a server-validated agent directory (never a client command),
-                # and agent discovery guarantees harness.py exists. shlex.join
-                # quotes safely so the CLI's shlex.split round-trips the path.
-                entry = os.path.join(harness_dir, "harness.py")
-                cmd.extend(["--harness", shlex.join([sys.executable, entry])])
         if model:
             cmd.extend(["--model", model])
         if timeout is not None:
             cmd.extend(["--timeout", str(timeout)])
-        if clone:
-            cmd.extend(["--clone", clone])
         if runs is not None:
             cmd.extend(["--runs", str(runs)])
         if rate_limit is not None:
             cmd.extend(["--rate-limit", str(rate_limit)])
         if read_only:
             cmd.append("--read-only")
-        if no_failure_analysis:
-            cmd.append("--no-failure-analysis")
-        if seed_file:
-            cmd.extend(["--seed-file", seed_file])
-        if setup_file:
-            cmd.extend(["--setup-file", setup_file])
         if keep_state:
             cmd.append("--keep-state")
-        if fresh_seed:
-            cmd.append("--fresh-seed")
-        if docker_logs:
-            cmd.append("--docker-logs")
+        if explain:
+            cmd.append("--explain")
 
         job = Job(
             job_id=job_id,

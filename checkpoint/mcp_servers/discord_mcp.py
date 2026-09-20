@@ -1,8 +1,8 @@
 """Discord MCP server — wraps `checkpoint.twins.discord` REST surface.
 
 Tool names mirror the Discord MCP server's tool list: guild/channel/message
-management, reactions, roles, webhooks. Each tool is a thin REST shim sharing
-STATE with the twin.
+management, threads, DMs, reactions, roles, moderation, webhooks. Each tool is
+a thin REST shim sharing STATE with the twin.
 
 Mounted onto the twin's FastAPI app at `/mcp` by `mount_on(app)`.
 """
@@ -140,6 +140,11 @@ def build_mcp(app: FastAPI) -> FastMCP:
         return await shim("GET", f"/api/v10/channels/{channel_id}/messages", params=params)
 
     @mcp.tool()
+    async def discord_get_message(channel_id: str, message_id: str) -> Any:
+        """Get a single message by ID."""
+        return await shim("GET", f"/api/v10/channels/{channel_id}/messages/{message_id}")
+
+    @mcp.tool()
     async def discord_send_message(
         channel_id: str,
         content: str,
@@ -233,6 +238,38 @@ def build_mcp(app: FastAPI) -> FastMCP:
         """Unpin a message from a channel."""
         return await shim("DELETE", f"/api/v10/channels/{channel_id}/pins/{message_id}")
 
+    # ----- Threads ----------------------------------------------------------
+
+    @mcp.tool()
+    async def discord_create_thread(
+        channel_id: str,
+        name: str,
+        message_id: str | None = None,
+        auto_archive_duration: int = 1440,
+    ) -> Any:
+        """Start a thread in a channel, optionally from an existing message."""
+        body: dict[str, Any] = {"name": name, "auto_archive_duration": auto_archive_duration}
+        if message_id is not None:
+            return await shim(
+                "POST",
+                f"/api/v10/channels/{channel_id}/messages/{message_id}/threads",
+                json=body,
+            )
+        return await shim("POST", f"/api/v10/channels/{channel_id}/threads",
+                          json={**body, "type": 11})
+
+    @mcp.tool()
+    async def discord_list_active_threads(guild_id: str) -> Any:
+        """List the guild's active (unarchived) threads."""
+        return await shim("GET", f"/api/v10/guilds/{guild_id}/threads/active")
+
+    # ----- Direct messages --------------------------------------------------
+
+    @mcp.tool()
+    async def discord_create_dm(user_id: str) -> Any:
+        """Open (or reuse) a DM channel with a user; send to the channel it returns."""
+        return await shim("POST", "/api/v10/users/@me/channels", json={"recipient_id": user_id})
+
     # ----- Members ----------------------------------------------------------
 
     @mcp.tool()
@@ -244,6 +281,57 @@ def build_mcp(app: FastAPI) -> FastMCP:
     async def discord_get_guild_member(guild_id: str, user_id: str) -> Any:
         """Get a specific member of a guild."""
         return await shim("GET", f"/api/v10/guilds/{guild_id}/members/{user_id}")
+
+    @mcp.tool()
+    async def discord_search_guild_members(guild_id: str, query: str, limit: int = 25) -> Any:
+        """Search a guild's members by username or nickname prefix."""
+        return await shim("GET", f"/api/v10/guilds/{guild_id}/members/search",
+                          params={"query": query, "limit": limit})
+
+    @mcp.tool()
+    async def discord_modify_guild_member(
+        guild_id: str,
+        user_id: str,
+        nick: str | None = None,
+        communication_disabled_until: str | None = None,
+    ) -> Any:
+        """Change a member's nickname, or time them out until an ISO-8601 timestamp."""
+        body: dict[str, Any] = {}
+        if nick is not None:
+            body["nick"] = nick
+        if communication_disabled_until is not None:
+            body["communication_disabled_until"] = communication_disabled_until
+        return await shim("PATCH", f"/api/v10/guilds/{guild_id}/members/{user_id}", json=body)
+
+    @mcp.tool()
+    async def discord_kick_member(guild_id: str, user_id: str, reason: str | None = None) -> Any:
+        """Remove a member from a guild."""
+        headers = {"X-Audit-Log-Reason": reason} if reason else None
+        return await shim("DELETE", f"/api/v10/guilds/{guild_id}/members/{user_id}",
+                          extra_headers=headers)
+
+    @mcp.tool()
+    async def discord_ban_member(
+        guild_id: str,
+        user_id: str,
+        reason: str | None = None,
+        delete_message_seconds: int = 0,
+    ) -> Any:
+        """Ban a user from a guild, optionally deleting their recent messages."""
+        headers = {"X-Audit-Log-Reason": reason} if reason else None
+        return await shim("PUT", f"/api/v10/guilds/{guild_id}/bans/{user_id}",
+                          json={"delete_message_seconds": delete_message_seconds},
+                          extra_headers=headers)
+
+    @mcp.tool()
+    async def discord_unban_member(guild_id: str, user_id: str) -> Any:
+        """Lift a guild ban."""
+        return await shim("DELETE", f"/api/v10/guilds/{guild_id}/bans/{user_id}")
+
+    @mcp.tool()
+    async def discord_list_bans(guild_id: str) -> Any:
+        """List a guild's bans."""
+        return await shim("GET", f"/api/v10/guilds/{guild_id}/bans")
 
     @mcp.tool()
     async def discord_assign_role(guild_id: str, user_id: str, role_id: str) -> Any:

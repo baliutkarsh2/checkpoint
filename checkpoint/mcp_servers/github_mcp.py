@@ -1,6 +1,6 @@
 """GitHub MCP server — wraps `checkpoint.twins.github` REST surface.
 
-Tool names match Archal's faithful list (SCOPE.md §3.2): 33 tools across
+Tool names match GitHub's own MCP server: 33 tools across
 repositories, files, branches, issues, pull requests, commits, workflows,
 and search. Each tool body is a thin REST shim — the FastAPI twin is
 called in-process via `httpx.ASGITransport`, so REST and MCP share the
@@ -32,7 +32,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     mcp = make_server(
         name="checkpoint-github",
-        instructions="Stateful synthetic GitHub. Tool names match Archal §3.2.",
+        instructions="Stateful synthetic GitHub, with the tool names GitHub's own MCP server uses.",
     )
 
     # ----- Repositories -------------------------------------------------
@@ -324,7 +324,8 @@ def build_mcp(app: FastAPI) -> FastMCP:
     async def get_pull_request_diff(owner: str, repo: str, number: int) -> Any:
         """Get the unified diff for a pull request."""
         return await shim(
-            "GET", f"/repos/{owner}/{repo}/pulls/{number}.diff",
+            "GET", f"/repos/{owner}/{repo}/pulls/{number}",
+            extra_headers={"Accept": "application/vnd.github.diff"},
         )
 
     @mcp.tool()
@@ -375,8 +376,13 @@ def build_mcp(app: FastAPI) -> FastMCP:
         owner: str, repo: str, number: int
     ) -> Any:
         """Combined commit status for a pull request's head."""
+        # GitHub has no status endpoint on a PR: read its head sha, then the
+        # combined status of that commit.
+        pull = await shim("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+        if not isinstance(pull, dict) or "head" not in pull:
+            return pull
         return await shim(
-            "GET", f"/repos/{owner}/{repo}/pulls/{number}/status",
+            "GET", f"/repos/{owner}/{repo}/commits/{pull['head']['sha']}/status",
         )
 
     @mcp.tool()

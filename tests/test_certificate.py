@@ -32,10 +32,10 @@ def signer(tmp_path, monkeypatch):
 def test_build_and_sign_roundtrip(signer):
     p = GatePolicy(runs=20)
     gr = _gate_result({"a.md": [100.0] * 20}, p)
-    body = cert.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"], model="gpt-4o-mini")
+    body = cert.build_certificate(gr, agent="bot", command=["python", "a.py"], model="gpt-4o-mini")
     assert body["verdict"] == "SHIP"
     assert body["schema"] == cert.SCHEMA
-    assert body["subject"]["harness"].startswith("sha256:")
+    assert body["subject"]["command"].startswith("sha256:")
     assert len(body["gate_id"]) == 16
 
     signed = signer.sign(body)
@@ -45,7 +45,7 @@ def test_build_and_sign_roundtrip(signer):
 def test_tampering_any_field_breaks_verification(signer):
     p = GatePolicy(runs=20)
     gr = _gate_result({"a.md": [100.0] * 20}, p)
-    signed = signer.sign(cert.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"]))
+    signed = signer.sign(cert.build_certificate(gr, agent="bot", command=["python", "a.py"]))
 
     for mutate in (
         lambda c: c.__setitem__("verdict", "SHIP" if c["verdict"] != "SHIP" else "BLOCK"),
@@ -74,7 +74,7 @@ def test_key_is_persisted_and_reused(tmp_path, monkeypatch):
 def test_block_verdict_certificate(signer):
     p = GatePolicy(runs=20)
     gr = _gate_result({"a.md": [0.0] * 20}, p)  # all fail
-    signed = signer.sign(cert.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"]))
+    signed = signer.sign(cert.build_certificate(gr, agent="bot", command=["python", "a.py"]))
     assert signed["verdict"] == "BLOCK"
     assert cert.verify(signed) is True  # a BLOCK certificate is still validly signed
 
@@ -82,7 +82,7 @@ def test_block_verdict_certificate(signer):
 def test_expiry_check(signer):
     p = GatePolicy(runs=5)
     gr = _gate_result({"a.md": [100.0] * 5}, p)
-    body = cert.build_certificate(gr, agent="bot", harness_cmd=["python", "a.py"], valid_days=1)
+    body = cert.build_certificate(gr, agent="bot", command=["python", "a.py"], valid_days=1)
     future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=2)
     assert cert.is_expired(body, now=future) is True
     assert cert.is_expired(body) is False

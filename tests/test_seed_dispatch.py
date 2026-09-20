@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from checkpoint.runner import _parse_seed_spec, run_once
+from checkpoint.engine import Agent, run_scenario
+from checkpoint.runner import _parse_seed_spec
 from checkpoint.scenario import Scenario, parse
 
 NOOP_HARNESS = textwrap.dedent(
@@ -50,7 +51,7 @@ def test_scenario_parses_per_twin_seed_map():
 def test_named_seed_loads_into_twin(noop_harness):
     """SCN-06: `seed: small-project` populates the twin before harness start."""
     s = Scenario(prompt="ok", config={"clones": "github", "seed": "small-project", "timeout": "30"})
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     # small-project has at least one issue and at least one repo.
     assert (r.state.get("repos") or {}), f"got state keys: {list(r.state.keys())}"
@@ -58,7 +59,7 @@ def test_named_seed_loads_into_twin(noop_harness):
 
 def test_unknown_named_seed_errors(noop_harness):
     s = Scenario(prompt="ok", config={"clones": "github", "seed": "does-not-exist", "timeout": "30"})
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert not r.complete
     assert "does-not-exist" in (r.error or "")
 
@@ -77,7 +78,7 @@ def test_seed_file_replaces_state(tmp_path, noop_harness):
         prompt="ok",
         config={"clones": "github", "seed-file": str(seed_path), "timeout": "30"},
     )
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     issues = r.state.get("issues") or {}
     assert any(i.get("title") == "From seed-file" for i in issues.values()), \
@@ -96,7 +97,7 @@ def test_seed_file_raw_state(tmp_path, noop_harness):
         prompt="ok",
         config={"clones": "github", "seed-file": str(seed_path), "timeout": "30"},
     )
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     issues = r.state.get("issues") or {}
     assert any(i.get("title") == "Raw style" for i in issues.values()), \
@@ -121,7 +122,7 @@ def test_seed_file_per_twin_map(tmp_path, noop_harness):
             "timeout": "30",
         },
     )
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     gh_issues = (r.state["github"].get("issues") or {})
     assert any(i.get("title") == "GH-from-file" for i in gh_issues.values())
@@ -143,7 +144,7 @@ def test_seed_file_relative_to_scenario(tmp_path, noop_harness):
     )
     from checkpoint.scenario import parse_file
     s = parse_file(scn_path)
-    r = run_once(s, [sys.executable, str(noop_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(noop_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     issues = r.state.get("issues") or {}
     assert any(i.get("title") == "rel-resolved" for i in issues.values())
