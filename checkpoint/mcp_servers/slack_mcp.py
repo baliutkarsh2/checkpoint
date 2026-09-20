@@ -1,6 +1,6 @@
 """Slack MCP server — wraps `checkpoint.twins.slack` REST surface.
 
-Tool names match Archal's faithful list (SCOPE.md §3.4): 8 tools across
+Tool names match Slack's own MCP server: 8 tools across
 chat, conversations, reactions, and users. Each tool body is a thin
 REST shim — REST and MCP share one `STATE` dict.
 
@@ -28,7 +28,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     mcp = make_server(
         name="checkpoint-slack",
-        instructions="Stateful synthetic Slack. Tool names match Archal §3.4.",
+        instructions="Stateful synthetic Slack, with the tool names Slack's own MCP server uses.",
     )
 
     # ----- chat ---------------------------------------------------------

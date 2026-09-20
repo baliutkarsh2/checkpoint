@@ -1,4 +1,4 @@
-name: Checkpoint Agent Eval
+name: CI
 
 on:
   push:
@@ -6,15 +6,6 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
-    inputs:
-      scenario:
-        description: "Path to a single scenario file (leave empty to run all)"
-        required: false
-        default: ""
-      clone:
-        description: "Override clone (e.g. linear, supabase, github)"
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -87,11 +78,11 @@ jobs:
           CHECKPOINT_LINEAR_SDK_DIR: ${{ github.workspace }}
         run: pytest tests/sdk -m sdk -q
 
-  # The container images back three documented deployment paths and the default
-  # run mode, but nothing built them — a broken base image or dependency
-  # conflict would ship undetected. Build only; no registry credentials needed.
+  # The dashboard image backs three documented deployment paths, and nothing
+  # else builds it — a broken base image or dependency conflict would ship
+  # undetected. Build only; no registry credentials needed.
   docker-build:
-    name: Build container images
+    name: Build the dashboard image
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -102,9 +93,6 @@ jobs:
 
       - name: Build the runtime image
         run: docker build -f Dockerfile -t checkpoint:ci .
-
-      - name: Build the TLS sidecar image
-        run: docker build -f checkpoint/proxy/Dockerfile -t checkpoint-sidecar:ci .
 
   # Fast feedback: a lint failure should not wait behind the full build.
   lint:
@@ -127,10 +115,15 @@ jobs:
       - name: ruff check
         run: ruff check --output-format=github checkpoint/ tests/
 
-  eval:
-    name: Run checkpoint scenarios
+  # Checkpoint, gating Checkpoint's own agent. Every criterion in the demo
+  # scenario is decided by an assertion, so this needs no API key and runs on
+  # fork pull requests too: if the product stops working end to end — twins,
+  # interception, scoring, the verdict, the signature — this is the job that
+  # says so, and it is the same command a user runs.
+  self-gate:
+    name: Gate the bundled agent
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -140,67 +133,34 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: pip
 
-      - name: Install checkpoint and dependencies
-        run: pip install -e ".[dev]" 2>/dev/null || pip install -e .
+      - name: Install checkpoint
+        run: pip install -e .
 
-      # Detect whether the repo has an OPENAI_API_KEY secret configured.
-      # Fork PRs and repos that haven't set the secret will skip the LLM-
-      # dependent steps below cleanly instead of failing the whole workflow.
-      - name: Check for OPENAI_API_KEY
-        id: api_key_check
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::warning::OPENAI_API_KEY secret not set; skipping LLM-judged scenario run."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run checkpoint doctor
-        if: steps.api_key_check.outputs.skip != 'true'
+      - name: Check the environment
         run: checkpoint doctor
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Run scenario against a bundled example agent (Docker mode)
-        if: steps.api_key_check.outputs.skip != 'true'
+      # 16 runs is the fewest that can reach SHIP at the default thresholds;
+      # anything less would only be testing the gate's refusal to decide.
+      # No baseline: a fresh runner has no history, and inventing one here
+      # would make the first real regression look like the normal state.
+      - name: Gate
         run: |
-          # GitHub-hosted ubuntu runners ship a working Docker daemon, so this
-          # exercises the real out-of-the-box path: the TLS sidecar image
-          # auto-builds, the example agent runs unmodified against the twins,
-          # and checkpoint injects the per-clone bootstrap tokens itself (no
-          # manual token env needed). A single cheap scenario keeps CI fast.
-          SCENARIO="${{ github.event.inputs.scenario }}"
-          if [ -z "$SCENARIO" ]; then
-            SCENARIO="scenarios/github-happy-path.md"
-          fi
-          checkpoint run "$SCENARIO" \
-            --harness-dir examples/agents/openai-tools \
-            --docker-logs \
-            --trace-out ci-traces.json
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          checkpoint gate checkpoint/demo/smoke-scenario.md             --command "python -m checkpoint.demo.harness_fake"             --runs 16 --no-baseline             --certificate checkpoint-certificate.json
 
-      - name: Upload trace artifact
-        if: always() && steps.api_key_check.outputs.skip != 'true'
+      - name: Verify the certificate it issued
+        run: checkpoint cert verify checkpoint-certificate.json
+
+      - name: Upload the evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: checkpoint-traces-${{ github.run_id }}
-          path: ci-traces.json
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Upload run records
-        if: always() && steps.api_key_check.outputs.skip != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: checkpoint-run-records-${{ github.run_id }}
-          path: .checkpoint/cache/runs/
+          name: checkpoint-evidence-${{ github.run_id }}
+          path: |
+            checkpoint-certificate.json
+            .checkpoint/cache/runs/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -228,10 +188,7 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # 1. Build the SPA from source. The bundle is NOT committed
-      # (checkpoint/dashboard/static/ is gitignored); it is produced here and
-      # packaged into the wheel by the "Build sdist + wheel" step below, so the
-      # published artifact always ships a fresh dashboard built on this runner.
+      # 1. Build the SPA from source, so the wheel ships a bundle built here.
       - name: Build dashboard SPA
         working-directory: checkpoint/dashboard/web
         run: |
@@ -300,8 +257,7 @@ jobs:
 
           need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
           need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
-          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
-          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo agent")
           need(lambda n: "init_templates" in n, "the init templates")
           need(lambda n: n.endswith("twins/linear_schema.graphql"),
                "Linear's vendored GraphQL schema")
@@ -355,7 +311,7 @@ jobs:
         uses: ./
         with:
           target: checkpoint/demo/smoke-scenario.md
-          harness: python -m checkpoint.demo.harness_fake
+          command: python -m checkpoint.demo.harness_fake
           # SHIP needs ceil(ship_min*z^2/(1-ship_min)) = 16 clean runs at the
           # default ship_min 0.80; fewer is INCONCLUSIVE and fails the step, so
           # a smaller number here would test nothing but the gate's refusal.

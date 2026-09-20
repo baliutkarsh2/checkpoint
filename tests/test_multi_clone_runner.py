@@ -1,6 +1,6 @@
 """Phase 4 plan 01: multi-clone runner.
 
-These tests exercise `run_once` with a scenario that uses `clones: github,slack,stripe`.
+These tests exercise a run with a scenario that uses `clones: github,slack,stripe`.
 They use a tiny harness that just reads CHECKPOINT_<CLONE>_URL env vars and
 echoes the count, so we don't need an LLM judge.
 """
@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from checkpoint.runner import _parse_seed_spec, run_once
+from checkpoint.engine import Agent, run_scenario
+from checkpoint.runner import _parse_seed_spec
 from checkpoint.scenario import Scenario
 
 HARNESS_ECHO = textwrap.dedent(
@@ -62,7 +63,7 @@ def test_parse_seed_spec_unknown_clone_kept():
 
 def test_single_clone_back_compat(echo_harness):
     s = Scenario(prompt="hello", config={"clones": "github", "timeout": "30"})
-    r = run_once(s, [sys.executable, str(echo_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     payload = json.loads(r.final_answer)
     assert payload["github"], "CHECKPOINT_GITHUB_URL not set"
@@ -73,7 +74,7 @@ def test_single_clone_back_compat(echo_harness):
 
 def test_multi_clone_three_twins(echo_harness):
     s = Scenario(prompt="hello", config={"clones": "github,slack,stripe", "timeout": "30"})
-    r = run_once(s, [sys.executable, str(echo_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     payload = json.loads(r.final_answer)
     assert payload["github"], "CHECKPOINT_GITHUB_URL missing"
@@ -96,7 +97,7 @@ def test_multi_clone_with_per_twin_seeds(echo_harness):
             "timeout": "30",
         },
     )
-    r = run_once(s, [sys.executable, str(echo_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     # Confirm seeds actually loaded — small-project should have ≥1 repo.
     gh_state = r.state["github"]
@@ -127,7 +128,7 @@ def test_seed_file_inline_state(echo_harness, tmp_path):
             "timeout": "30",
         },
     )
-    r = run_once(s, [sys.executable, str(echo_harness)])
+    r = run_scenario(s, Agent(command=[sys.executable, str(echo_harness)]))
     assert r.complete, f"runner failed: {r.error} / {r.stderr}"
     issues = r.state.get("issues") or {}
     # Single-clone flat state.
@@ -136,6 +137,6 @@ def test_seed_file_inline_state(echo_harness, tmp_path):
 
 def test_unknown_clone_errors():
     s = Scenario(prompt="hi", config={"clones": "github,fakebook"})
-    r = run_once(s, [sys.executable, "-c", "print('{}')"])
+    r = run_scenario(s, Agent(command=[sys.executable, "-c", "print('{}')"]))
     assert not r.complete
     assert "fakebook" in (r.error or "")

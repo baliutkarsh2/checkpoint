@@ -1,6 +1,6 @@
 """GitHub MCP server — wraps `checkpoint.twins.github` REST surface.
 
-Tool names match Archal's faithful list (SCOPE.md §3.2): 33 tools across
+Tool names match GitHub's own MCP server: 33 tools across
 repositories, files, branches, issues, pull requests, commits, workflows,
 and search. Each tool body is a thin REST shim — the FastAPI twin is
 called in-process via `httpx.ASGITransport`, so REST and MCP share the
@@ -32,7 +32,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     mcp = make_server(
         name="checkpoint-github",
-        instructions="Stateful synthetic GitHub. Tool names match Archal §3.2.",
+        instructions="Stateful synthetic GitHub, with the tool names GitHub's own MCP server uses.",
     )
 
     # ----- Repositories -------------------------------------------------

@@ -7,7 +7,6 @@ recursive-include checkpoint/init_templates *
 recursive-include checkpoint/demo *
 recursive-include checkpoint/twins *.json
 recursive-include checkpoint/twins *.graphql
-recursive-include checkpoint/proxy Dockerfile entrypoint.sh
 include README.md
 include LICENSE
 

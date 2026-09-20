@@ -2,7 +2,7 @@
 
 Every run is written to ``.checkpoint/cache/runs/<run-id>.json`` and
 ``.checkpoint/cache/last-run.json`` points at the newest one. These files feed
-the dashboard, ``runs``/``compare``/``report``, and CI artifacts.
+the dashboard, every `checkpoint runs` subcommand, and CI artifacts.
 """
 from __future__ import annotations
 
@@ -44,6 +44,14 @@ def _truncate_state_for_record(state: dict, max_chars: int = 100_000) -> dict:
 
 
 def _serialize_criterion(c: Any) -> dict:
+    """A criterion in the shape the record stores.
+
+    A plain dict passes through unchanged. It used to fall to the last branch
+    and be stored as `{"raw": "<the dict, stringified>"}` — a silent data loss
+    that no caller could see until it read the record back.
+    """
+    if isinstance(c, dict):
+        return dict(c)
     if is_dataclass(c):
         return asdict(c)
     if hasattr(c, "__dict__"):
@@ -71,7 +79,7 @@ def build_record(
     failure_analysis: dict[str, str] | None = None,
     run_id: str | None = None,
     timestamp: str | None = None,
-    harness: dict | None = None,
+    agent: dict | None = None,
     duration_ms: float | None = None,
     warnings: list[str] | None = None,
     egress: list[dict] | None = None,
@@ -96,7 +104,10 @@ def build_record(
         "state": _truncate_state_for_record(state),
         "error": error,
         "exit_code": exit_code,
-        "harness": harness,             # {name, dir, mode: docker|subprocess, cmd}
+        # {name, cmd} — what was run. Still written under the old key as well,
+        # so a records directory written before the rename keeps opening.
+        "agent": agent,
+        "harness": agent,
         "duration_ms": duration_ms,
         "twins": twins or [],
         "warnings": warnings or [],

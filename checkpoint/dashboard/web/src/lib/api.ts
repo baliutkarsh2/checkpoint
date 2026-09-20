@@ -29,14 +29,31 @@ export interface RunRecord {
   stderr?: string | null;
   metrics?: Record<string, unknown> | null;
   agent_trace?: unknown;
-  harness?: { name?: string; dir?: string; mode?: string; cmd?: string } | null;
+  // `agent` is the current key; `harness` is what records written before the
+  // rename used, with the same shape. `dir` and `mode` only appear on records
+  // from when Docker mode existed.
+  agent?: AgentRef | null;
+  harness?: AgentRef | null;
   duration_ms?: number | null;
+}
+
+export interface AgentRef {
+  name?: string;
+  cmd?: string;
+  dir?: string;
+  mode?: string;
+}
+
+/** What ran, from a record of any age. */
+export function agentOf(r: { agent?: AgentRef | null; harness?: AgentRef | null }): AgentRef {
+  return r.agent || r.harness || {};
 }
 
 export interface TraceEvent {
   method: string;
   path: string;
   status: number;
+  /** Which twin served the call. The wire name predates the twin rename. */
   _clone?: string;
   request_body?: unknown;
   response_body?: unknown;
@@ -59,7 +76,8 @@ export interface TelemetryReport {
     duration_ms: number | null;
     timestamp: string | null;
     exit_code: number | null;
-    harness: Record<string, unknown>;
+    agent?: AgentRef;
+    harness?: AgentRef;
   };
   cli: Record<string, string>;
   chat: {
@@ -139,10 +157,11 @@ export interface RunSummary {
   evaluator_model: string | null;
   timestamp: string | null;
   exit_code: number | null;
-  // Agent + mode + duration. Older records may have these as null.
+  // `harness_*` and `mode` are the field names /api/runs has always used; the
+  // last two are only ever filled on records from before Docker mode went.
   harness_name: string | null;
   harness_dir: string | null;
-  mode: "docker" | "subprocess" | null;
+  mode: string | null;
   duration_ms: number | null;
 }
 
@@ -155,26 +174,17 @@ export interface ScenarioDetail {
   expected: string;
   criteria: { text: string; kind: "D" | "P" }[];
   config: Record<string, unknown>;
-  clones: string[];
+  twins: string[];
   raw: string;
   runs: RunSummary[];
   stats: { total_runs: number; avg_score: number; pass_rate: number; last_at: string | null };
 }
 
-export interface AgentDetail {
-  agent: AgentInfo;
-  readme: string;
-  runs: RunSummary[];
-  by_scenario: Record<
-    string,
-    { runs: number; avg_score: number; last_score: number | null; last_at: string | null }
-  >;
-  stats: { total_runs: number; avg_score: number; pass_rate: number; last_at: string | null };
-}
-
-export interface SupportedClone {
+export interface SupportedTwin {
   id: string;
+  title: string;
   module: string;
+  seeds: string[];
 }
 
 export interface RunsPage {
@@ -191,7 +201,7 @@ export interface DashboardSummary {
   recent_fail_count: number;
 }
 
-export interface CloneInfo {
+export interface TwinSession {
   id: string;
   url: string;
   mcp_url: string;
@@ -202,7 +212,7 @@ export interface CloneInfo {
 export interface ScenarioSummary {
   title: string;
   path: string;
-  clones: string;
+  twins: string;
   tags: string;
   d_count: number;
   p_count: number;
@@ -260,13 +270,59 @@ export interface AppMeta {
   judge_model_default: string;
 }
 
-export interface AgentInfo {
-  id: string;
-  name: string;
-  path: string;
-  abs_path: string;
-  description: string;
-  source: "bundled" | "init" | "local";
+export type Verdict = "SHIP" | "CONDITIONAL" | "INCONCLUSIVE" | "BLOCK" | "ERROR";
+
+export interface GateSummary {
+  gate_id: string;
+  target: string | null;
+  verdict: Verdict;
+  created_at: string | null;
+}
+
+export interface GateScenarioStat {
+  scenario: string;
+  n: number;
+  passes: number;
+  pass_rate: number;
+  ci_low: number;
+  ci_high: number;
+  /** pass^k, keyed by k: the chance that k independent runs all pass. */
+  pass_hat_k: Record<string, number>;
+  classification: string;
+  mean_score: number;
+  runs_needed_to_ship: number;
+  error_runs: number;
+  errors: string[];
+  baseline_rate: number | null;
+  criteria_hash: string;
+  evidence: string;
+}
+
+export interface GatePolicy {
+  runs: number;
+  pass_threshold: number;
+  confidence: number;
+  ship_min: number;
+  block_max: number;
+  strict: boolean;
+  regression_drop: number;
+  allow_conditional: boolean;
+  runs_needed_to_ship: number;
+}
+
+export interface GateResult {
+  gate_id: string;
+  target: string | null;
+  created_at: string | null;
+  verdict: Verdict;
+  exit_code: number;
+  policy: GatePolicy;
+  scenarios: GateScenarioStat[];
+  skipped: { path: string; reason: string }[];
+  errors: string[];
+  notes: string[];
+  baseline_updated: string[];
+  certificate: string | null;
 }
 
 class ApiError extends Error {
@@ -318,21 +374,27 @@ export const api = {
     return request<RunsPage>(`/api/runs${qs ? `?${qs}` : ""}`);
   },
   run: (runId: string) => request<RunRecord>(`/api/runs/${runId}`),
-  clones: () => request<CloneInfo[]>("/api/clones"),
   scenarios: (path?: string) => {
     const q = path ? `?path=${encodeURIComponent(path)}` : "";
     return request<{ scenarios: ScenarioSummary[]; coverage: CoverageSummary }>(
       `/api/scenarios${q}`,
     );
   },
-  agents: () => request<AgentInfo[]>("/api/agents"),
-  agent: (id: string) => request<AgentDetail>(`/api/agents/${encodeURIComponent(id)}`),
   scenarioFile: (path: string) =>
     request<ScenarioDetail>(`/api/scenarios/file?path=${encodeURIComponent(path)}`),
-  clonesSupported: () => request<SupportedClone[]>("/api/clones/supported"),
-  clone: {
+  gates: (limit?: number) =>
+    request<{ rows: GateSummary[]; store: string }>(
+      `/api/gates${limit ? `?limit=${limit}` : ""}`,
+    ),
+  gate: (gateId: string) =>
+    request<GateResult>(`/api/gates/${encodeURIComponent(gateId)}`),
+  // The twin routes still spell the path `/api/clones`; only the vocabulary
+  // the reader sees has moved on.
+  twins: () => request<TwinSession[]>("/api/clones"),
+  twinsSupported: () => request<SupportedTwin[]>("/api/clones/supported"),
+  twin: {
     start: (id: string) =>
-      request<CloneInfo>(`/api/clones/${encodeURIComponent(id)}`, { method: "POST" }),
+      request<TwinSession>(`/api/clones/${encodeURIComponent(id)}`, { method: "POST" }),
     stop: (id: string) =>
       request<{ id: string; was_running: boolean }>(
         `/api/clones/${encodeURIComponent(id)}`,
@@ -365,21 +427,16 @@ export const api = {
       `/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
     ),
   jobs: {
+    // One option per `checkpoint run` flag. The agent is not among them: it
+    // comes from [agent] in checkpoint.toml, server-side.
     start: (scenario: string, opts: {
-      docker?: boolean;
-      harness?: string;
       model?: string;
       timeout?: number;
-      clone?: string;
       runs?: number;
       rate_limit?: number;
       read_only?: boolean;
-      no_failure_analysis?: boolean;
-      seed_file?: string;
-      setup_file?: string;
       keep_state?: boolean;
-      fresh_seed?: boolean;
-      docker_logs?: boolean;
+      explain?: boolean;
     } = {}) =>
       request<RunJob>("/api/jobs", {
         method: "POST",
@@ -394,24 +451,7 @@ export const api = {
   telemetry: (runId: string) => request<TelemetryReport>(`/api/runs/${runId}/telemetry`),
   anonymizedRun: (runId: string) => request<RunRecord>(`/api/runs/${runId}/anonymized`),
   doctor: () => request<DoctorReport>("/api/doctor"),
-  config: {
-    get: (revealEnv = false) =>
-      request<ConfigReport>(`/api/config${revealEnv ? "?reveal_env=true" : ""}`),
-    set: (key: string, value: unknown) =>
-      request<{ key: string; value: unknown }>(
-        `/api/config/${encodeURIComponent(key)}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value }),
-        },
-      ),
-    unset: (key: string) =>
-      request<{ key: string; removed: boolean }>(
-        `/api/config/${encodeURIComponent(key)}`,
-        { method: "DELETE" },
-      ),
-  },
+  config: () => request<ConfigReport>("/api/config"),
   validateScenario: (body: { raw?: string; path?: string }) =>
     request<ValidateScenarioReport>("/api/scenarios/validate", {
       method: "POST",
@@ -425,11 +465,13 @@ export interface DoctorReport {
   checks: { name: string; ok: boolean; detail: string; fix: string | null }[];
 }
 
+/** The project's checkpoint.toml, as the CLI reads it. Read-only. */
 export interface ConfigReport {
   path: string;
   exists: boolean;
-  values: Record<string, unknown>;
-  known_keys: Record<string, string>;
+  /** Set instead of `sections` when the file exists but cannot be used. */
+  problem?: string;
+  sections: Record<string, Record<string, unknown>>;
 }
 
 export interface ValidateScenarioReport {
@@ -442,7 +484,7 @@ export interface ValidateScenarioReport {
     setup: string;
     expected: string;
     criteria: { text: string; kind: "D" | "P" }[];
-    clones: string[];
+    twins: string[];
     config: Record<string, unknown>;
   } | null;
 }

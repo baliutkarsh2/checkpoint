@@ -231,3 +231,27 @@ def test_an_allowed_host_is_let_through(tmp_path):
                           options=RunOptions(intercept=True, egress="llm",
                                              allow_hosts=("api.tavily.com",)))
     assert result.error is None
+
+
+def test_a_twins_mcp_surface_is_reachable_through_interception():
+    """An MCP agent should not have to know it is being intercepted either.
+
+    The MCP server's DNS-rebinding guard only accepts a localhost `Host`
+    header, and an intercepted request carries the production hostname — so the
+    twin answered 421 to exactly the agents that needed no modification, and an
+    MCP client had to be rewritten to use $CHECKPOINT_<TWIN>_URL instead.
+    """
+    handshake = {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                   "clientInfo": {"name": "checkpoint-tests", "version": "1"}},
+    }
+    with Sandbox(["github"], intercept=True, egress="none") as sandbox:
+        env = sandbox.agent_env()
+        with httpx.Client(proxy=env["HTTPS_PROXY"], verify=env["SSL_CERT_FILE"],
+                          trust_env=False, timeout=20) as client:
+            response = client.post(
+                "https://api.github.com/mcp/", json=handshake,
+                headers={"accept": "application/json, text/event-stream"})
+    assert response.status_code == 200, response.text[:300]
+    assert "serverInfo" in response.text

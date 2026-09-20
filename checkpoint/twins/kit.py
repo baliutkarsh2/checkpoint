@@ -325,6 +325,42 @@ class Twin:
             return self.views(self.state)
         return default_views(self.state)
 
+    def views_for(self, seed: dict | None = None) -> dict[str, View]:
+        """The collections a seed would produce, without touching this twin.
+
+        Lets an author be told what ``github.issues`` looks like — the field
+        names a criterion can refer to — before anything runs. Reading the live
+        twin instead would describe an empty world, and seeding it to find out
+        would corrupt whatever else is using it (the dashboard shares one
+        process with every twin it inspects).
+        """
+        state = self.fresh_state()
+        for key, value in ((seed or {}).get("state") or {}).items():
+            if isinstance(value, dict) and isinstance(state.get(key), dict):
+                state[key].update(value)
+            else:
+                state[key] = value
+        if self.after_seed is not None:
+            self.after_seed(state)
+        return self.views(state) if self.views is not None else default_views(state)
+
+    def seed(self, name: str) -> dict | None:
+        """A named seed's contents, or None when this twin does not ship it.
+
+        The name is a bundled seed's stem, never a path: ``/_seed/{name}`` puts
+        it straight into a filename, so anything else is refused here.
+        """
+        if self.seeds_dir is None or not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+            return None
+        path = self.seeds_dir / f"{name}.json"
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
     def _is_public(self, path: str) -> bool:
         return any(fnmatch(path, pattern) for pattern in self.public_paths)
 
@@ -488,14 +524,13 @@ def install(app: FastAPI, twin: Twin) -> Twin:
 
     @app.post("/_seed/{name}", include_in_schema=False)
     def _seed(name: str) -> Response:
-        path = (twin.seeds_dir / f"{name}.json") if twin.seeds_dir else None
-        if path is None or not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or not path.is_file():
+        data = twin.seed(name)
+        if data is None:
             return JSONResponse(status_code=404, content={
                 "ok": False,
                 "error": f"seed {name!r} not found for the {twin.name} twin",
                 "available": twin.seed_names(),
             })
-        data = json.loads(path.read_text(encoding="utf-8"))
         problem = twin.seed_problem(data)
         if problem:
             return _bad_request(f"bundled seed {name!r} is invalid: {problem}")

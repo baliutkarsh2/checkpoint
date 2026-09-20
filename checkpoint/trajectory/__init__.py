@@ -8,9 +8,10 @@ sequence of API calls the agent actually made (from each twin's /_trace), and
 """
 from .metrics import TrajectoryMetrics, compute_metrics
 from .model import Trajectory, TrajectoryStep
-from .otel import from_otel_spans
+from .otel import from_otel_spans, spans_from_export
 
 __all__ = [
     "Trajectory", "TrajectoryStep", "TrajectoryMetrics", "compute_metrics",
     "from_otel_spans",
+    "spans_from_export",
 ]

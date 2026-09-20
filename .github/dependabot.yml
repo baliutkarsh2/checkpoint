@@ -40,15 +40,10 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
 
-  # Container base images back the self-hosting story and the TLS sidecar.
+  # The base images behind the dashboard's container, which is the only image
+  # this project still ships: TLS interception no longer needs a sidecar.
   - package-ecosystem: docker
     directory: "/"
-    schedule:
-      interval: weekly
-    labels: ["dependencies", "docker"]
-
-  - package-ecosystem: docker
-    directory: "/checkpoint/proxy"
     schedule:
       interval: weekly
     labels: ["dependencies", "docker"]

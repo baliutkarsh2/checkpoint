@@ -2,7 +2,7 @@
 
 An agent under test either runs with ``HTTPS_PROXY`` pointed here (local runs,
 see :meth:`InterceptProxy.client_env`) or has its SaaS hostnames resolved to
-this process (the Docker sidecar's transparent listener). For a host with a
+this process (the transparent listener). For a host with a
 :class:`Route`, the proxy terminates TLS with a certificate from Checkpoint's
 CA, parses HTTP/1.1 with h11 and replays each request against the route's twin,
 stamping in the twin's bootstrap credential — so real SDKs reach the fakes
@@ -476,7 +476,11 @@ class InterceptProxy:
 
     async def _serve_transparent(self, reader: asyncio.StreamReader,
                                  writer: asyncio.StreamWriter) -> None:
-        """A client that resolved a SaaS host to us and started TLS directly (Docker DNS hijack)."""
+        """A client that resolved a SaaS host to us and started TLS straight away.
+
+        No CONNECT arrives in that case, so the hostname comes from the TLS
+        handshake's SNI instead.
+        """
         started = time.time()
         local_host, port = writer.get_extra_info("sockname")[:2]
         try:

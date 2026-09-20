@@ -1,15 +1,19 @@
-"""CLI-03: `checkpoint doctor` environment checks.
+"""What ``checkpoint doctor`` checks, and why each check earns its place.
 
-A flat pipeline of "is this thing in working order?" checks. Each returns a
-`Check` row that the CLI renders as a table with copy-paste fixes on failure.
+A check either blocks real work or it is advisory, and the two are never
+confused: a red row means something you genuinely cannot do yet, and a judge
+model with no key is not that, because scenarios whose criteria are all
+assertions never call one.
 
-The function ``run_checks()`` is the single public entrypoint; tests call it
-directly. The CLI command in ``cli.py`` consumes the same list.
+The expensive checks are the honest ones: the intercept proxy is self-tested by
+minting a CA and binding a listener, and the twins are checked by starting one
+and reading its state back. Both are what a run does, so both fail here for the
+same reasons a run would.
 """
 from __future__ import annotations
 
 import os
-import socket
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -22,130 +26,28 @@ class Check:
     ok: bool
     detail: str
     fix: str | None = None
+    required: bool = True
+    """A failed advisory check is reported but never fails ``doctor``."""
 
 
-# No ports are checked by default. Subprocess-mode twins bind dynamic free
-# ports, docker-mode twins live inside the sidecar's network namespace (ports
-# 18080+, not host-bindable), and the dashboard's 4001 is only in use while
-# `checkpoint serve` runs — so a fixed port probe here is pure noise and used
-# to fail `doctor` for reasons unrelated to Checkpoint. Callers (and tests) can
-# still pass an explicit `ports=(...)` to probe a specific port.
-DEFAULT_PORTS: tuple[int, ...] = ()
-
-
-def _check_python_version() -> Check:
+def _python_version() -> Check:
     ok = sys.version_info >= (3, 11)
     return Check(
-        name="Python >= 3.11",
+        name="Python 3.11 or newer",
         ok=ok,
-        detail=f"{sys.version.split()[0]}",
-        fix=None if ok else "Install Python 3.11+ (e.g. `brew install python@3.12`).",
+        detail=sys.version.split()[0],
+        fix=None if ok else "Install Python 3.11+ and reinstall Checkpoint into it.",
     )
 
 
-def _check_docker() -> Check:
-    try:
-        import docker  # type: ignore
-    except Exception as e:
-        return Check(
-            name="docker SDK importable",
-            ok=False,
-            detail=f"import failed: {e}",
-            fix="pip install docker",
-        )
-    try:
-        client = docker.from_env()
-        client.ping()
-        version = client.version().get("Version", "?")
-        return Check(
-            name="Docker daemon reachable",
-            ok=True,
-            detail=f"Docker {version}",
-            fix=None,
-        )
-    except Exception as e:
-        return Check(
-            name="Docker daemon reachable",
-            ok=False,
-            detail=str(e)[:160],
-            fix="Start Docker Desktop, or on Linux: `sudo systemctl start docker` "
-                "(then re-login or `sg docker -c '...'`).",
-        )
+def _intercept_proxy() -> Check:
+    """Mint a CA and bind a loopback listener — the two things that break.
 
-
-def _check_sidecar_image() -> Check:
-    """Informational: is the TLS sidecar image built yet?
-
-    Never fails `doctor` — an absent image is fine because the docker runner
-    auto-builds it on first use. We only surface the state so users aren't
-    surprised by a one-time ~1-2 min build.
+    This is what routes a real SDK's traffic into the twins. It fails on a
+    broken cryptography/OpenSSL install and in sandboxes that forbid binding
+    loopback ports, and in both cases every intercepted run would fail too.
     """
-    name = "TLS sidecar image"
-    try:
-        import docker  # type: ignore
-
-        from .docker.sidecar import SIDECAR_IMAGE, sidecar_image_exists
-
-        client = docker.from_env()
-        client.ping()
-    except Exception:
-        return Check(
-            name=name,
-            ok=True,
-            detail="skipped (docker not reachable; only needed for docker mode)",
-        )
-    if sidecar_image_exists(client, SIDECAR_IMAGE):
-        return Check(name=name, ok=True, detail=f"{SIDECAR_IMAGE} present")
-    return Check(
-        name=name,
-        ok=True,
-        detail="absent or outdated — builds automatically on the next `checkpoint run` "
-               "(or run `checkpoint docker build-sidecar`)",
-    )
-
-
-def _check_port_free(port: int) -> Check:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.bind(("127.0.0.1", port))
-        return Check(
-            name=f"Port {port} free",
-            ok=True,
-            detail="bind OK on 127.0.0.1",
-        )
-    except OSError as e:
-        return Check(
-            name=f"Port {port} free",
-            ok=False,
-            detail=str(e),
-            fix=f"Stop the process using port {port} "
-                f"(`lsof -ti :{port} | xargs kill`).",
-        )
-    finally:
-        sock.close()
-
-
-def _check_openai_key() -> Check:
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
-    ok = bool(key)
-    return Check(
-        name="OPENAI_API_KEY set",
-        ok=ok,
-        detail="present" if ok else "missing",
-        fix=None if ok else "export OPENAI_API_KEY=sk-... "
-                            "(or put it in a .env file in your project directory).",
-    )
-
-
-def _check_intercept_proxy() -> Check:
-    """Self-test the intercept proxy: mint a CA and bind/unbind a loopback listener.
-
-    This is what routes a real SDK's traffic to the twins, and the two things
-    that break it on a user's machine are a broken cryptography/OpenSSL install
-    and a sandbox that forbids binding loopback ports — both show up here.
-    """
-    name = "Intercept proxy self-test"
+    name = "TLS interception"
     try:
         from .proxy.ca import CertificateAuthority
         from .proxy.server import EgressPolicy, InterceptProxy
@@ -155,56 +57,124 @@ def _check_intercept_proxy() -> Check:
             ca.server_context("api.github.com")
             with InterceptProxy([], EgressPolicy.open(), ca) as proxy:
                 port = proxy.port
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — every failure mode is a user-facing row
         return Check(
-            name=name,
-            ok=False,
-            detail=f"{type(e).__name__}: {e}"[:160],
-            fix="Reinstall the TLS dependencies: "
-                'pip install --force-reinstall "cryptography>=44.0" "h11>=0.16"',
+            name=name, ok=False, detail=f"{type(e).__name__}: {e}"[:160],
+            fix='pip install --force-reinstall "cryptography>=44.0" "h11>=0.16"',
         )
-    return Check(name=name, ok=True, detail=f"CA minted, listener bound on 127.0.0.1:{port}")
+    return Check(name=name, ok=True,
+                 detail=f"certificate authority and listener working (port {port})")
 
 
-def _check_checkpoint_config(cwd: Path | None = None) -> Check:
+def _twins() -> Check:
+    """Start a twin and read its state back, exactly as a run does."""
+    name = "Twins"
+    try:
+        from .engine import Sandbox
+        from .twins import registry
+
+        with Sandbox(["github"], intercept=False, egress="none") as sandbox:
+            sandbox.views()
+        count = len(registry.names())
+    except Exception as e:  # noqa: BLE001
+        return Check(
+            name=name, ok=False, detail=f"{type(e).__name__}: {e}"[:160],
+            fix="Reinstall Checkpoint: pip install --force-reinstall checkpoint-agents",
+        )
+    return Check(name=name, ok=True, detail=f"{count} available, github starts and responds")
+
+
+def _project(cwd: Path | None = None) -> list[Check]:
+    """Whether this directory is set up, and whether the agent can be started."""
+    from .project import CONFIG_NAME, ConfigError, Project
+
     cwd = cwd or Path.cwd()
-    path = cwd / ".checkpoint.json"
-    if path.exists():
-        return Check(
-            name=".checkpoint.json present",
-            ok=True,
-            detail=str(path),
-        )
-    # Informational only — not a failure. CLI treats this as a warning,
-    # never a non-zero exit.
+    try:
+        proj = Project.load(cwd)
+    except ConfigError as e:
+        return [Check(name="checkpoint.toml", ok=False, detail=str(e)[:200],
+                      fix="Fix the file, or delete it and run `checkpoint init`.")]
+    if proj.path is None:
+        return [Check(
+            name="checkpoint.toml", ok=True, required=False,
+            detail=f"none in {cwd} — every command needs --command until there is one",
+            fix='checkpoint init --command "python my_agent.py"',
+        )]
+
+    checks = [Check(name=CONFIG_NAME, ok=True, detail=_short(proj.path, cwd))]
+    command = proj.agent.get("command")
+    if isinstance(command, str) and command.strip():
+        program = command.split()[0]
+        found = shutil.which(program)
+        checks.append(Check(
+            name="Agent command",
+            ok=found is not None,
+            detail=command if found else f"{program!r} is not on PATH",
+            fix=None if found else f"Install {program!r}, or fix [agent] command in {CONFIG_NAME}.",
+        ))
+    scenarios = [p for p in proj.scenario_paths() if p.exists()]
+    checks.append(Check(
+        name="Scenarios", ok=bool(scenarios), required=False,
+        detail=", ".join(_short(p, cwd) for p in scenarios) if scenarios
+        else "none yet — nothing to run",
+        fix=None if scenarios else 'checkpoint new "<what the agent should do>"',
+    ))
+    return checks
+
+
+def _short(path: Path, cwd: Path) -> str:
+    """A path the reader can place at a glance, absolute only when it must be."""
+    try:
+        return str(path.relative_to(cwd))
+    except ValueError:
+        return str(path)
+
+
+#: Where each provider expects its key. A judge is needed only for `[P]`
+#: criteria, so a missing key is advisory: assertion-only scenarios run without
+#: one, and the gate refuses up front rather than scoring a judged criterion as
+#: a failure.
+_PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "openai": ("OPENAI_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
+
+
+def _judge(cwd: Path | None = None) -> Check:
+    from .llm import provider_for
+    from .project import ConfigError, Project
+
+    try:
+        model = Project.load(cwd or Path.cwd()).judge_model()
+    except ConfigError:
+        from .llm import DEFAULT_MODEL
+        model = DEFAULT_MODEL
+    if os.environ.get("CHECKPOINT_LLM_BASE_URL"):
+        return Check(name="Judge model", ok=True, required=False,
+                     detail=f"{model} via CHECKPOINT_LLM_BASE_URL")
+    keys = _PROVIDER_KEYS.get(provider_for(model), ())
+    present = [k for k in keys if os.environ.get(k, "").strip()]
+    if not keys:
+        return Check(name="Judge model", ok=True, required=False, detail=model)
     return Check(
-        name=".checkpoint.json present",
-        ok=True,
-        detail="absent (informational; checkpoint run --harness works without it)",
+        name="Judge model", ok=bool(present), required=False,
+        detail=f"{model}, {present[0]} set" if present
+        else f"{model} needs {' or '.join(keys)}",
+        fix=None if present else f"export {keys[0]}=...  (only needed for [P] criteria)",
     )
 
 
-def run_checks(
-    *,
-    ports: tuple[int, ...] = DEFAULT_PORTS,
-    cwd: Path | None = None,
-) -> list[Check]:
-    """Run the full diagnostic pipeline and return the rows in order.
-
-    Pure function — no I/O beyond the network/disk probes each check
-    performs. Order is stable so CLI output is deterministic across runs.
-    """
-    checks: list[Check] = []
-    checks.append(_check_python_version())
-    checks.append(_check_docker())
-    checks.append(_check_sidecar_image())
-    for p in ports:
-        checks.append(_check_port_free(p))
-    checks.append(_check_openai_key())
-    checks.append(_check_intercept_proxy())
-    checks.append(_check_checkpoint_config(cwd))
+def run_checks(*, cwd: Path | None = None, include_twins: bool = True) -> list[Check]:
+    """Every check, in a stable order so the output is comparable between runs."""
+    checks = [_python_version(), _intercept_proxy()]
+    if include_twins:
+        checks.append(_twins())
+    checks.extend(_project(cwd))
+    checks.append(_judge(cwd))
     return checks
 
 
 def all_passed(checks: list[Check]) -> bool:
-    return all(c.ok for c in checks)
+    """Whether anything required failed. Advisory rows never decide this."""
+    return all(c.ok for c in checks if c.required)

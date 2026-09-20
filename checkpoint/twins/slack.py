@@ -1821,7 +1821,7 @@ async def _slack_shaped_http_error(request: Request, exc: StarletteHTTPException
 
 # --- MCP transport -------------------------------------------------------
 # Mount the Slack MCP server at /mcp on this same FastAPI app so REST and
-# MCP share the same STATE dict (Phase 6, MCP-01/MCP-02).
+# MCP share the same STATE dict.
 
 from checkpoint.mcp_servers.slack_mcp import mount_on as _mount_mcp  # noqa: E402
 

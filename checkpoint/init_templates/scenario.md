@@ -30,7 +30,7 @@ the issue was created, and quote its number.
   [D] checks the state the agent left behind, [T] the calls it made, [P] what it
   said. "!" marks a criterion that must pass whatever the score.
 
-  Each check runs as an assertion; `checkpoint validate scenarios/quickstart.md`
+  Each check runs as an assertion; `checkpoint check scenarios/quickstart.md`
   shows the exact one. Pin your own after `=>` when you want no ambiguity:
 
   - [D] The issue is still open  =>  github.issues[title == "Add login button"].state == "open"

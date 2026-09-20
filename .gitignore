@@ -41,3 +41,10 @@ checkpoint/dashboard/web/test-results/
 checkpoint/dashboard/web/playwright-report/
 checkpoint/dashboard/web/blob-report/
 checkpoint/dashboard/web/playwright/.cache/
+
+# Coverage data and the local project cache.
+.coverage
+.coverage.*
+
+# Scratch worktrees created by local tooling.
+.claude/worktrees/

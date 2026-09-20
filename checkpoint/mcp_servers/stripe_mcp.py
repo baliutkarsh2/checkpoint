@@ -1,14 +1,14 @@
 """Stripe MCP server — wraps `checkpoint.twins.stripe` REST surface.
 
-Tool names match Archal's strict-mode tool list (SCOPE.md §3.5): 26
+Tool names match Stripe's own MCP server in strict mode: 26
 tools (24 live REST shims + 2 documented-as-stub tools). Each tool body
 is a thin REST shim — REST and MCP share one `STATE` dict.
 
-The two Archal-documented stubs are `search_stripe_documentation` and
+The two documented stubs are `search_stripe_documentation` and
 `stripe_integration_recommender`. We additionally ship
-`send_stripe_mcp_feedback` as a no-op (Archal lists it in §3.5 strict
+`send_stripe_mcp_feedback` as a no-op (Stripe lists it in strict
 mode and it's documented as a stub). All three return inert success
-envelopes so MCP hosts that auto-introspect get the full Archal
+envelopes so MCP hosts that auto-introspect get the full documented
 surface, but no twin state changes.
 
 Mounted onto the twin's FastAPI app at `/mcp` by `mount_on(app)`.
@@ -35,7 +35,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     mcp = make_server(
         name="checkpoint-stripe",
-        instructions="Stateful synthetic Stripe (strict mode). Tool names match Archal §3.5.",
+        instructions="Stateful synthetic Stripe in strict mode, with Stripe's own tool names.",
     )
 
     # ----- Customers ----------------------------------------------------
@@ -317,7 +317,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     @mcp.tool()
     async def fetch_stripe_resources(limit: int = 10) -> Any:
-        """Fetch arbitrary Stripe resources (Archal docs this as stub-ish)."""
+        """Fetch arbitrary Stripe resources (documented as a thin passthrough)."""
         return await shim("GET", "/v1/files", params={"limit": limit})
 
     @mcp.tool()
@@ -329,19 +329,19 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
     @mcp.tool()
     async def search_stripe_documentation(query: str) -> Any:
-        """Documented as a stub in Archal §3.5. Returns an empty result list."""
+        """A documented stub in Stripe's strict mode. Returns an empty result list."""
         return {"data": [], "_stub": True, "query": query}
 
     @mcp.tool()
     async def stripe_integration_recommender(use_case: str | None = None) -> Any:
-        """Documented as a stub in Archal §3.5. Returns an empty list."""
+        """A documented stub in Stripe's strict mode. Returns an empty list."""
         return {"recommendations": [], "_stub": True, "use_case": use_case}
 
     @mcp.tool()
     async def send_stripe_mcp_feedback(
         feedback: str, category: str | None = None
     ) -> Any:
-        """Documented as a stub in Archal §3.5. Always returns ok."""
+        """A documented stub in Stripe's strict mode. Always returns ok."""
         return {"ok": True, "_stub": True, "category": category}
 
     return mcp

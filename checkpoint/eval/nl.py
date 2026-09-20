@@ -34,8 +34,16 @@ class Collection:
 
     @property
     def live(self) -> str:
-        """The collection as "the records that still exist", excluding soft-deleted ones."""
-        return f"{self.path}[{self.tombstone} == null]" if self.tombstone else self.path
+        """The collection as "the records that still exist", excluding soft-deleted ones.
+
+        A record is dead when its tombstone field is *truthy*, which is the same
+        rule the delta roots use. Testing ``== null`` instead looks equivalent
+        and is not: Slack, Stripe and Google Workspace write ``false`` on a live
+        record, so that filter matched nothing at all and every "N records
+        exist" criterion on those twins counted zero — and silently passed any
+        ``<=`` comparison.
+        """
+        return f"{self.path}[!{self.tombstone}]" if self.tombstone else self.path
 
 
 @dataclass
@@ -262,7 +270,7 @@ def _equals(field: str, value: str) -> str:
 def _live_with(coll: Collection, condition: str) -> str:
     """``collection[condition]``, excluding soft-deleted records."""
     if coll.tombstone:
-        return f"{coll.path}[{coll.tombstone} == null && {condition}]"
+        return f"{coll.path}[!{coll.tombstone} && {condition}]"
     return f"{coll.path}[{condition}]"
 
 

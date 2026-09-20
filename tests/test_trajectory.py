@@ -46,13 +46,12 @@ def test_t_criterion_parsed():
 
 def test_t_criteria_end_to_end(monkeypatch):
     """A real run scores [T] criteria deterministically from the twin trace."""
-    from checkpoint.runner import run_once
+    from checkpoint.engine import Agent, run_scenario
     from checkpoint.scenario import parse as parse_scn
 
-    fake_harness = REPO_ROOT / "examples" / "smoke" / "harness_fake.py"
-    if not fake_harness.is_file():
-        import pytest
-        pytest.skip("smoke harness missing")
+    # The packaged demo agent, not an example: it ships in the wheel, so this
+    # cannot start skipping because a directory was reorganised.
+    fake_harness = REPO_ROOT / "checkpoint" / "demo" / "harness_fake.py"
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     scn = parse_scn(
         "# trajectory\n## Setup\nseed\n## Prompt\n"
@@ -61,9 +60,12 @@ def test_t_criteria_end_to_end(monkeypatch):
         "- [T] no failed calls\n"
         "- [T] at most 50 tool calls\n"
         "- [T] the agent did not call PUT\n"
-        "## Config\nclones: github\nruns: 1\n"
+        # Seeded, so acme/webapp exists: against an empty twin the agent's issue
+        # call 404s and "no failed calls" fails for a reason that has nothing to
+        # do with what this test is checking.
+        "## Config\nclones: github\nseed: small-project\nruns: 1\n"
     )
-    result = run_once(scn, [sys.executable, str(fake_harness)])
+    result = run_scenario(scn, Agent(command=[sys.executable, str(fake_harness)]))
     assert result.error is None, result.error
     traj = [c for c in result.criteria if c.kind == "T"]
     assert len(traj) == 3, [c.text for c in result.criteria]

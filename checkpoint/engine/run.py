@@ -45,10 +45,15 @@ class RunOptions:
 
 
 def scenario_twins(scenario: Scenario) -> list[str]:
-    """The twins a scenario runs against (``twins:``, or the older ``clones:``)."""
-    raw = scenario.config.get("twins") or scenario.config.get("clones") or ""
-    names = [n.strip() for n in str(raw).split(",") if n.strip()]
-    return [registry.get(n).name for n in names]
+    """The twins a scenario runs against, resolved through the registry.
+
+    The names come from :attr:`Scenario.twins`, which already understands both
+    spellings a scenario may use — ``twins: [github, slack]`` in YAML front
+    matter and ``twins: github, slack`` in a ``## Config`` block. Re-parsing
+    them here is how the list form used to arrive as the literal string
+    ``"['github']"``.
+    """
+    return [registry.get(name).name for name in scenario.twins]
 
 
 def scenario_setups(scenario: Scenario, twins: list[str]) -> dict[str, TwinSetup]:
@@ -106,7 +111,7 @@ def run_scenario(
             missing = [t for t in twins if t not in sandbox.twins]
             if missing:
                 raise SandboxError(f"sandbox is missing twins {missing} needed by the scenario")
-        _apply_faults(setups, opts)
+        _apply_faults(setups, scenario, opts)
         sandbox.prepare(setups)
         seed_views = sandbox.views()
         timeout = opts.timeout or float(scenario.timeout or DEFAULT_TIMEOUT)
@@ -139,6 +144,7 @@ def run_scenario(
         egress=egress,
         duration_s=round(time.perf_counter() - started, 3),
         timed_out=output.timed_out,
+        agent_trace=output.trace,
     )
     result.warnings.extend(_diagnose(result, twins))
     if opts.read_only:
@@ -170,9 +176,19 @@ def run_scenario(
     return result
 
 
-def _apply_faults(setups: dict[str, TwinSetup], opts: RunOptions) -> None:
+def _apply_faults(setups: dict[str, TwinSetup], scenario: Scenario, opts: RunOptions) -> None:
+    """How the services misbehave while the agent works.
+
+    Three layers, each overriding the last: what the scenario declares
+    (``faults:``), what the caller passed, and ``read_only``, which is a
+    guarantee rather than a preference and so is applied last.
+    """
+    declared = scenario.faults
     for name, setup in setups.items():
-        extra = {**opts.faults.get("*", {}), **opts.faults.get(name, {})}
+        extra = {
+            **declared.get("*", {}), **declared.get(name, {}),
+            **opts.faults.get("*", {}), **opts.faults.get(name, {}),
+        }
         if opts.read_only:
             extra["read_only"] = True
         if extra:

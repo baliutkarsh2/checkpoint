@@ -12,6 +12,12 @@ Command agents receive the task one of three ways (``task_via``):
 and report their final answer on stdout (plain text, or JSON ``{"text": ...}``),
 or — for agents that log to stdout — by writing it to ``$CHECKPOINT_ANSWER_FILE``.
 
+An agent that wants its own reasoning shown alongside the result can append
+JSON lines to ``$CHECKPOINT_AGENT_TRACE_FILE``: one object per event, with
+whatever shape it already produces. Checkpoint stores them with the run and the
+dashboard renders the messages and tool calls it recognizes. Writing nothing
+there costs nothing; the twins' request log is captured either way.
+
 HTTP agents receive ``POST {url}`` with ``{"task", "messages", "session_id"}``
 and answer with text or JSON. OpenAI-compatible chat responses
 (``choices[0].message.content``) are understood as well.
@@ -37,6 +43,7 @@ TaskVia = Literal["env", "arg", "stdin"]
 
 DEFAULT_TASK_ENV = "CHECKPOINT_TASK"
 ANSWER_FILE_ENV = "CHECKPOINT_ANSWER_FILE"
+TRACE_FILE_ENV = "CHECKPOINT_AGENT_TRACE_FILE"
 MESSAGES_ENV = "CHECKPOINT_MESSAGES"
 _MAX_CAPTURE = 8 * 1024 * 1024  # bytes of stdout/stderr kept per run
 
@@ -53,6 +60,8 @@ class AgentOutput:
     stderr: str
     exit_code: int | None
     duration_s: float
+    trace: list = field(default_factory=list)
+    """What the agent said about itself, if it wrote to its trace file."""
     timed_out: bool = False
     error: str | None = None
     """Set when the agent could not be run at all (bad command, refused connection)."""
@@ -141,15 +150,18 @@ class Agent:
             stdin_data = task
         if messages is not None:
             run_env[MESSAGES_ENV] = json.dumps(list(messages))
-        with tempfile.TemporaryDirectory(prefix="checkpoint-answer-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="checkpoint-agent-") as tmp:
             answer_file = Path(tmp) / "answer"
+            trace_file = Path(tmp) / "trace.jsonl"
             run_env[ANSWER_FILE_ENV] = str(answer_file)
+            run_env[TRACE_FILE_ENV] = str(trace_file)
             result = run_process(argv, env=run_env, cwd=self.cwd, timeout=timeout,
                                  stdin=stdin_data, on_line=on_line)
             if answer_file.is_file():
                 result.answer = answer_file.read_text(encoding="utf-8", errors="replace").strip()
             else:
                 result.answer = extract_answer(result.stdout)
+            result.trace = read_agent_trace(trace_file)
         return result
 
     # -- HTTP agents -----------------------------------------------------------
@@ -231,6 +243,40 @@ def _split_windows(command: str) -> list[str]:
     if has_token:
         args.append("".join(buf))
     return args
+
+
+def read_agent_trace(path: Path) -> list:
+    """Whatever the agent wrote about itself, as a list of events.
+
+    Deliberately forgiving: this is an optional courtesy from the agent, and a
+    malformed line in it must never turn a good run into a failed one. A file
+    that is one JSON array is read as that array; otherwise each parseable line
+    is an event and the rest are skipped.
+    """
+    if not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    stripped = text.strip()
+    if stripped.startswith("["):
+        try:
+            whole = json.loads(stripped)
+        except json.JSONDecodeError:
+            whole = None
+        if isinstance(whole, list):
+            return whole
+    events = []
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
 
 
 def extract_answer(stdout: str) -> str:

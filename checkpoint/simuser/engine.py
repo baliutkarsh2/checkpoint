@@ -38,7 +38,7 @@ class SimResult:
 
 def simulate(
     scenario,
-    harness_cmd: list[str] | str | None,
+    command: list[str] | str | None,
     persona: Persona,
     *,
     max_turns: int = 6,
@@ -50,7 +50,7 @@ def simulate(
 ) -> SimResult:
     """Run a multi-turn conversation, then score the final state and last answer."""
     opts = options or RunOptions(judge_model=judge_model)
-    agent = agent or Agent(command=harness_cmd or (), cwd=cwd)
+    agent = agent or Agent(command=command or (), cwd=cwd)
     user = user or LLMSimulatedUser(opts.judge_model)
     session_id = uuid.uuid4().hex[:12]
     transcript: list[dict] = []

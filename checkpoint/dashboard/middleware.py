@@ -1,7 +1,7 @@
 """Cross-cutting middleware: request IDs, structured access logs, rate
 limiting, optional bearer-token auth, optional read-only mode.
 
-Local default: no auth, no read-only — `checkpoint serve` works for a single
+Local default: no auth, no read-only — `checkpoint view` works for a single
 developer with zero config.
 
 Cloud default (any time CHECKPOINT_DASHBOARD_API_KEY is set): every /api/*

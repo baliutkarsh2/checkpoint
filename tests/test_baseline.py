@@ -18,6 +18,7 @@ from checkpoint.gate import EXIT_CODES, baseline, run_gate
 from checkpoint.gate import engine as gate_engine
 from checkpoint.gate.baseline import Baseline
 from checkpoint.gate.verdict import GatePolicy, summarize_scenario
+from checkpoint.runner import CriterionResult, RunResult
 from checkpoint.scenario import parse
 from checkpoint.stats import is_regression, wilson_interval
 
@@ -39,15 +40,17 @@ def _stub_runs(monkeypatch, fn):
     monkeypatch.setattr(gate_engine, "Sandbox", _NullSandbox)
     monkeypatch.setattr(gate_engine, "run_scenario", fn)
 
-class _FakeResult:
-    def __init__(self, score):
-        self._score = score
-        self.complete = True
-        self.error = None
+def _run_result(score):
+    """A completed run that scored ``score``, built from the real RunResult.
 
-    @property
-    def score(self):
-        return self._score
+    Deriving the score from real criteria rather than stubbing the attribute
+    keeps these tests honest about what the gate reads off a run.
+    """
+    passing = round(score / 100 * 10)
+    result = RunResult(final_answer="done", stderr="", exit_code=0, trace=[], state={})
+    result.criteria = [CriterionResult(f"c{i}", "D", i < passing, "", "assertion:pinned")
+                       for i in range(10)]
+    return result
 
 
 _SCN = "# s\n## Prompt\np\n## Success Criteria\n- [D] x\n## Config\nclones: github\n"
@@ -65,10 +68,10 @@ def _stat(name, passes, n, policy, baseline_rate=None, scenario_md=_SCN):
 def _gate_once(scn_dir, passes, n, monkeypatch, *, extra_args=()):
     """Run the gate CLI once with `passes` of `n` runs passing; return the JSON."""
     scores = iter([100.0] * passes + [0.0] * (n - passes))
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(next(scores)))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(next(scores)))
     r = CliRunner().invoke(main, [
-        "gate", str(scn_dir), "--harness", "python agent.py",
-        "-n", str(n), "-o", "json", *extra_args,
+        "gate", str(scn_dir), "--command", "python agent.py",
+        "-n", str(n), "--json", *extra_args,
     ])
     return r, json.loads(r.output)
 
@@ -136,7 +139,7 @@ def test_changed_criteria_invalidate_the_baseline(tmp_path, monkeypatch):
     scn = tmp_path / "a.md"
     scn.write_text(_SCN_REWRITTEN)
     stale = Baseline(pass_rate=0.95, criteria_hash=baseline.criteria_hash(parse(_SCN)))
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
 
     result = run_gate(scn, ["python", "x"], GatePolicy(runs=20), baselines={"a.md": stale})
     stat = result.scenarios[0]
@@ -151,7 +154,7 @@ def test_unchanged_criteria_keep_the_baseline(tmp_path, monkeypatch):
     scn = tmp_path / "a.md"
     scn.write_text(_SCN)
     fresh = Baseline(pass_rate=0.95, criteria_hash=baseline.criteria_hash(parse(_SCN)))
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
     result = run_gate(scn, ["python", "x"], GatePolicy(runs=20), baselines={"a.md": fresh})
     assert result.scenarios[0].classification == "regression"
 
@@ -183,7 +186,7 @@ def test_run_gate_flags_regression_with_baseline(tmp_path, monkeypatch):
     scn = tmp_path / "a.md"
     scn.write_text(_SCN)
     # Now the agent fails everything; baseline says it used to pass ~95%.
-    _stub_runs(monkeypatch, lambda *a, **k: _FakeResult(0.0))
+    _stub_runs(monkeypatch, lambda *a, **k: _run_result(0.0))
     result = run_gate(scn, ["python", "x"], GatePolicy(runs=20), baselines={"a.md": 0.95})
     assert result.scenarios[0].classification == "regression"
     assert result.verdict == "BLOCK"

@@ -1,51 +1,78 @@
 ---
 name: checkpoint
-description: Test this repo's agent against stateful synthetic GitHub/Slack/Stripe twins. Use whenever the user wants to evaluate, score, benchmark, or "test" an agent against realistic SaaS APIs without burning real-API credits. Use when the user asks to "run a scenario", "score the agent", "checkpoint test", or "evaluate the agent".
+description: Test this repository's AI agent against stateful twins of the services it calls (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace). Use whenever the user wants to evaluate, score, benchmark, gate or "test" the agent, asks what it actually did during a run, wants a scenario written, or asks whether a change is safe to ship.
 ---
 
-# Checkpoint — agent testing against synthetic SaaS twins
+# Checkpoint
 
-Checkpoint is installed in this repo. It runs the local agent (defined by `harness.py`) against synthetic GitHub / Slack / Stripe twins, grades the run with deterministic + LLM checks, and returns a 0-100 satisfaction score with per-criterion verdicts.
+Checkpoint runs this repository's agent — unmodified, as a subprocess — against
+local twins of the SaaS APIs it calls, then checks what it *did to those
+services*, not just what it said. Configuration lives in `checkpoint.toml`.
 
-## When to invoke
+## When to use it
 
-- User asks to test, evaluate, score, or grade the agent.
-- User wants to check what the agent does against GitHub / Slack / Stripe without hitting real APIs.
-- User says "run a scenario" or "checkpoint test <something>".
+- The user asks to test, evaluate, score, or grade the agent.
+- The user wants to know whether a change is safe to ship.
+- The user asks what the agent did on a past run, or why a criterion failed.
+- The user wants a new scenario written for a behaviour they care about.
 
-## Files in this repo
-
-- `.checkpoint.json` — default config: which clones to spin up, harness path, evaluator model, named seeds.
-- `harness.py` — the agent under test. Reads `CHECKPOINT_<CLONE>_URL` env vars and `CHECKPOINT_TASK`.
-- `harness.json` — manifest pointing at `harness.py` and optional prompt-file globs.
-- `scenario.md` — sample scenario (Title / Setup / Prompt / Success Criteria / Config).
-
-## How to drive Checkpoint
-
-Run scenarios with the `checkpoint` CLI (already installed):
+## The commands
 
 ```bash
-checkpoint run scenario.md
-checkpoint run scenario.md --runs 3
-checkpoint run scenario.md --tag smoke
-checkpoint scenario list .
-checkpoint traces detail
+checkpoint run                      # every scenario, once each — the dev loop
+checkpoint run scenarios/refund.md  # one scenario
+checkpoint run --json               # machine-readable, for your own analysis
+checkpoint gate                     # N runs per scenario, one SHIP/BLOCK verdict
+checkpoint check                    # what each criterion will actually check
+checkpoint runs show                # everything about the last run
+checkpoint runs trace               # the API calls the agent made, in order
+checkpoint new "<task>"             # start a scenario
+checkpoint twins list               # the services available, and their seeds
 ```
 
-For a one-off task without a scenario file:
+Exit codes matter: `run` exits 1 when a criterion failed and 2 when the run
+could not be scored at all. `gate` exits 0 only on SHIP (1 BLOCK, 2 CONDITIONAL,
+3 INCONCLUSIVE, 4 ERROR).
 
-```bash
-checkpoint run --task "Create an issue titled 'oncall' in acme/webapp"
+## Writing scenarios
+
+A scenario is one markdown file: front matter, `## Task`, `## Criteria`.
+
+```markdown
+---
+twins: [github]
+seed: small-project
+---
+# File a bug
+
+## Task
+File an issue in acme/webapp titled "Login broken".
+
+## Criteria
+- [D] Exactly 1 issue was created
+- [D!] No issues were deleted
+- [T] The agent made at most 6 calls
+- [P] The final answer quotes the issue number
 ```
 
-For multi-clone setups, list clones in `.checkpoint.json` (`"clones": ["github","slack","stripe"]`) or in the scenario's `## Config` (`clones: github,slack,stripe`).
+`[D]` checks state, `[T]` checks the calls, `[P]` is judged by a model. `!`
+means the criterion must pass whatever the rest score. Anything after `=>` is
+an explicit assertion, which makes the check deterministic and free:
 
-## Slash command
+```markdown
+- [D] The issue is still open  =>  github.issues[title == "Login broken"].state == "open"
+```
 
-This repo also has `/checkpoint-test` (see `.claude/commands/checkpoint-test.md`). When the user says "checkpoint-test the agent on X", run that slash command — it handles scenario generation + execution + reporting end-to-end.
+**The rule that matters:** a criterion must fail for an agent that did nothing.
+"An issue exists" can already be true of the seed; "exactly one issue was
+created" cannot. Run `checkpoint check` after writing one — it prints the
+assertion behind each criterion, which is where a vacuous check shows itself.
 
-## Anti-patterns
+## Reading a failure
 
-- Don't ask the user to point `harness.py` at real `api.github.com` — Checkpoint already wires `CHECKPOINT_GITHUB_URL` to the local twin.
-- Don't hand-write the LLM evaluator. Checkpoint's batched judge runs automatically.
-- Don't run multiple `checkpoint run` invocations in parallel against the same twin port. Use `--clone` or `clone start` for long-lived sessions.
+1. `checkpoint runs show` — the criteria, and the reason each failed one failed.
+2. `checkpoint runs trace` — every call the agent made, in order, with statuses.
+3. `checkpoint run <scenario> -v` — rerun with the agent's own output streamed.
+
+Prefer fixing the agent over loosening the criterion. If a criterion is wrong,
+say so explicitly rather than quietly weakening it.

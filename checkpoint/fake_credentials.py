@@ -18,7 +18,7 @@ FAKE_SUPABASE_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.checkpoint_anon_CHEC
 FAKE_DISCORD_TOKEN = "Bot CHECKPOINTFAKE.discord.twin.token.0000"
 FAKE_GOOGLE_WORKSPACE_TOKEN = "ya29.CHECKPOINTFAKE_google_workspace_token_0000"
 
-# Keyed by the clone/service names used by clone_manager and runner.
+# Keyed by the twin names the registry uses.
 FAKE_TOKENS = {
     "github": FAKE_GITHUB_TOKEN,
     "slack": FAKE_SLACK_TOKEN,

@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   });
 
-  // Live updates: when a run completes or a clone changes, invalidate the
+  // Live updates: when a run completes or a twin changes, invalidate the
   // affected queries so any open page refetches automatically. This is the
   // "feels alive" wiring that the old Jinja dashboard couldn't do.
   useEventSource("/api/events", {
@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ["report"] });
       qc.invalidateQueries({ queryKey: ["summary"] });
     },
-    "clones.changed": () => qc.invalidateQueries({ queryKey: ["clones"] }),
+    "twins.changed": () => qc.invalidateQueries({ queryKey: ["twins"] }),
     "job.updated": () => qc.invalidateQueries({ queryKey: ["jobs"] }),
   });
 
@@ -45,8 +45,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   });
   useSequence(["g", "r"], () => navigate("/"));
   useSequence(["g", "s"], () => navigate("/scenarios"));
-  useSequence(["g", "a"], () => navigate("/agents"));
-  useSequence(["g", "c"], () => navigate("/clones"));
+  useSequence(["g", "g"], () => navigate("/gates"));
+  useSequence(["g", "t"], () => navigate("/twins"));
   useSequence(["g", "p"], () => navigate("/report"));
   useSequence(["g", "x"], () => navigate("/setup"));
   useHotkey("?", () => setPaletteOpen(true));
@@ -84,9 +84,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           </Link>
           <div className="flex gap-6 ml-12 flex-1">
             <NavItem to="/">Runs</NavItem>
+            <NavItem to="/gates">Gate</NavItem>
             <NavItem to="/scenarios">Scenarios</NavItem>
-            <NavItem to="/agents">Agents</NavItem>
-            <NavItem to="/clones">Clones</NavItem>
+            <NavItem to="/twins">Twins</NavItem>
             <NavItem to="/report">Report</NavItem>
             <NavItem to="/setup">Setup</NavItem>
           </div>

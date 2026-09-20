@@ -52,6 +52,15 @@ _SECTIONS = {
     "settings": "config",
 }
 
+# Settings a scenario may carry, in front matter or `## Config`. Anything else
+# is reported by `checkpoint check` rather than silently ignored.
+KNOWN_SETTINGS = frozenset({
+    "twins", "clones", "seed", "seed-file", "seed_file", "runs", "timeout",
+    "tags", "faults", "judge-model", "judge_model", "owasp",
+    # Read by the simulated user (`checkpoint simulate`).
+    "persona", "goal", "tone", "patience", "adversarial",
+})
+
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<body>.*)$")
 _TAG = re.compile(r"^\[(?P<kind>[A-Za-z])(?P<must>!?)\]\s*(?P<rest>.*)$", re.DOTALL)
 _ASSERTION = re.compile(r"\s=>\s", re.DOTALL)

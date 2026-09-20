@@ -90,7 +90,13 @@ def test_changelog_exists_and_is_linked():
 
 
 def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
-    """The pytest11 entry point loads in every environment that installs us."""
+    """The pytest11 entry point loads in every environment that installs us.
+
+    Nothing here may cost real import time, because the price is paid by every
+    pytest run in every project that has checkpoint-agents installed — including
+    the ones that never write a Checkpoint test. The fixtures import what they
+    need inside their own bodies instead.
+    """
     import ast
 
     src = (REPO_ROOT / "checkpoint" / "pytest_plugin.py").read_text(encoding="utf-8")
@@ -99,12 +105,15 @@ def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
         if isinstance(node, ast.Import):
             top += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
+            # `if TYPE_CHECKING:` imports never run, so they are free.
             top.append(node.module or "")
-    for heavy in ("httpx", "checkpoint.clone_manager"):
-        assert heavy not in top, (
-            f"{heavy} is imported at module scope; it would be imported on every "
-            "pytest run in any project that installs checkpoint-agents"
-        )
+    heavy = ("httpx", "uvicorn", "fastapi", "openai",
+             "checkpoint", "checkpoint.engine", "checkpoint.twins", "checkpoint.twins.sessions")
+    offenders = [name for name in heavy if name in top]
+    assert not offenders, (
+        f"{offenders} imported at module scope; that cost lands on every pytest "
+        "run in any project that installs checkpoint-agents"
+    )
 
 
 def test_mitmproxy_is_not_a_dependency_anywhere():

@@ -55,11 +55,19 @@ def _meta(views: Mapping[str, Mapping[str, dict]], field: str, default: Any) -> 
     }
 
 
-def schema_for(twins: Sequence[str]) -> Schema:
+def schema_for(twins: Sequence[str], *, seed: str | None = None) -> Schema:
     """The collections a scenario's twins expose, without starting them.
 
-    Lets `validate` and the dashboard tell an author which criteria will be
-    checked deterministically and which will need a model, before any run.
+    Lets ``checkpoint check``, the dashboard and the scenario generator tell an
+    author what a criterion can refer to before anything runs.
+
+    Field names come from a seeded copy of each twin's state, never from the
+    live twin. A twin at rest holds nothing, so reading it directly would
+    describe ``github.issues`` as a collection with no fields at all — enough to
+    say the collection exists, not enough to compile "the issue is still open".
+    With no ``seed`` named, every bundled seed contributes, so the result is
+    every field a collection can carry rather than the ones one dataset happens
+    to use.
     """
     from checkpoint.twins import registry
 
@@ -73,5 +81,23 @@ def schema_for(twins: Sequence[str]) -> Schema:
         twin = getattr(module, "TWIN", None)
         if twin is None:
             continue
-        views[spec.name] = {n: v.to_json() for n, v in twin.collection_views().items()}
+        views[spec.name] = _sampled_views(twin, seed)
     return Schema.from_views(views)
+
+
+def _sampled_views(twin: Any, seed: str | None) -> dict[str, dict]:
+    """One twin's collections, with fields pooled over the seeds that apply."""
+    names = [seed] if seed else twin.seed_names()
+    samples = [twin.views_for(twin.seed(name)) for name in names]
+    samples.append(twin.views_for())  # the empty twin, so nothing is missed
+    merged: dict[str, dict] = {}
+    for sample in samples:
+        for collection, view in sample.items():
+            described = view.to_json()
+            existing = merged.get(collection)
+            if existing is None:
+                # Items are for field discovery only; a schema describes shape.
+                merged[collection] = {**described, "items": []}
+            else:
+                existing["fields"] = sorted(set(existing["fields"]) | set(described["fields"]))
+    return merged

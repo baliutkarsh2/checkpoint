@@ -1,243 +1,263 @@
-"""Tests for the checkpoint pytest plugin and init --template CLI option."""
+"""The pytest plugin has to work with no conftest, no imports and no setup.
+
+It is registered through the ``pytest11`` entry point, so after
+``pip install checkpoint-agents`` a test can ask for ``checkpoint_sandbox`` and
+get running twins. That promise is only worth testing the way a user meets it,
+so every test here writes a test file and runs pytest on it through the
+``pytester`` fixture: what is under test is the fixture a real suite receives,
+not a function this file imported from the plugin module.
+"""
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
-from click.testing import CliRunner
 
-from checkpoint.cli import main as cli_main
-from checkpoint.fake_credentials import FAKE_GITHUB_TOKEN
+pytest_plugins = ["pytester"]
 
-# ---------------------------------------------------------------------------
-# Plugin registration
-# ---------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEMO_SCENARIO = REPO_ROOT / "checkpoint" / "demo" / "smoke-scenario.md"
+DEMO_AGENT = REPO_ROOT / "checkpoint" / "demo" / "harness_fake.py"
 
-def test_plugin_registers_marker(pytestconfig):
-    """The checkpoint marker should be registered via pytest_configure."""
-    # _inicache stores markers as raw strings like "checkpoint(clones, seed): ..."
-    marker_strings: list[str] = pytestconfig._inicache.get("markers", [])
-    assert any("checkpoint" in m for m in marker_strings), (
-        f"checkpoint marker not found in {marker_strings}"
-    )
+_HAS_DEMO = DEMO_SCENARIO.is_file() and DEMO_AGENT.is_file()
 
 
-def test_plugin_exports_twin_handle():
-    from checkpoint.pytest_plugin import TwinHandle
-    h = TwinHandle(
-        clone_id="github",
-        url="http://127.0.0.1:9001",
-        mcp_url="http://127.0.0.1:9001/mcp/",
-        token=FAKE_GITHUB_TOKEN,
-    )
-    assert h.clone_id == "github"
-    assert h.mcp_url.endswith("/mcp/")
+def _run_isolated(pytester):
+    """Run the written test in its own interpreter.
+
+    `checkpoint_run` starts the intercepting proxy, which mints a certificate
+    through cryptography's Rust bindings. Those cannot be re-initialized, and
+    pytester restores ``sys.modules`` after every in-process run — so a second
+    in-process run of this fixture meets half-reloaded modules. The isolation is
+    the point of a subprocess here, not the speed cost.
+    """
+    return pytester.runpytest_subprocess()
 
 
-def test_plugin_exports_session_factory():
-    from checkpoint.pytest_plugin import _SessionFactory
-    assert callable(_SessionFactory)
+# -- the marker ----------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
-# checkpoint_twin fixture (mocked clone_manager)
-# ---------------------------------------------------------------------------
+def test_the_marker_is_registered_so_strict_markers_accepts_it(pytester):
+    """A suite running --strict-markers would otherwise fail on our own marker."""
+    pytester.makepyfile("""
+        import pytest
 
-def _make_entry(clone_id: str, port: int = 19001) -> dict:
-    return {
-        "pid": 99999,
-        "port": port,
-        "host": "127.0.0.1",
-        "started_at": "2026-05-13T00:00:00Z",
-        "url": f"http://127.0.0.1:{port}",
-        "mcp_url": f"http://127.0.0.1:{port}/mcp/",
-        "token": FAKE_GITHUB_TOKEN,
-    }
+        @pytest.mark.checkpoint(twins=["github"], seed="small-project",
+                                intercept=False, egress="none")
+        def test_marked_but_asks_for_nothing():
+            pass
+    """)
+    pytester.runpytest("--strict-markers").assert_outcomes(passed=1)
 
 
-@pytest.fixture
-def mock_clone_manager(monkeypatch, tmp_path):
-    """Patch clone_manager start/stop to avoid real subprocess."""
-    stopped: list[str] = []
-
-    monkeypatch.setattr(
-        "checkpoint.clone_manager.start",
-        lambda clone_id, **kw: _make_entry(clone_id),
-    )
-    monkeypatch.setattr(
-        "checkpoint.clone_manager.stop",
-        lambda clone_id, **kw: stopped.append(clone_id) or True,
-    )
-    return stopped
+def test_the_fixtures_are_there_without_a_conftest(pytester):
+    """The entry point is the whole installation story: no plugin line to add."""
+    pytester.makepyfile("def test_nothing(): pass")
+    result = pytester.runpytest("--fixtures")
+    result.stdout.fnmatch_lines(["*checkpoint_sandbox*"])
+    result.stdout.fnmatch_lines(["*checkpoint_run*"])
+    result.stdout.fnmatch_lines(["*checkpoint_twins*"])
+    assert not (pytester.path / "conftest.py").exists()
 
 
-def test_checkpoint_twin_default_clones(mock_clone_manager, checkpoint_twin):
-    """Without @pytest.mark.checkpoint, default clone is github."""
-    assert "github" in checkpoint_twin
-    gh = checkpoint_twin["github"]
-    assert gh.clone_id == "github"
-    assert "127.0.0.1" in gh.url
+# -- checkpoint_sandbox --------------------------------------------------------
 
 
-@pytest.mark.checkpoint(clones=["slack"])
-def test_checkpoint_twin_marker_clones(mock_clone_manager, checkpoint_twin):
-    assert "slack" in checkpoint_twin
-    assert checkpoint_twin["slack"].clone_id == "slack"
+@pytest.mark.integration
+def test_checkpoint_sandbox_serves_the_twins_the_marker_names(pytester):
+    """The fixture hands back a real Sandbox with the twins already answering."""
+    pytester.makepyfile("""
+        import httpx
+        import pytest
+
+        from checkpoint.twins import registry
+
+        @pytest.mark.checkpoint(twins=["github"], seed="small-project")
+        def test_the_seeded_repository_is_served(checkpoint_sandbox):
+            assert tuple(checkpoint_sandbox.twins) == ("github",)
+            spec = registry.get("github")
+            response = httpx.get(
+                f"{checkpoint_sandbox.twin_url('github')}/repos/acme/webapp",
+                headers={"Authorization": f"{spec.auth_scheme} {spec.token}"},
+                timeout=15, trust_env=False)
+            assert response.status_code == 200
+            assert response.json()["name"] == "webapp"
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
 
 
-@pytest.mark.checkpoint(clones=["github", "slack"])
-def test_checkpoint_twin_multi_clone(mock_clone_manager, checkpoint_twin):
-    assert set(checkpoint_twin.keys()) == {"github", "slack"}
+@pytest.mark.integration
+def test_checkpoint_sandbox_defaults_to_github_with_no_marker(pytester):
+    """The commonest case needs no marker at all."""
+    pytester.makepyfile("""
+        def test_a_twin_is_running(checkpoint_sandbox):
+            assert tuple(checkpoint_sandbox.twins) == ("github",)
+            assert checkpoint_sandbox.twin_url("github").startswith("http://127.0.0.1:")
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
 
 
-# ---------------------------------------------------------------------------
-# checkpoint init --template
-# ---------------------------------------------------------------------------
+@pytest.mark.integration
+def test_checkpoint_sandbox_starts_every_twin_the_marker_asks_for(pytester):
+    pytester.makepyfile("""
+        import pytest
 
-@pytest.fixture
-def runner():
-    return CliRunner()
-
-
-def test_init_raw_template(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "raw"])
-    assert result.exit_code == 0
-    harness = tmp_path / "harness.py"
-    assert harness.exists()
-    src = harness.read_text(encoding="utf-8")
-    assert "requests" in src
-    assert "CHECKPOINT_TASK" in src
+        @pytest.mark.checkpoint(twins=["github", "slack"])
+        def test_two_twins(checkpoint_sandbox):
+            assert set(checkpoint_sandbox.twins) == {"github", "slack"}
+            urls = {checkpoint_sandbox.twin_url(n) for n in checkpoint_sandbox.twins}
+            assert len(urls) == 2, "each twin needs its own port"
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
 
 
-def test_init_anthropic_template(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "anthropic"])
-    assert result.exit_code == 0
-    harness = tmp_path / "harness.py"
-    assert harness.exists()
-    src = harness.read_text(encoding="utf-8")
-    assert "anthropic" in src.lower()
-    assert "CHECKPOINT_TASK" in src
+@pytest.mark.integration
+def test_checkpoint_sandbox_is_stopped_when_the_test_ends(pytester):
+    """A suite that leaked a twin per test would run out of ports and memory.
+
+    Asserted on the sandbox itself rather than on its port: a freed port is
+    fair game for the next test's twin, so "nothing answers there" would be a
+    flake waiting to happen.
+    """
+    pytester.makepyfile("""
+        SANDBOXES = []
+
+        def test_first_uses_the_sandbox(checkpoint_sandbox):
+            assert checkpoint_sandbox.started
+            SANDBOXES.append(checkpoint_sandbox)
+
+        def test_it_was_torn_down_afterwards():
+            assert SANDBOXES, "the first test never received a sandbox"
+            assert not SANDBOXES[0].started
+    """)
+    pytester.runpytest().assert_outcomes(passed=2)
 
 
-def test_init_openai_agents_template(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "openai-agents"])
-    assert result.exit_code == 0
-    harness = tmp_path / "harness.py"
-    assert harness.exists()
-    src = harness.read_text(encoding="utf-8")
-    assert "openai" in src.lower() or "agents" in src.lower()
-    assert "CHECKPOINT_TASK" in src
+# -- checkpoint_run ------------------------------------------------------------
 
 
-def test_init_langchain_template(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "langchain"])
-    assert result.exit_code == 0
-    harness = tmp_path / "harness.py"
-    assert harness.exists()
-    src = harness.read_text(encoding="utf-8")
-    assert "langchain" in src.lower()
-    assert "CHECKPOINT_TASK" in src
+@pytest.mark.integration
+@pytest.mark.skipif(not _HAS_DEMO, reason="demo assets missing")
+def test_checkpoint_run_scores_a_scenario_like_the_cli_does(pytester):
+    """A scenario becomes an ordinary assertion, with the same score the gate uses."""
+    pytester.makepyfile(f"""
+        SCENARIO = {str(DEMO_SCENARIO)!r}
+        COMMAND = {f"{sys.executable} {DEMO_AGENT}"!r}
+
+        def test_the_agent_files_the_issue(checkpoint_run):
+            result = checkpoint_run(SCENARIO, command=COMMAND)
+            assert result.score == 100, [c.text for c in result.criteria if not c.passed]
+            assert result.complete
+            assert [c.kind for c in result.criteria]
+    """)
+    _run_isolated(pytester).assert_outcomes(passed=1)
 
 
-def test_init_invalid_template_exits_1(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "nonexistent"])
-    assert result.exit_code != 0
+@pytest.mark.skipif(not _HAS_DEMO, reason="demo assets missing")
+def test_checkpoint_run_takes_the_command_from_checkpoint_toml(pytester):
+    """The point of the fixture: the suite does not restate how to start the agent."""
+    pytester.makefile(".toml", checkpoint=f"""
+        [agent]
+        command = {f"{sys.executable} {DEMO_AGENT}"!r}
+    """.replace("\n        ", "\n"))
+    pytester.makepyfile(f"""
+        SCENARIO = {str(DEMO_SCENARIO)!r}
+
+        def test_no_command_needed(checkpoint_run):
+            assert checkpoint_run(SCENARIO).score == 100
+    """)
+    _run_isolated(pytester).assert_outcomes(passed=1)
 
 
-def test_init_default_is_zero_code(runner, tmp_path):
-    """v0.3+: the default `init` is zero-code — a declarative harness.json,
-    NOT a copied harness.py. The legacy Python template is opt-in via
-    `--template raw`."""
-    result = runner.invoke(cli_main, ["init", str(tmp_path)])
-    assert result.exit_code == 0
-    assert (tmp_path / "harness.json").exists()
-    assert not (tmp_path / "harness.py").exists()
+def test_checkpoint_run_says_how_to_point_it_at_an_agent(pytester):
+    """With nothing configured the failure has to name the fix, not the traceback."""
+    pytester.makepyfile("""
+        import pytest
+
+        def test_without_an_agent(checkpoint_run):
+            with pytest.raises(pytest.UsageError) as raised:
+                checkpoint_run("does-not-matter.md")
+            message = str(raised.value)
+            assert "checkpoint.toml" in message
+            assert "command=" in message
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
 
 
-def test_init_raw_template_writes_harness_py(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "raw"])
-    assert result.exit_code == 0
-    harness = tmp_path / "harness.py"
-    assert harness.exists()
-    assert "requests" in harness.read_text(encoding="utf-8")
+# -- checkpoint_twins ----------------------------------------------------------
 
 
-def test_init_idempotent(runner, tmp_path):
-    """Running init twice skips existing files without error."""
-    runner.invoke(cli_main, ["init", str(tmp_path)])
-    result = runner.invoke(cli_main, ["init", str(tmp_path)])
-    assert result.exit_code == 0
-    assert "already exists" in result.output or "nothing to do" in result.output.lower()
+@pytest.mark.integration
+def test_checkpoint_twins_reuses_one_sandbox_across_the_session(pytester):
+    """The factory exists to pay the startup cost once, not once per test."""
+    pytester.makepyfile("""
+        URLS = []
+
+        def test_first(checkpoint_twins):
+            URLS.append(checkpoint_twins(["github"]).twin_url("github"))
+
+        def test_second(checkpoint_twins):
+            assert checkpoint_twins(["github"]).twin_url("github") == URLS[0]
+    """)
+    pytester.runpytest().assert_outcomes(passed=2)
 
 
-def test_init_scaffold_creates_standard_files(runner, tmp_path):
-    runner.invoke(cli_main, ["init", str(tmp_path)])
-    assert (tmp_path / "harness.json").exists()
-    assert (tmp_path / "scenarios" / "quickstart.md").exists()
-    assert (tmp_path / ".checkpoint.json").exists()
+@pytest.mark.integration
+def test_checkpoint_twins_resets_between_tests_so_order_does_not_matter(pytester):
+    """A shared sandbox that kept the last test's writes would leak between tests."""
+    pytester.makepyfile("""
+        import httpx
+
+        from checkpoint.twins import registry
+
+        def _headers():
+            spec = registry.get("github")
+            return {"Authorization": f"{spec.auth_scheme} {spec.token}"}
+
+        def _issues(sandbox):
+            return sandbox.views()["github"]["issues"]["items"]
+
+        def test_writes_an_issue(checkpoint_twins):
+            sandbox = checkpoint_twins(["github"], seed="small-project")
+            before = len(_issues(sandbox))
+            created = httpx.post(f"{sandbox.twin_url('github')}/repos/acme/webapp/issues",
+                                 json={"title": "left behind"}, headers=_headers(),
+                                 timeout=15, trust_env=False)
+            assert created.status_code == 201
+            assert len(_issues(sandbox)) == before + 1
+
+        def test_does_not_see_it(checkpoint_twins):
+            sandbox = checkpoint_twins(["github"], seed="small-project")
+            titles = [i.get("title") for i in _issues(sandbox)]
+            assert "left behind" not in titles
+    """)
+    pytester.runpytest().assert_outcomes(passed=2)
 
 
-def test_init_anthropic_banner_shows_pip(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "anthropic"])
-    assert "pip install anthropic" in result.output
+@pytest.mark.integration
+def test_checkpoint_twins_can_keep_state_when_a_test_asks_for_it(pytester):
+    """Some suites build a fixture up across tests on purpose."""
+    pytester.makepyfile("""
+        import httpx
 
+        from checkpoint.twins import registry
 
-def test_init_langchain_banner_shows_pip(runner, tmp_path):
-    result = runner.invoke(cli_main, ["init", str(tmp_path), "--template", "langchain"])
-    assert "pip install langchain" in result.output
+        def _headers():
+            spec = registry.get("github")
+            return {"Authorization": f"{spec.auth_scheme} {spec.token}"}
 
+        def _titles(sandbox):
+            return [i.get("title") for i in sandbox.views()["github"]["issues"]["items"]]
 
-# ---------------------------------------------------------------------------
-# init.py scaffold() unit tests
-# ---------------------------------------------------------------------------
+        def test_writes(checkpoint_twins):
+            sandbox = checkpoint_twins(["github"], seed="small-project")
+            httpx.post(f"{sandbox.twin_url('github')}/repos/acme/webapp/issues",
+                       json={"title": "kept"}, headers=_headers(), timeout=15,
+                       trust_env=False)
 
-def test_scaffold_raw(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="raw")
-    assert "harness.py" in result.created
-    harness = tmp_path / "harness.py"
-    assert "requests" in harness.read_text(encoding="utf-8")
-
-
-def test_scaffold_anthropic(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="anthropic")
-    assert "harness.py" in result.created
-    assert "anthropic" in (tmp_path / "harness.py").read_text(encoding="utf-8").lower()
-
-
-def test_scaffold_openai_agents(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="openai-agents")
-    assert "harness.py" in result.created
-    src = (tmp_path / "harness.py").read_text(encoding="utf-8")
-    assert "agents" in src.lower()
-
-
-def test_scaffold_langchain(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="langchain")
-    assert "harness.py" in result.created
-    assert "langchain" in (tmp_path / "harness.py").read_text(encoding="utf-8").lower()
-
-
-def test_scaffold_invalid_template_raises():
-    from checkpoint.init import scaffold
-    with pytest.raises(ValueError, match="Unknown template"):
-        scaffold("/tmp", template="invalid-xyz")
-
-
-def test_scaffold_result_has_template_field(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="anthropic")
-    assert result.template == "anthropic"
-
-
-def test_scaffold_banner_mentions_pip_for_frameworks(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="langchain")
-    assert "pip install langchain" in result.banner
-
-
-def test_scaffold_banner_no_pip_for_raw(tmp_path):
-    from checkpoint.init import scaffold
-    result = scaffold(tmp_path, template="raw")
-    assert "pip install" not in result.banner
+        def test_still_there(checkpoint_twins):
+            sandbox = checkpoint_twins(["github"], reset=False)
+            assert "kept" in _titles(sandbox)
+    """)
+    pytester.runpytest().assert_outcomes(passed=2)
