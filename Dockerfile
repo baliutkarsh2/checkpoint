@@ -16,7 +16,7 @@
 # Node 22 to match the version CI builds the SPA with. Vite 8 (rolldown)
 # requires ^20.19 || >=22.12, so an older major silently drifts from what is
 # actually tested.
-FROM node:22-alpine AS web-builder
+FROM node:25-alpine AS web-builder
 WORKDIR /web
 COPY checkpoint/dashboard/web/package.json checkpoint/dashboard/web/package-lock.json ./
 RUN npm ci
