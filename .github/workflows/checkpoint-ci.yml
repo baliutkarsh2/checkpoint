@@ -11,6 +11,14 @@ on:
 permissions:
   contents: read
 
+# Pushing three times to a branch queued three full matrix runs, and the answer
+# anyone wanted was the last one. Superseded runs are cancelled on a pull
+# request; a push to main is left alone, because that is the run a release is
+# read from.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # The package advertises 3.11/3.12/3.13, so all three must actually run the
   # suite. Deliberately lean: no SPA build, no Playwright, no wheel check —
