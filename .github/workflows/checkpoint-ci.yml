@@ -174,7 +174,7 @@ jobs:
           if-no-files-found: ignore
 
   build-and-test:
-    name: Build SPA + run pytest + verify wheel
+    name: Run pytest + build SPA + verify wheel
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -197,44 +197,15 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # 1. Build the SPA from source, so the wheel ships a bundle built here.
-      - name: Build dashboard SPA
-        working-directory: checkpoint/dashboard/web
-        run: |
-          npm ci
-          npm run build
-
-      # The built bundle is committed so `pip install` from git (and any source
-      # checkout) has a working dashboard without needing Node. Diffing the
-      # rebuilt output against it does not work — the bundler is not
-      # byte-reproducible across operating systems and Node majors, so a correct
-      # bundle built on a laptop fails on this runner. What has to be true is
-      # narrower: nobody changed the SPA source and forgot to rebuild. The build
-      # stamps a hash of its inputs beside the output; recompute and compare.
-      - name: Verify the committed SPA bundle is current
-        working-directory: checkpoint/dashboard/web
-        run: |
-          committed=$(cat ../static/.source-hash)
-          npm run --silent stamp
-          rebuilt=$(cat ../static/.source-hash)
-          if [ "$committed" != "$rebuilt" ]; then
-            echo "::error::The SPA source changed but checkpoint/dashboard/static/ was not rebuilt."
-            echo "Rebuild and commit it:"
-            echo "  cd checkpoint/dashboard/web && npm ci && npm run build"
-            exit 1
-          fi
-          echo "OK: the committed bundle was built from this source"
-
-      # 1b. Render smoke test: serve the freshly built bundle headlessly and
-      # assert it mounts, routes, and is styled by Tailwind. This is the
-      # automated stand-in for a manual click-through of UI-framework upgrades.
-      - name: Dashboard render smoke test (Playwright)
-        working-directory: checkpoint/dashboard/web
-        run: |
-          npx playwright install --with-deps chromium
-          npm run test:e2e
-
-      # 2. Install Python deps + run the full pytest suite.
+      # 1. Run the suite FIRST, against the checkout exactly as committed.
+      #
+      # Order matters here. tests/test_spa_bundle.py is what proves the
+      # committed dashboard bundle matches the committed SPA source, and it
+      # does that by recomputing the stamp `npm run build` writes. Build the
+      # SPA before pytest and that stamp is rewritten from the current source,
+      # so the check compares the tree to itself and passes no matter how stale
+      # the bundle is. That is how the old CI-step version of this guard was
+      # silently vacuous; keep the build below the tests.
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
@@ -248,6 +219,22 @@ jobs:
           name: coverage-${{ github.run_id }}
           path: coverage.xml
           retention-days: 14
+
+      # 2. Prove the SPA still builds, and give the wheel a bundle built here.
+      - name: Build dashboard SPA
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npm ci
+          npm run build
+
+      # 2b. Render smoke test: serve the freshly built bundle headlessly and
+      # assert it mounts, routes, and is styled by Tailwind. This is the
+      # automated stand-in for a manual click-through of UI-framework upgrades.
+      - name: Dashboard render smoke test (Playwright)
+        working-directory: checkpoint/dashboard/web
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
 
       # 3. Build sdist + wheel and prove the SPA is inside.
       - name: Build sdist + wheel
