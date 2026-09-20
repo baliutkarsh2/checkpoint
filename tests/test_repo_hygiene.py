@@ -37,19 +37,18 @@ def _text(path: Path) -> str:
 
 def _tracked_files() -> list[str]:
     try:
-        out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, check=True)
+        out = subprocess.run(["git", "ls-files"], cwd=ROOT,
+                             capture_output=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):  # pragma: no cover - not a git checkout
         # An sdist or an exported tree has no index to ask; that is not a
         # failing repository, and reporting it as one sends the reader hunting.
         pytest.skip("not a git checkout; hygiene sweep skipped")
-    else:
-        # `else`, not a bare return: pytest.skip raises, so `out` is always bound
-        # by the time this runs — but static analysis cannot know that, and read
-        # the return as using a possibly-uninitialized name.
-        #
-        # Decoded here rather than via `text=True`, which decodes as cp1252 on
-        # Windows and would mangle any non-ASCII path git prints.
-        return [line for line in out.stdout.decode("utf-8").splitlines() if line.strip()]
+        out = b""  # unreachable: pytest.skip raises. Bound anyway so that the
+                   # function has one exit and `out` is assigned on every path,
+                   # which is what a reader and a static analyser both need.
+    # Decoded here rather than via `text=True`, which decodes as cp1252 on
+    # Windows and would mangle any non-ASCII path git prints.
+    return [line for line in out.decode("utf-8").splitlines() if line.strip()]
 
 
 # --- the large-file policy --------------------------------------------------
