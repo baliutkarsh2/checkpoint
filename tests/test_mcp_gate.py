@@ -122,3 +122,25 @@ def test_tools_refuse_clearly_when_no_agent_is_configured(tmp_path, monkeypatch)
     out = gate_tool(str(DEMO))
     assert out["verdict"] == "ERROR"
     assert any("checkpoint init" in e for e in out["errors"])
+
+
+def test_every_server_reports_checkpoints_version():
+    """A client shows this beside the name, and "which Checkpoint is this?" is
+    the first question when a tool behaves differently than its description."""
+    import checkpoint
+    from checkpoint.mcp_compat import make_server
+
+    servers = {"checkpoint's own gate server": build_server(),
+               "a twin server": make_server("github", "a twin")}
+    for what, server in servers.items():
+        reported = (getattr(server, "version", None)
+                    or getattr(getattr(server, "_mcp_server", None), "version", None))
+        assert reported == checkpoint.__version__, (
+            f"{what} advertises version {reported!r}, not {checkpoint.__version__!r}")
+
+
+def test_the_gate_server_tells_a_client_what_a_verdict_means():
+    """The tool descriptions never said, so INCONCLUSIVE read as a failure."""
+    instructions = getattr(build_server(), "instructions", "") or ""
+    for word in ("SHIP", "BLOCK", "INCONCLUSIVE", "ERROR"):
+        assert word in instructions, f"the server never explains {word}"

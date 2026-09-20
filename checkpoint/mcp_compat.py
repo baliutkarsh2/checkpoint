@@ -67,13 +67,20 @@ def make_server(
     stateless_http: bool = True,
     streamable_http_path: str = "/",
 ) -> Any:
-    """Build a server, putting transport options where this major expects them."""
+    """Build a server, putting transport options where this major expects them.
+
+    Every server reports Checkpoint's version. A client shows it beside the
+    server name, and "which Checkpoint is this agent talking to?" is the first
+    question asked when a tool behaves differently than its description says.
+    """
+    from checkpoint import __version__
+
     if MCP_MAJOR >= 2:
         # 2.x takes every transport option on the app/run methods instead of the
         # constructor — including transport_security, which 1.x wants up front.
         # Passing it here raises TypeError, and only against a 2.x install, so
         # the repo's own environment would not see it.
-        server = FastMCP(name=name, instructions=instructions)
+        server = FastMCP(name=name, instructions=instructions, version=__version__)
         server._checkpoint_transport = {
             "stateless_http": stateless_http,
             "streamable_http_path": streamable_http_path,
@@ -83,6 +90,7 @@ def make_server(
     return FastMCP(
         name=name,
         instructions=instructions,
+        version=__version__,
         stateless_http=stateless_http,
         streamable_http_path=streamable_http_path,
         transport_security=_transport_security(),
