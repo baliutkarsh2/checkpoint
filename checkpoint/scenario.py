@@ -166,12 +166,15 @@ def parse(text: str, source: str | None = None) -> Scenario:
     body, front_matter = _split_front_matter(text, scenario)
     scenario.config.update(front_matter)
 
-    title = re.search(r"^#[ \t]+(.+)$", body, re.MULTILINE)
+    # A non-space at the head of the capture: without it the whitespace run
+    # and the dot can both match the same space, which is ambiguous to backtrack
+    # through and was flagged as such. A heading never starts with whitespace.
+    title = re.search(r"^#[ \t]+(\S.*)$", body, re.MULTILINE)
     if title:
         scenario.title = title.group(1).strip()
 
     offset = 0
-    parts = re.split(r"^##[ \t]+(.+)$", body, flags=re.MULTILINE)
+    parts = re.split(r"^##[ \t]+(\S.*)$", body, flags=re.MULTILINE)
     for i in range(1, len(parts), 2):
         heading = parts[i].strip().lower()
         content = parts[i + 1] if i + 1 < len(parts) else ""
