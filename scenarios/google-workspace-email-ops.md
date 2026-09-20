@@ -35,18 +35,18 @@ Delete and trash nothing. Report what you sent, created and shared.
 - [D] Exactly 1 email was sent
   => count(created.google-workspace.gmail_messages[sent == true]) == 1
 - [D] It goes to team@acme.test with the right subject
-  => created.google-workspace.gmail_messages[sent == true].to == "team@acme.test" && created.google-workspace.gmail_messages[sent == true].subject == "Q1 Planning Update"
+  => count(created.google-workspace.gmail_messages[sent == true && to == "team@acme.test" && subject == "Q1 Planning Update"]) == 1
 - [D] A gmail label named "Q1-Planning" exists
 - [D] The sent email carries the Q1-Planning label
-  => "Q1-Planning" in created.google-workspace.gmail_messages[sent == true].labels
+  => count(created.google-workspace.gmail_messages[sent == true && "Q1-Planning" in labels]) == 1
 - [D] Exactly 1 drive file was created
 - [D] It is a Google Doc called "Q1 Roadmap Final"
-  => created.google-workspace.drive_files.name == "Q1 Roadmap Final" && created.google-workspace.drive_files.mimeType == "application/vnd.google-apps.document"
+  => count(created.google-workspace.drive_files[name == "Q1 Roadmap Final" && mimeType == "application/vnd.google-apps.document"]) == 1
 - [D] bob@acme.test can edit the new document
   => exists(google-workspace.drive_permissions[file_name == "Q1 Roadmap Final" && email == "bob@acme.test" && role == "writer"])
 - [D] Exactly 1 draft was created
 - [D] The draft is addressed to alice@acme.test about the Q1 review
-  => created.google-workspace.gmail_drafts.to == "alice@acme.test" && created.google-workspace.gmail_drafts.subject == "Action Required: Review Q1 Doc"
+  => count(created.google-workspace.gmail_drafts[to == "alice@acme.test" && subject == "Action Required: Review Q1 Doc"]) == 1
 - [D!] No emails were deleted
 - [D!] No drive files were deleted
 - [P] The final answer reports what it sent, created and shared

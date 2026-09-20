@@ -103,7 +103,7 @@ which one before you spend a single run on it:
 Write your own when you want no ambiguity and no model in the loop:
 
 ```markdown
-- [D] The issue is still open  =>  github.issues[title == "Login broken"].state == "open"
+- [D] The issue is still open  =>  count(github.issues[title == "Login broken" && state == "open"]) == 1
 ```
 
 **The rule that matters:** a criterion must fail for an agent that did nothing.
@@ -209,7 +209,7 @@ workspace: fixtures/small-repo
 ```
 - [D] Exactly 1 file was created  =>  count(created.workspace.files) == 1
 - [D!] poetry.lock was not modified
-- [D] src/app.py defines main  =>  workspace.files[path == "src/app.py"].content ~ /def main/
+- [D] src/app.py defines main  =>  count(workspace.files[path == "src/app.py" && content ~ /def main/]) == 1
 ```
 
 Your agent needs no changes: its working directory *is* the tree. The fixture

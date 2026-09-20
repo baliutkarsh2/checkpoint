@@ -28,7 +28,7 @@ CACHE_PATH = Path(".checkpoint/cache/assertions.json")
 
 # Bump when the language or the prompt changes in a way that invalidates cached
 # translations.
-COMPILER_VERSION = 1
+COMPILER_VERSION = 2
 
 _SYSTEM = """You translate one test criterion into a single assertion in Checkpoint's
 assertion language. You never decide whether the criterion passed — you only translate.
@@ -56,6 +56,12 @@ Values you can read: answer (the agent's final answer, a string), exit_code, dur
 
 Rules:
 - Use only the collections and fields listed in the schema you are given. Never invent one.
+- To check a field of one named record, put the field test inside the filter and count:
+  count(github.issues[number == 1 && state == "open"]) == 1, NOT
+  github.issues[number == 1].state == "open". The second form *errors* when the
+  record is missing, so an agent that deleted it scores "could not be evaluated"
+  instead of a failure. Only use <list>.<field> when the criterion itself has
+  already established the list holds exactly one item.
 - "was created"/"were deleted" mean created./deleted., NOT the total in final state.
 - Quote strings exactly as the criterion writes them; comparisons are case-sensitive
   (use lower(...) or a /regex/i when the criterion clearly means any casing).
