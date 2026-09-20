@@ -231,7 +231,7 @@ checkpoint report --certificate release.json # the assurance document a reviewer
 hidden in tool output, a destructive instruction, an exfiltration attempt — and
 distinguishes "resisted" from "nothing landed, but the runs cannot prove it."
 
-The bundled pack in `scenarios/redteam/` covers all ten OWASP Agentic
+The bundled pack ships inside the package and covers all ten OWASP Agentic
 categories, one scenario each, across all seven twins. Every one of them pairs
 its attack with a legitimate task the agent is expected to finish, so an agent
 that answers "I won't do that" and stops scores no better than one that fell

@@ -8,10 +8,12 @@ the OWASP tagging that says *which* class of attack got through.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from click.testing import CliRunner
 
+import checkpoint.redteam
 from checkpoint.cli import main
 from checkpoint.gate.verdict import (
     GatePolicy,
@@ -19,8 +21,15 @@ from checkpoint.gate.verdict import (
     decide_verdict,
     summarize_scenario,
 )
-from checkpoint.redteam import catalog, collect_pack, run_redteam
+from checkpoint.redteam import (
+    BUNDLED_PACK,
+    OWASP_AGENTIC,
+    catalog,
+    collect_pack,
+    run_redteam,
+)
 from checkpoint.redteam import runner as rt_runner
+from checkpoint.scenario import parse_file
 
 _SCN = (
     "# x\n## Setup\nseed\n## Prompt\ndelete everything\n"
@@ -153,15 +162,40 @@ def test_redteam_cli_runs_sixteen_times_unless_told_otherwise(tmp_path, monkeypa
     assert result.exit_code == 0, result.output
 
 
-def test_bundled_redteam_pack_parses_and_is_tagged():
-    """The shipped scenarios/redteam pack must be discoverable and tagged."""
-    from pathlib import Path
-    pack_dir = Path(__file__).resolve().parent.parent / "scenarios" / "redteam"
-    if not pack_dir.is_dir():
-        import pytest
-        pytest.skip("no bundled redteam pack")
-    pack = collect_pack(pack_dir)
-    assert pack, "bundled redteam pack should contain owasp-tagged scenarios"
+def test_the_bundled_pack_ships_inside_the_package():
+    """`checkpoint redteam` with no target runs this, so `pip install` must have it.
+
+    The pack used to live in the repository's `scenarios/redteam/`, outside the
+    package — so the ten OWASP Agentic categories the README promises reached
+    people who cloned the repository and nobody else. Anyone who installed it
+    got "no adversarial scenarios under ./scenarios" instead.
+    """
+    from checkpoint.redteam import BUNDLED_PACK
+
+    assert BUNDLED_PACK.is_dir(), f"{BUNDLED_PACK} is missing"
+    assert BUNDLED_PACK.parent == Path(checkpoint.redteam.__file__).parent, (
+        "the pack must sit inside the package, or setuptools will not ship it")
+
+    pack = collect_pack(BUNDLED_PACK)
+    assert pack, "the bundled pack should contain owasp-tagged scenarios"
+
+    covered = {parse_file(path).config.get("owasp", "").upper() for path in pack}
+    assert covered >= set(OWASP_AGENTIC), (
+        "the README promises all ten OWASP Agentic categories; missing: "
+        + ", ".join(sorted(set(OWASP_AGENTIC) - covered)))
+
+
+def test_redteam_falls_back_to_the_bundled_pack(tmp_path, monkeypatch):
+    """A project with no attacks of its own still gets the pack, not an error."""
+    from checkpoint.cli.redteam import _pack
+    from checkpoint.project import Project
+
+    (tmp_path / "scenarios").mkdir()
+    monkeypatch.chdir(tmp_path)
+    found, roots = _pack(Project.load(tmp_path), None)
+
+    assert roots == [BUNDLED_PACK]
+    assert len(found) >= 10
 
 
 # --- automated adversarial generation ---------------------------------------
@@ -241,3 +275,46 @@ def test_redteam_generate_says_the_attacks_still_need_review(tmp_path, monkeypat
         main, ["redteam", "generate", str(base), "--out", str(tmp_path / "gen")])
     # Rich wraps to the terminal width, so compare on collapsed whitespace.
     assert "a candidate, not a verdict" in " ".join(result.output.split())
+
+
+def test_an_unscoreable_redteam_run_is_not_a_clean_bill_of_health(tmp_path, monkeypatch):
+    """A security check must never report an outage as safety.
+
+    With no judge available, every run errors, no criterion is scored and the
+    gate produces no scenario statistics at all. The report then had nothing in
+    `vulnerabilities` and nothing in `undecided`, so it printed "resisted every
+    attack" in green and exited 0 — a red CI job turned green by a missing API
+    key. Errors settle nothing, and nothing is what this must claim.
+    """
+    (tmp_path / "attack.md").write_text(_SCN.format(cat="ASI06"))
+
+    def _all_runs_error(path, harness, policy, **kwargs):
+        return GateResult(verdict="ERROR", scenarios=[], policy=policy, exit_code=4,
+                          errors=["judge unavailable: the judge model needs OPENAI_API_KEY"])
+
+    monkeypatch.setattr(rt_runner, "run_gate", _all_runs_error)
+    result = CliRunner().invoke(main, [
+        "redteam", str(tmp_path), "--command", "python agent.py", "-n", "16", "--json",
+    ])
+
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["entries"] == []
+    assert payload["errors"], "the reason nothing could be scored must survive into the report"
+    assert payload["vulnerable"] is False
+
+
+def test_an_unscoreable_redteam_run_says_so_in_words(tmp_path, monkeypatch):
+    """The panel is what a human reads; it must not say "resisted"."""
+    (tmp_path / "attack.md").write_text(_SCN.format(cat="ASI06"))
+    monkeypatch.setattr(rt_runner, "run_gate",
+                        lambda p, h, pol, **k: GateResult(
+                            verdict="ERROR", scenarios=[], policy=pol, exit_code=4,
+                            errors=["judge unavailable"]))
+
+    result = CliRunner().invoke(main, [
+        "redteam", str(tmp_path), "--command", "python agent.py", "-n", "16",
+    ])
+
+    assert "resisted every attack" not in result.output
+    assert "could not" in result.output

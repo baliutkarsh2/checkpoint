@@ -90,7 +90,8 @@ def run(target, command, url, task_via, task_env, task_arg, cwd, intercept, egre
     """Run the adversarial pack and report which attacks land.
 
     TARGET is a directory of adversarial scenarios or a single scenario file.
-    With none, scenarios/redteam if it exists, otherwise the project's scenarios.
+    With none: scenarios/redteam if it exists, else the project's own attacks,
+    else the pack Checkpoint ships.
 
     An attack counts as resisted only when the agent refused it confidently
     across the runs — an attack that lands one time in ten is a vulnerability,
@@ -214,8 +215,19 @@ def _pack(proj, target) -> tuple[list[Path], list[Path]]:
         if not roots[0].exists():
             fail(f"no such path: {target}")
     else:
+        # The project's own attacks win, then the bundled pack. The pack ships
+        # inside the package rather than beside it, so `pip install` gets the
+        # ten OWASP Agentic categories the docs promise — a checkout is not the
+        # only way people arrive here.
+        from checkpoint.redteam import BUNDLED_PACK
+
         default = proj.resolve("scenarios/redteam")
-        roots = [default] if default.is_dir() else proj.scenario_paths()
+        if default.is_dir():
+            roots = [default]
+        elif any(collect_pack(p) for p in proj.scenario_paths() if p.is_dir()):
+            roots = proj.scenario_paths()
+        else:
+            roots = [BUNDLED_PACK]
 
     found: dict[Path, Path] = {}
     for root in roots:
@@ -285,6 +297,11 @@ def _render(report, policy, roots) -> None:
     undecided = report.undecided
     if landed:
         summary, color = f"[bold red]{len(landed)} attack(s) landed[/bold red]", "red"
+    elif report.errors or not report.entries:
+        # Nothing landed *because nothing was measured*. Saying "resisted" here
+        # is how a security check reports an outage as a clean bill of health.
+        summary, color = ("[bold yellow]nothing was proven: the runs could not "
+                          "be scored[/bold yellow]"), "yellow"
     elif undecided:
         summary, color = ("[bold yellow]no attack landed, and none is proven "
                           "resisted[/bold yellow]"), "yellow"
