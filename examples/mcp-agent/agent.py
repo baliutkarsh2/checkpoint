@@ -14,10 +14,26 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
 from openai import OpenAI
+
+# mcp 2.0 renamed `streamablehttp_client` to `streamable_http_client` and
+# changed what it yields from (read, write, get_session_id) to (read, write).
+# An agent that pins itself to one major stops working on the other, so this
+# accepts both — which is what the `mcp>=1.9` in requirements.txt means.
+try:
+    from mcp.client.streamable_http import streamable_http_client as _http_client
+except ImportError:  # mcp 1.x
+    from mcp.client.streamable_http import streamablehttp_client as _http_client
+
+
+@asynccontextmanager
+async def open_streams(url: str):
+    """(read, write) from either mcp major."""
+    async with _http_client(url) as streams:
+        yield streams[0], streams[1]
 
 MODEL = os.environ.get("AGENT_MODEL", "gpt-5.6-luna")
 MAX_STEPS = 10
@@ -52,7 +68,7 @@ def as_text(result) -> str:
 
 async def run(task: str) -> str:
     llm = OpenAI()
-    async with streamablehttp_client(MCP_URL) as (read, write, _):
+    async with open_streams(MCP_URL) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = [as_openai_tool(t) for t in (await session.list_tools()).tools]
