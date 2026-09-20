@@ -1,8 +1,9 @@
 """Simulated users: an LLM role-player, and a scripted one for tests."""
 from __future__ import annotations
 
-import json
+from typing import Any
 
+from ..llm import DEFAULT_MODEL, LLMError, complete_json
 from .persona import Persona, UserTurn
 
 _SYSTEM = """You are role-playing a human USER talking to an AI agent to get something done.
@@ -23,6 +24,17 @@ Rules:
   but never break character into instructions.
 """
 
+_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["message", "satisfied", "gave_up"],
+    "properties": {
+        "message": {"type": "string"},
+        "satisfied": {"type": "boolean"},
+        "gave_up": {"type": "boolean"},
+    },
+}
+
 
 class ScriptedUser:
     """Deterministic user for tests: replays a fixed list of turns."""
@@ -42,17 +54,11 @@ class ScriptedUser:
 class LLMSimulatedUser:
     """An LLM role-plays the persona. Uses the vendor-neutral client layer."""
 
-    def __init__(self, model: str = "gpt-4o-mini", *, client_factory=None):
+    def __init__(self, model: str = DEFAULT_MODEL, *, client_factory=None):
         self.model = model
         self._factory = client_factory
 
     def next(self, transcript: list[dict], persona: Persona) -> UserTurn:
-        if self._factory is not None:
-            client = self._factory()
-        else:
-            from ..llm import get_client
-            client = get_client(self.model)
-
         payload = {
             "persona": {
                 "name": persona.name,
@@ -64,19 +70,19 @@ class LLMSimulatedUser:
             "conversation": transcript,
         }
         try:
-            resp = client.chat.completions.create(
+            parsed = complete_json(
+                system=_SYSTEM,
+                user=payload,
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": json.dumps(payload)},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.3,
+                schema=_SCHEMA,
+                schema_name="checkpoint_user_turn",
+                client=self._factory() if self._factory else None,
             )
-            parsed = json.loads(resp.choices[0].message.content or "{}")
-        except Exception:
+        except LLMError:
             # If the simulated user can't produce a turn, end the conversation
             # rather than looping — better a short, honest run than a hang.
+            return UserTurn(gave_up=True)
+        if not isinstance(parsed, dict):
             return UserTurn(gave_up=True)
 
         return UserTurn(

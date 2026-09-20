@@ -15,10 +15,34 @@ from fastapi import FastAPI
 
 from checkpoint.fake_credentials import FAKE_SUPABASE_TOKEN
 from checkpoint.mcp_compat import FastMCP, make_server
+from checkpoint.twins.supabase_pgrst import KNOWN_OPS
 
 from ._shim import make_shim, mount_mcp_on_fastapi
 
 SUPABASE_BOOTSTRAP_TOKEN = FAKE_SUPABASE_TOKEN
+
+
+def _postgrest_filters(filters: dict[str, Any] | None) -> dict[str, str]:
+    """Turn a tool's filter dict into PostgREST query parameters.
+
+    Accepts the three shapes a model reaches for: ``{"age.gte": 18}``,
+    ``{"age": "gte.18"}`` and a bare ``{"status": "active"}`` (an equality).
+    A filter the twin cannot parse is refused there rather than matching
+    every row here.
+    """
+    params: dict[str, str] = {}
+    for key, value in (filters or {}).items():
+        parts = str(key).split(".")
+        if len(parts) >= 2 and parts[-1] in KNOWN_OPS:
+            negated = len(parts) >= 3 and parts[-2] == "not"
+            column = ".".join(parts[:-2] if negated else parts[:-1])
+            operator = f"not.{parts[-1]}" if negated else parts[-1]
+            params[column] = f"{operator}.{value}"
+        elif str(value).partition(".")[0] in KNOWN_OPS:
+            params[str(key)] = str(value)
+        else:
+            params[str(key)] = f"eq.{value}"
+    return params
 
 
 def build_mcp(app: FastAPI) -> FastMCP:
@@ -50,11 +74,11 @@ def build_mcp(app: FastAPI) -> FastMCP:
         """Query rows from a table with optional filters and pagination.
 
         filters: dict of {column.operator: value} e.g. {"age.gte": "18", "status.eq": "active"}
+        select: PostgREST select list, e.g. "id,title" or "id,author:profiles(username)"
         order: column name, optionally suffixed with .asc or .desc
         """
         params: dict[str, Any] = {"select": select}
-        if filters:
-            params.update(filters)
+        params.update(_postgrest_filters(filters))
         if order is not None:
             params["order"] = order
         if limit is not None:
@@ -74,11 +98,12 @@ def build_mcp(app: FastAPI) -> FastMCP:
         data: a single row dict or a list of row dicts.
         upsert: if True, performs an upsert (insert or update on conflict).
         """
-        headers: dict[str, str] = {}
+        prefer = ["return=representation"]
         if upsert:
-            headers["Prefer"] = "resolution=merge-duplicates"
+            prefer.append("resolution=merge-duplicates")
         rows = data if isinstance(data, list) else [data]
-        return await shim("POST", f"/rest/v1/{table}", json=rows, extra_headers=headers)
+        return await shim("POST", f"/rest/v1/{table}", json=rows,
+                          extra_headers={"Prefer": ",".join(prefer)})
 
     @mcp.tool()
     async def supabase_update(
@@ -90,7 +115,9 @@ def build_mcp(app: FastAPI) -> FastMCP:
 
         filters: dict of {column.operator: value} e.g. {"id.eq": "abc-123"}
         """
-        return await shim("PATCH", f"/rest/v1/{table}", json=data, params=filters)
+        return await shim("PATCH", f"/rest/v1/{table}", json=data,
+                          params=_postgrest_filters(filters),
+                          extra_headers={"Prefer": "return=representation"})
 
     @mcp.tool()
     async def supabase_delete(
@@ -100,8 +127,11 @@ def build_mcp(app: FastAPI) -> FastMCP:
         """Delete rows from a table that match the given filters.
 
         filters: dict of {column.operator: value} e.g. {"id.eq": "abc-123"}
+        An empty filter set deletes every row, exactly as it would in production.
         """
-        return await shim("DELETE", f"/rest/v1/{table}", params=filters)
+        return await shim("DELETE", f"/rest/v1/{table}",
+                          params=_postgrest_filters(filters),
+                          extra_headers={"Prefer": "return=representation"})
 
     @mcp.tool()
     async def supabase_upsert(
@@ -122,7 +152,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
             f"/rest/v1/{table}",
             json=rows,
             params=params,
-            extra_headers={"Prefer": "resolution=merge-duplicates"},
+            extra_headers={"Prefer": "return=representation,resolution=merge-duplicates"},
         )
 
     # ----- RPC (Stored Functions) ----------------------------------------
@@ -284,7 +314,7 @@ def build_mcp(app: FastAPI) -> FastMCP:
         if offset is not None:
             body["offset"] = offset
         if sort_by is not None:
-            body["sort_by"] = {"column": sort_by}
+            body["sortBy"] = {"column": sort_by, "order": "asc"}
         return await shim(
             "POST", f"/storage/v1/object/list/{bucket_id}", json=body
         )
@@ -310,7 +340,8 @@ def build_mcp(app: FastAPI) -> FastMCP:
         return await shim(
             "POST",
             f"/storage/v1/object/{bucket_id}/{path}",
-            json={"_mcp_content": content, "_mcp_content_type": content_type, "_mcp_upsert": upsert},
+            content=content.encode(),
+            extra_headers={"content-type": content_type, "x-upsert": str(upsert).lower()},
         )
 
     @mcp.tool()

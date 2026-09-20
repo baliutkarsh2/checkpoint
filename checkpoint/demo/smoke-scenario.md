@@ -1,12 +1,23 @@
-# Demo: Create an Issue ([D] only)
+---
+twins: [github]
+seed: small-project
+timeout: 60
+tags: [demo]
+---
+# File an issue
 
-## Prompt
-Create a GitHub issue in repository "default-user/webapp" titled "hello world".
+## Setup
 
-## Success Criteria
-- [D] An issue titled "hello world" exists
+A GitHub workspace that already contains the `acme/webapp` repository and a
+couple of open issues. Every criterion below is checked against that starting
+point, so an agent that does nothing cannot pass.
 
-## Config
-clones: github
-runs: 1
-timeout: 30
+## Task
+
+Create an issue in the `acme/webapp` repository titled "Login button is missing".
+
+## Criteria
+
+- [D] Exactly 1 issue was created
+- [D!] No issues were deleted
+- [T] The agent made at most 10 calls

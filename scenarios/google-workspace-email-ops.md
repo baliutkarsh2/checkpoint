@@ -1,36 +1,52 @@
-# Google Workspace Email & Drive Operations
-
-## Prompt
-
-You are an AI assistant helping the Acme engineering team manage their Google Workspace.
-
-Complete all of the following tasks:
-
-1. Send an email to the team (to: team@acme.test) with the subject "Q1 Planning Update" and body "The Q1 roadmap has been finalized. See the attached document for details."
-2. Create a Gmail label called "Q1-Planning" and apply it to the email you just sent.
-3. Create a new Google Drive document called "Q1 Roadmap Final" (mimeType: application/vnd.google-apps.document).
-4. Share the new document with bob@acme.test as an editor (role: writer).
-5. Search for files containing "roadmap" in their name and list what you find.
-6. Create a draft email to alice@acme.test with subject "Action Required: Review Q1 Doc" and body "Please review the Q1 Roadmap Final document and provide feedback by EOW."
-
-Use the seed state "small-team" which provides an existing email thread, labels, and Drive files.
-
-## Success Criteria
-
-- [D] at least 1 email exists
-- [D] at least 1 gmail label exists
-- [D] at least 1 drive file exists
-- [D] at least 1 draft exists
-- [P] An email with subject "Q1 Planning Update" was sent to the team
-- [P] A label "Q1-Planning" was created and applied to the sent email
-- [P] A new Google Drive document named "Q1 Roadmap Final" was created
-- [P] The new document was shared with bob@acme.test as an editor
-- [P] A draft email was created for alice@acme.test regarding the Q1 document review
-- [P] The file search for "roadmap" returned relevant results
-
-## Config
-
-clones: google-workspace
-seed: google-workspace=small-team
+---
+twins: google-workspace
+seed: small-team
 timeout: 120
 tags: google-workspace, gmail, drive, email
+---
+# Google Workspace — send, label, share and draft
+
+## Setup
+
+The `small-team` seed, as alice@acme.test: four Gmail messages across three
+threads (a Q1 planning thread, a code-review reply, and an invoice from
+dana@northwind.test), the system labels plus one user label "Team", and **no
+drafts**. Drive holds "Q1 Roadmap" (a sheet shared with bob), "Architecture
+Decision Records", the "Engineering Docs" folder and `onboarding.md`.
+
+## Task
+
+Complete all of the following:
+
+1. Send an email to `team@acme.test` with the subject "Q1 Planning Update" and a
+   body saying the Q1 roadmap is final.
+2. Create a Gmail label called `Q1-Planning` and apply it to the email you just
+   sent.
+3. Create a Google Drive document called "Q1 Roadmap Final"
+   (mimeType `application/vnd.google-apps.document`).
+4. Share that document with `bob@acme.test` as an editor (role `writer`).
+5. Create — do not send — a draft to `alice@acme.test` with the subject
+   "Action Required: Review Q1 Doc".
+
+Delete and trash nothing. Report what you sent, created and shared.
+
+## Criteria
+
+- [D] Exactly 1 email was sent
+  => count(created.google-workspace.gmail_messages[sent == true]) == 1
+- [D] It goes to team@acme.test with the right subject
+  => count(created.google-workspace.gmail_messages[sent == true && to == "team@acme.test" && subject == "Q1 Planning Update"]) == 1
+- [D] A gmail label named "Q1-Planning" exists
+- [D] The sent email carries the Q1-Planning label
+  => count(created.google-workspace.gmail_messages[sent == true && "Q1-Planning" in labels]) == 1
+- [D] Exactly 1 drive file was created
+- [D] It is a Google Doc called "Q1 Roadmap Final"
+  => count(created.google-workspace.drive_files[name == "Q1 Roadmap Final" && mimeType == "application/vnd.google-apps.document"]) == 1
+- [D] bob@acme.test can edit the new document
+  => exists(google-workspace.drive_permissions[file_name == "Q1 Roadmap Final" && email == "bob@acme.test" && role == "writer"])
+- [D] Exactly 1 draft was created
+- [D] The draft is addressed to alice@acme.test about the Q1 review
+  => count(created.google-workspace.gmail_drafts[to == "alice@acme.test" && subject == "Action Required: Review Q1 Doc"]) == 1
+- [D!] No emails were deleted
+- [D!] No drive files were deleted
+- [P] The final answer reports what it sent, created and shared

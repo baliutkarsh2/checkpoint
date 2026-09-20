@@ -1,47 +1,47 @@
-// Example test (Vitest-shaped, but runs with plain `node` for smoke-checks).
-// Intentionally NOT executed by Python regression tests — the Python test
-// only verifies the module exports are correct.
+// A runnable example, shaped like a Vitest suite but executable with plain
+// `node example.test.js` so it can be smoke-checked without a test runner.
+// The Python suite only checks that this module's exports are what the type
+// declarations promise; it does not run this.
 
 const { withCheckpoint, resetCheckpointTwins } = require("./index.js");
 
 async function main() {
-  // Spin up two twins in one call. Each gets its own URL + bootstrap token.
+  // Two twins in one call, each with its own URL and credential.
   const session = await withCheckpoint({
     services: {
-      github: { mode: "route", seed: "small-project" },
-      slack: { mode: "route", seed: "incident-active" },
+      github: { seed: "small-project" },
+      slack: { seed: "incident-active" },
     },
   });
 
   try {
-    const gh = session.services.github;
-    const sl = session.services.slack;
+    const github = session.services.github;
+    const slack = session.services.slack;
 
-    console.log("github twin URL:", gh.url);
-    console.log("github token  :", gh.token.slice(0, 10) + "...");
-    console.log("slack twin URL:", sl.url);
-    console.log("slack token   :", sl.token.slice(0, 10) + "...");
+    console.log("github:", github.url, "credential in", github.tokenEnv.join("/"));
+    console.log("slack :", slack.url, "credential in", slack.tokenEnv.join("/"));
 
-    // Your agent test logic here — call gh.url / sl.url like real APIs.
-    // e.g. with vitest:
+    // Point your client at these URLs the way it would point at production.
+    // With Vitest:
     //
-    //   it("agent creates an issue and posts to Slack", async () => {
-    //     await runAgent({ GITHUB_URL: gh.url, SLACK_URL: sl.url });
-    //     const issues = await fetch(`${gh.url}/repos/acme/webapp/issues`).then(r => r.json());
-    //     expect(issues.some(i => i.title === "On-call alert")).toBe(true);
+    //   test("the agent files an issue and tells the channel", async () => {
+    //     await runAgent({ GITHUB_URL: github.url, SLACK_URL: slack.url });
+    //     const issues = await fetch(`${github.url}/repos/acme/webapp/issues`)
+    //       .then((r) => r.json());
+    //     expect(issues.some((i) => i.title === "On-call alert")).toBe(true);
     //   });
 
-    // Between tests: reset state without restarting processes.
+    // Between tests: back to the seeded state, without restarting anything.
     await resetCheckpointTwins();
-    console.log("twins reset OK");
+    console.log("twins reset");
   } finally {
     session.stop();
   }
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(err);
+  main().catch((error) => {
+    console.error(error);
     process.exit(1);
   });
 }

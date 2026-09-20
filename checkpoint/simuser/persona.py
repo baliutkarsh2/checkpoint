@@ -33,11 +33,16 @@ class UserTurn:
 
 
 def scenario_persona(scenario) -> Persona:
-    """Derive a default persona from a scenario (its prompt is the goal)."""
+    """Derive a default persona from a scenario.
+
+    The task is the goal unless the scenario says otherwise: `goal:` lets the
+    person want something the prompt does not spell out — which is the point of
+    a simulated user, and was accepted and ignored until now.
+    """
     cfg = getattr(scenario, "config", None) or {}
     return Persona(
         name=str(cfg.get("persona") or "user"),
-        goal=getattr(scenario, "prompt", "") or "",
+        goal=str(cfg.get("goal") or getattr(scenario, "prompt", "") or ""),
         tone=str(cfg.get("tone") or "neutral"),
         patience=int(cfg.get("patience") or 4),
         adversarial=str(cfg.get("adversarial") or "").lower() in ("1", "true", "yes"),

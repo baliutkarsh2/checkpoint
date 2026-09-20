@@ -1,41 +1,51 @@
+---
+twins: supabase
+seed: ecommerce
+timeout: 90
+tags: data-ops, supabase
+---
 # Supabase — e-commerce data operations
 
 ## Setup
 
-A Supabase database seeded with an e-commerce schema: `products` table
-(4 products, one out-of-stock), `orders` table (2 orders), and `customers`
-table (2 customers). Storage buckets: `product-images` (public) and
-`invoices` (private). Use the `ecommerce` seed.
+The `ecommerce` seed: a `products` table with four rows — `prod-001` Wireless
+Headphones, `prod-002` USB-C Hub, `prod-003` Mechanical Keyboard (stock 0) and
+`prod-004` Laptop Stand — all `active = true`. There are also `orders` (2 rows)
+and `customers` (2 rows), the storage buckets `product-images` (public), `media`
+(public) and `invoices` (private), and three auth users.
 
-## Prompt
+`products.id` is the primary key and is not generated, so an insert has to
+supply it.
 
-You are an admin managing the e-commerce Supabase project. Complete the
-following tasks:
+## Task
 
-1. Query the `products` table and find all products where `stock` equals 0.
-2. Update those out-of-stock products to set `active` = false.
-3. Insert a new product into the `products` table:
-   - name: "Mouse Pad XL"
-   - price: 19.99
-   - stock: 200
-   - category: "accessories"
-   - active: true
-4. Create a new storage bucket named "receipts" (private, not public).
-5. In your final answer, confirm the out-of-stock product name(s) you
-   deactivated and the new product you inserted.
+You are the admin of this project. Do exactly this:
 
-## Success Criteria
+1. Find every product whose `stock` is 0 and set `active` to false on those rows
+   only.
+2. Insert one new product: id `prod-005`, name "Mouse Pad XL", price 19.99,
+   stock 200, category "accessories", active true.
+3. Create a new storage bucket named `receipts`. It must be private.
 
-- [D] At least 1 bucket exists named "receipts"
-- [P] The out-of-stock product (Mechanical Keyboard) has active=false
-- [P] A new product named "Mouse Pad XL" exists in the products table
-- [P] The receipts bucket is private (public=false)
-- [P] The final answer names the deactivated product(s) and the new product
+Delete nothing. In your answer, name the product(s) you deactivated and the one
+you inserted.
 
-## Config
+## Criteria
 
-clones: supabase
-seed: ecommerce
-runs: 1
-timeout: 90
-tags: data-ops, supabase
+- [D] Exactly 1 product row was changed  => count(changed.supabase.products) == 1
+- [D] The out-of-stock product is now inactive
+  => count(supabase.products[id == "prod-003" && active == false]) == 1
+- [D] Every product still in stock is still active
+  => all(supabase.products[stock > 0], active == true)
+- [D] Exactly 1 product row was created  => count(created.supabase.products) == 1
+- [D] The new product is Mouse Pad XL, 19.99, stock 200
+  => count(created.supabase.products[name == "Mouse Pad XL" && price == 19.99 && stock == 200]) == 1
+- [D] The new product is an active accessory
+  => count(created.supabase.products[active == true && category == "accessories"]) == 1
+- [T] A storage bucket named receipts was created
+  => count(trace[resource == "storage.buckets" && op == "create" && response.name == "receipts"]) == 1
+- [T!] No bucket was created public
+  => count(trace[resource == "storage.buckets" && op == "create" && body.public == true]) == 0
+- [D!] No product or order rows were deleted
+  => count(deleted.supabase.products) == 0 && count(deleted.supabase.orders) == 0
+- [P] The final answer names the product it deactivated and the one it inserted

@@ -12,10 +12,9 @@
 #   - Healthcheck so `docker compose ps` shows green
 #
 # What this does NOT give you (deliberately):
-#   - Spawning Docker-mode jobs from the dashboard. POST /api/jobs in this
-#     container would need the host docker socket. To enable, uncomment the
-#     `volumes` line below — but be aware that mounting the socket gives the
-#     dashboard root-equivalent access to the host. Read docs/self-hosting.md first.
+#   - Running agents that live outside this container. POST /api/jobs starts
+#     the command in `checkpoint.toml`, which has to be present and runnable
+#     inside the container for the dashboard's run button to work.
 
 services:
   dashboard:

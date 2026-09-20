@@ -1,288 +1,110 @@
-# Deployment
+# Self-hosting the dashboard
 
-Checkpoint runs in three modes:
-
-1. **Local CLI** (`pip install checkpoint-agents && checkpoint run ...`) — single-developer iteration.
-2. **Local dashboard** (`checkpoint serve`) — single-developer browser UI.
-3. **Self-hosted shared dashboard** — Docker / docker-compose / Fly.io / Render — for team-shared run history, CI integration, viewer-only browsers.
-
-This doc covers #3.
-
----
-
-## TL;DR
-
-| Target | Command | Time |
-|---|---|---|
-| Local Docker | `docker compose up -d` | 2 min |
-| Fly.io | `flyctl launch && flyctl deploy` | 5 min |
-| Render | Click "Deploy to Render" with `render.yaml` | 5 min |
-| Kubernetes | `helm install ...` (use the bundled values) | 15 min |
-| Bare wheel | `pip install checkpoint-agents && systemd unit` | 10 min |
-
-Every option uses the **same Docker image** built from the repo's `Dockerfile`
-at the root.
-
----
-
-## Architecture (deployed)
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│  Internet / VPC                                                        │
-│                                                                        │
-│  ┌──────────────────┐    https     ┌──────────────────────────────┐    │
-│  │  Browser  │ ─────────►─────────► │  Reverse proxy (TLS)         │    │
-│  │ (your team)│                     │  Fly LB / Render / nginx ... │    │
-│  └──────────────────┘               └────────────┬─────────────────┘    │
-│                                                  │                     │
-│                                     ┌────────────v─────────────────┐   │
-│                                     │ checkpoint container :4001   │   │
-│                                     │ (Dockerfile, single image)   │   │
-│                                     │   - SPA at /                 │   │
-│                                     │   - JSON API at /api/*       │   │
-│                                     │   - SSE at /api/events       │   │
-│                                     │   - /healthz, /metrics       │   │
-│                                     │   - Bearer auth (env-gated)  │   │
-│                                     └────────────┬─────────────────┘   │
-│                                                  │                     │
-│                                     ┌────────────v─────────────────┐   │
-│                                     │ Persistent volume /data      │   │
-│                                     │   /data/runs/*.json          │   │
-│                                     │   /data/config/config.json   │   │
-│                                     │   /data/scenarios/*.md       │   │
-│                                     └──────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-The deployed dashboard is a **viewer + run-launcher**.  By default in cloud
-mode, job launching from the dashboard is disabled (see Security below) — your
-team's CI pushes runs into the volume by writing JSON files to `/data/runs/`,
-or by hitting `POST /api/jobs` if you've explicitly enabled it.
-
----
-
-## Option 1 — Docker Compose (self-host)
-
-Fastest path to a shared dashboard your team can hit at, say,
-`https://checkpoint.your-company.internal`:
+`checkpoint view` serves every run recorded on this machine: the calls the agent
+made, the state it left, the criteria that failed with the reasoning behind
+each, and the pass rate over time — which is the part a single run cannot show
+you.
 
 ```bash
-git clone <this-repo>
-cd checkpoint
-cp .env.example .env
-# Edit .env:
-#   OPENAI_API_KEY=sk-...
-#   CHECKPOINT_DASHBOARD_API_KEY=$(openssl rand -hex 32)
+checkpoint view --open        # http://127.0.0.1:4001
+```
 
+That is all most people need. The rest of this page is about running one
+somewhere your team can reach, which is a different thing with different risks.
+
+## Before you expose it
+
+The dashboard can start agent processes on request (`POST /api/jobs`). On
+loopback that is a local tool; on any other interface it is remote code
+execution for anyone who can reach the port. `checkpoint view` refuses to bind
+off loopback without a key:
+
+```bash
+export CHECKPOINT_DASHBOARD_API_KEY=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+checkpoint view --host 0.0.0.0
+```
+
+| Variable | Effect |
+|---|---|
+| `CHECKPOINT_DASHBOARD_API_KEY` | Every `/api/*` write needs `Authorization: Bearer <key>` |
+| `CHECKPOINT_DASHBOARD_AUTH_READS=1` | Reads need it too. Set this when the dashboard is reachable from the internet. |
+| `CHECKPOINT_DASHBOARD_READ_ONLY=1` | Job creation is refused entirely. This is the right setting for a team instance that only browses history. |
+| `CHECKPOINT_HOME` | Where config, baselines and signing keys live |
+| `CHECKPOINT_LOG_LEVEL` | Log level for the access log and the watcher |
+
+Also: terminate TLS upstream, because a bearer token over plain HTTP is a token
+you have given away, and restrict ingress to your VPN or office range — auth
+here is one shared secret, not per-user accounts.
+
+## Container
+
+The repository's `Dockerfile` builds the SPA from source and runs
+`checkpoint view` as a non-root user with a healthcheck at `/healthz`.
+
+```bash
+docker build -t checkpoint:latest .
+docker run -p 4001:4001 -v ck-data:/data \
+  -e CHECKPOINT_DASHBOARD_API_KEY=... checkpoint:latest
+```
+
+`/data` holds runs, config and scenarios; mount a volume there or the history
+is gone with the container.
+
+## Compose
+
+```bash
+cp .env.example .env     # set CHECKPOINT_DASHBOARD_API_KEY, and OPENAI_API_KEY if you judge here
 docker compose up -d
 ```
 
-Open `http://<host>:4001`.  The dashboard is now alive with rate limiting,
-bearer-token auth, persistent runs in a Docker volume, and a healthcheck.
+Same image, plus a named volume and the healthcheck wired up. Put it behind
+your own nginx, Caddy or Traefik and proxy to `127.0.0.1:4001`.
 
-To put it behind your team's nginx / Caddy / Traefik, terminate TLS upstream
-and reverse-proxy to `127.0.0.1:4001`.  Pass the bearer token via a header:
-
-```nginx
-location /checkpoint/ {
-    proxy_pass http://127.0.0.1:4001/;
-    proxy_set_header Authorization "Bearer $api_key_from_secrets";
-}
-```
-
----
-
-## Option 2 — Fly.io (one-command cloud)
+## Fly.io
 
 ```bash
 flyctl launch --copy-config --no-deploy --name <your-app>
-flyctl secrets set OPENAI_API_KEY=sk-...
-flyctl secrets set CHECKPOINT_DASHBOARD_API_KEY=$(openssl rand -hex 32)
-flyctl volumes create checkpoint_data --size 1 --region <closest>
+flyctl secrets set CHECKPOINT_DASHBOARD_API_KEY=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+flyctl volumes create checkpoint_data --size 1 --region <your-region>
 flyctl deploy
 ```
 
-Done.  Fly assigns `<your-app>.fly.dev` with TLS terminated at their LB.
-The `fly.toml` in the repo has `auto_stop_machines = "stop"` so the container
-spins down when idle and back up on the next request — keeps Fly hobby-tier
-spend at near-zero.
+`fly.toml` sets `auto_stop_machines = "stop"`, so the machine sleeps when
+nobody is looking and wakes on the next request.
 
----
+## Render
 
-## Option 3 — Render (GitHub-integrated)
+`render.yaml` is a blueprint: point Render at the repository and it provisions
+the web service from the same `Dockerfile`, a 1 GB disk at `/data`, and a
+generated `CHECKPOINT_DASHBOARD_API_KEY`. Set any judge key yourself in the
+Environment tab.
 
-1. Push the repo to GitHub.
-2. Go to https://render.com/deploy and pick your repo.  Render reads
-   `render.yaml` and provisions:
-   - 1 web service backed by the bundled `Dockerfile`
-   - 1 GB persistent disk mounted at `/data`
-   - Auto-deploy on every push to `main`
-3. In the Render dashboard's Environment tab, set `OPENAI_API_KEY`.
-   `CHECKPOINT_DASHBOARD_API_KEY` is auto-generated by Render
-   (`generateValue: true` in the blueprint).
+## Letting CI write, and the dashboard read
 
----
+The least surprising arrangement is one-way: CI produces run records, the
+dashboard displays them, and neither needs credentials for the other.
 
-## Option 4 — Kubernetes
+1. CI runs `checkpoint gate --json` and fails the build on anything but SHIP.
+2. It uploads `.checkpoint/cache/runs/*.json` as artifacts.
+3. A post-CI step copies those files into the dashboard's `/data/runs/`. The
+   watcher picks them up and pushes a `run.created` event to anyone watching.
+4. The instance runs with `CHECKPOINT_DASHBOARD_READ_ONLY=1`, so nothing can be
+   launched from the browser.
 
-Apply the (intentionally minimal) manifests in `deploy/k8s/` (TBD — see
-extension points in `architecture.md` if you want to author a Helm chart for your
-team).  The container needs:
-- 1 vCPU / 512 MB RAM
-- A `PersistentVolumeClaim` mounted at `/data`
-- Env vars from a `Secret` with `OPENAI_API_KEY` + `CHECKPOINT_DASHBOARD_API_KEY`
-- A `Service` of type `ClusterIP` on port 4001
-- An `Ingress` with TLS
+## Operating it
 
-The provided `Dockerfile` already runs as a non-root user (UID 10001), so you
-can drop it into a hardened pod-security-standards `restricted` namespace.
+`/healthz` is the liveness endpoint every path above already uses.
+`/metrics` is Prometheus exposition format — uptime, request counts and
+durations by route, job counts by status, and the number of live event
+subscribers. Requests are logged one structured line each, with a request id.
 
----
+Upgrades are `docker compose pull && docker compose up -d --force-recreate`.
+Run records are version-stable, so the same volume works against a later image.
 
-## Option 5 — Bare wheel + systemd
-
-```bash
-pip install checkpoint-agents
-checkpoint serve --host 0.0.0.0 --port 4001 --scenarios /opt/checkpoint/scenarios
-```
-
-Drop into a systemd unit:
-
-```ini
-# /etc/systemd/system/checkpoint.service
-[Unit]
-Description=Checkpoint dashboard
-After=network.target
-
-[Service]
-Type=exec
-User=checkpoint
-Environment=CHECKPOINT_HOME=/var/lib/checkpoint/config
-Environment=CHECKPOINT_DASHBOARD_API_KEY=...
-Environment=OPENAI_API_KEY=...
-ExecStart=/usr/local/bin/checkpoint serve --host 0.0.0.0 --port 4001 \
-          --scenarios /var/lib/checkpoint/scenarios
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```
-systemctl daemon-reload && systemctl enable --now checkpoint
-```
-
----
-
-## Security
-
-When deploying anywhere outside `127.0.0.1`, **at minimum**:
-
-| Setting | Why |
+| Symptom | First thing to check |
 |---|---|
-| Set `CHECKPOINT_DASHBOARD_API_KEY` | Anyone hitting `POST /api/*` without a Bearer token gets a 401 |
-| Terminate TLS upstream | Bearer tokens go in plaintext over HTTP |
-| Set `CHECKPOINT_DASHBOARD_READ_ONLY=1` if your team only browses runs | Disables `POST /api/jobs` so the network can't spawn subprocesses |
-| Don't mount `/var/run/docker.sock` unless you have to | Mounting the host docker socket gives the container root-equivalent host access; the dashboard works fine without it for read-only browsing |
-| Restrict ingress to a VPN / corp IP range | The dashboard has no per-user accounts; bearer auth is a shared secret |
-
-Optional but recommended:
-- `CHECKPOINT_DASHBOARD_AUTH_READS=1` — also require the bearer token on
-  reads.  Use this when the dashboard is publicly reachable.
-- A WAF or a `proxy_rate_limit` directive in nginx — the in-process rate limit
-  (30 writes / 10s / IP) is a backstop, not a replacement for proper edge
-  rate limiting.
-
----
-
-## CI / pipeline integration
-
-Most teams will want CI to be the *writer* and the dashboard to be the *reader*:
-
-1. CI runs `checkpoint run scenarios/ -n 3 --pass-threshold 80 -o json -q`
-   and gates the merge.
-2. CI uploads the `.checkpoint/cache/runs/*.json` files as artifacts.
-3. A small post-CI step `rsync`s those JSON files into the dashboard's
-   `/data/runs/` volume — the dashboard's filesystem watcher picks them up
-   automatically and pushes a `run.created` SSE event to anyone watching.
-4. (Optional) The dashboard runs in `READ_ONLY=1` mode so nobody can spawn
-   runs from the browser.
-
-This is the lowest-magic deployment.  The dashboard never needs to know about
-your CI; CI never needs an API token to talk to the dashboard.
-
----
-
-## Observability
-
-The image exposes `/metrics` in Prometheus exposition format with:
-
-- `checkpoint_uptime_seconds` (gauge)
-- `checkpoint_http_requests_total{method,path,status}` (counter)
-- `checkpoint_http_request_duration_seconds{method,path}` (gauge — moving avg)
-- `checkpoint_jobs_total{status}` (counter)
-- `checkpoint_sse_subscribers` (gauge)
-
-Add a Prometheus scrape config:
-
-```yaml
-- job_name: checkpoint
-  static_configs:
-    - targets: ['checkpoint.your-company.internal:4001']
-  metrics_path: /metrics
-  scheme: https
-  bearer_token: <your-key>      # if CHECKPOINT_DASHBOARD_AUTH_READS=1
-```
-
-For request-level visibility, the access log is a single structured line per
-request including the request ID.  Pipe stdout/stderr to your log aggregator
-of choice (Loki, Datadog, CloudWatch).
-
----
-
-## Upgrades
-
-Bumping the dashboard version:
-
-```bash
-# Pull the new image
-docker compose pull
-# Recreate (zero-downtime if you have a load balancer in front)
-docker compose up -d --force-recreate
-```
-
-Run records (`/data/runs/*.json`) are version-stable — you can mount the same
-volume against any future image.
-
----
-
-## Troubleshooting
-
-| Symptom | First place to look |
-|---|---|
-| 503 at `/` | SPA bundle missing — the build stage failed.  Check `docker logs` for the `npm run build` step |
-| 401 on every API call | `CHECKPOINT_DASHBOARD_API_KEY` set but client isn't sending the Bearer token |
-| 403 on `POST /api/jobs` | `CHECKPOINT_DASHBOARD_READ_ONLY=1` is on |
-| Healthcheck red | Container started but uvicorn died — `docker logs` will show the traceback |
-| New runs from CI don't appear | Filesystem watcher polls every 1s — wait, then check that the JSON files actually landed in `/data/runs/` and are valid JSON |
-| Browser SSE stops updating after ~5 min | Some reverse proxies idle-close long connections — set `proxy_read_timeout 300s` in nginx or equivalent |
-| Dashboard takes >30s to start | Cold image pull or low-CPU instance — bump to a 1 vCPU plan, or pre-pull the image |
-
----
-
-## Cost ballpark
-
-For a 5-engineer team running ~50 scenarios/day on a self-hosted dashboard:
-
-| Provider | Spec | Monthly |
-|---|---|---|
-| Fly.io | shared-cpu-1x, 512 MB, 1 GB volume, auto-stop | ~$2-5 |
-| Render | Starter web + 1 GB disk | ~$7 |
-| Hetzner CX11 + docker compose | 2 vCPU, 4 GB | ~$5 |
-| AWS Lightsail | 1 vCPU, 2 GB, 60 GB disk | $10 |
-
-The dashboard itself is essentially free to operate — the cost driver is your
-LLM provider for the judge calls during scenario runs (CI runs, not the
-dashboard).
+| 503 at `/` | The SPA bundle is missing — the build stage failed. Check the `npm run build` step in the image build. |
+| 401 on every call | A key is set and the client is not sending `Authorization: Bearer`. |
+| 403 on `POST /api/jobs` | `CHECKPOINT_DASHBOARD_READ_ONLY=1` is on. |
+| New runs never appear | The files did not land in `/data/runs/`, or they are not valid JSON. |
+| Live updates stop after a few minutes | A reverse proxy is idle-closing the event stream. Raise `proxy_read_timeout`. |

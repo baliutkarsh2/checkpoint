@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, X } from "lucide-react";
+import { Play, ShieldCheck, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtTimestamp, scoreColor, shortId } from "@/lib/format";
 import {
@@ -24,7 +24,7 @@ export default function Runs() {
   const navigate = useNavigate();
 
   const summaryQ = useQuery({ queryKey: ["summary"], queryFn: api.summary });
-  const clonesQ = useQuery({ queryKey: ["clones"], queryFn: api.clones });
+  const twinsQ = useQuery({ queryKey: ["twins"], queryFn: api.twins });
   const runsQ = useQuery({
     queryKey: ["runs", { scenario, agent, mode, page }],
     queryFn: () =>
@@ -90,13 +90,18 @@ export default function Runs() {
             : "Loading…"
         }
         right={
-          <button
-            type="button"
-            className="btn-accent"
-            onClick={() => setOpenLauncher(true)}
-          >
-            <Play size={14} /> New run
-          </button>
+          <div className="flex gap-2">
+            <Link to="/gates" className="btn-outline">
+              <ShieldCheck size={14} /> Gate results
+            </Link>
+            <button
+              type="button"
+              className="btn-accent"
+              onClick={() => setOpenLauncher(true)}
+            >
+              <Play size={14} /> New run
+            </button>
+          </div>
         }
       />
 
@@ -139,16 +144,16 @@ export default function Runs() {
         />
       </div>
 
-      {/* Live clones */}
-      {clonesQ.data && clonesQ.data.length > 0 && (
+      {/* Twins running right now */}
+      {twinsQ.data && twinsQ.data.length > 0 && (
         <>
-          <div className="section-title">Live clones</div>
+          <div className="section-title">Running twins</div>
           <div className="card-tight mb-6">
             <table className="ck-table">
               <thead>
                 <tr>
                   <th />
-                  <th>Clone</th>
+                  <th>Twin</th>
                   <th>URL</th>
                   <th>MCP URL</th>
                   <th>Started</th>
@@ -156,18 +161,18 @@ export default function Runs() {
                 </tr>
               </thead>
               <tbody>
-                {clonesQ.data.map((c) => (
-                  <tr key={c.id}>
+                {twinsQ.data.map((t) => (
+                  <tr key={t.id}>
                     <td className="w-4">
                       <span className="inline-block w-2 h-2 bg-accent border border-ink animate-blip" />
                     </td>
                     <td>
-                      <strong>{c.id}</strong>
+                      <strong>{t.id}</strong>
                     </td>
-                    <td className="font-mono text-xs">{c.url}</td>
-                    <td className="font-mono text-xs">{c.mcp_url}</td>
-                    <td className="text-xs">{fmtTimestamp(c.started_at)}</td>
-                    <td className="font-mono text-xs">{c.pid}</td>
+                    <td className="font-mono text-xs">{t.url}</td>
+                    <td className="font-mono text-xs">{t.mcp_url}</td>
+                    <td className="text-xs">{fmtTimestamp(t.started_at)}</td>
+                    <td className="font-mono text-xs">{t.pid}</td>
                   </tr>
                 ))}
               </tbody>
@@ -184,11 +189,9 @@ export default function Runs() {
           const f = e.currentTarget.elements;
           const sv = (f.namedItem("scenario") as HTMLInputElement).value;
           const av = (f.namedItem("agent") as HTMLInputElement).value;
-          const mv = (f.namedItem("mode") as HTMLSelectElement).value;
           const p = new URLSearchParams(params);
           if (sv) p.set("scenario", sv); else p.delete("scenario");
           if (av) p.set("agent", av); else p.delete("agent");
-          if (mv) p.set("mode", mv); else p.delete("mode");
           p.delete("page");
           setParams(p);
         }}
@@ -207,16 +210,6 @@ export default function Runs() {
           placeholder="agent substring"
           defaultValue={agent}
         />
-        <select
-          name="mode"
-          className="input"
-          defaultValue={mode}
-          aria-label="Mode filter"
-        >
-          <option value="">all modes</option>
-          <option value="docker">docker</option>
-          <option value="subprocess">subprocess</option>
-        </select>
         <button type="submit" className="btn">Filter</button>
         {(scenario || agent || mode) && (
           <button
@@ -244,7 +237,6 @@ export default function Runs() {
                   <th>Agent</th>
                   <th>Score</th>
                   <th>Criteria</th>
-                  <th>Mode</th>
                   <th>Duration</th>
                   <th>Timestamp</th>
                 </tr>
@@ -252,12 +244,12 @@ export default function Runs() {
               <tbody>
                 {runsQ.data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <EmptyState
                         title="No runs yet"
                         hint={
                           <>
-                            Click <strong>New run</strong> above, or run <code className="font-mono">checkpoint run scenarios/</code> from the CLI.
+                            Click <strong>New run</strong> above, or run <code className="font-mono">checkpoint run</code> from the CLI.
                           </>
                         }
                       />
@@ -297,15 +289,6 @@ export default function Runs() {
                       </td>
                       <td className="font-mono text-xs">
                         {r.criteria_pass}/{r.criteria_total}
-                      </td>
-                      <td>
-                        {r.mode === "docker" ? (
-                          <span className="badge badge-info">docker</span>
-                        ) : r.mode === "subprocess" ? (
-                          <span className="badge">subproc</span>
-                        ) : (
-                          <span className="text-ink-4 text-xs italic">—</span>
-                        )}
                       </td>
                       <td className="font-mono text-xs">
                         {r.duration_ms ? `${(r.duration_ms / 1000).toFixed(1)}s` : "—"}
@@ -393,34 +376,23 @@ function RunLauncher({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [scenario, setScenario] = useState(scenarios[0]?.path || "");
-  // Docker is the default run mode — customers' agents call real SDKs that
-  // need TLS interception. Toggle off only for fast in-process iteration.
-  const [docker, setDocker] = useState(true);
-  // The harness can be picked from auto-discovered example agents OR typed
-  // freely (custom dir / .checkpoint.json default if blank).
-  const [harness, setHarness] = useState("");
-  const [customHarness, setCustomHarness] = useState(false);
+  const [runs, setRuns] = useState(1);
 
-  const agentsQ = useQuery({
-    queryKey: ["agents"],
-    queryFn: api.agents,
+  // What runs is [agent] in checkpoint.toml — the same command the CLI and CI
+  // use, so a run started here and a run started there are the same run.
+  const configQ = useQuery({
+    queryKey: ["config"],
+    queryFn: api.config,
     staleTime: 30_000,
   });
-
-  // Auto-pick the first bundled agent on first load so docker-mode runs
-  // never end up with a missing Dockerfile.
-  useEffect(() => {
-    if (docker && !harness && !customHarness && agentsQ.data && agentsQ.data.length > 0) {
-      setHarness(agentsQ.data[0].path);
-    }
-  }, [docker, harness, customHarness, agentsQ.data]);
+  const agentCommand = String(
+    configQ.data?.sections?.agent?.command ??
+      configQ.data?.sections?.agent?.url ??
+      "",
+  );
 
   const startMut = useMutation({
-    mutationFn: () =>
-      api.jobs.start(scenario, {
-        docker,
-        harness: docker && harness ? harness : undefined,
-      }),
+    mutationFn: () => api.jobs.start(scenario, { runs }),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       navigate(`/live/${job.job_id}`);
@@ -459,66 +431,40 @@ function RunLauncher({
             </select>
           </label>
 
-          <label className="flex items-start gap-3 text-sm">
+          <label className="block">
+            <div className="card-title">Runs</div>
             <input
-              type="checkbox"
-              checked={docker}
-              onChange={(e) => setDocker(e.target.checked)}
-              className="mt-0.5"
+              className="input w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={runs}
+              onChange={(e) => setRuns(Math.max(1, Number(e.target.value) || 1))}
             />
-            <span>
-              Use docker mode
-              <div className="text-xs text-ink-3 dark:text-paper-3">
-                real SDKs against production URLs, TLS-intercepted to twins
-              </div>
-            </span>
+            <div className="text-xs text-ink-3 dark:text-paper-3 mt-1">
+              One run tells you what happened once. For a pass rate you can act
+              on, use <code className="font-mono">checkpoint gate</code>.
+            </div>
           </label>
 
-          {docker && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="card-title !mb-0">Agent</div>
-                <button
-                  type="button"
-                  className="text-[10px] uppercase tracking-wider text-ink-3 hover:text-ink dark:text-paper-3"
-                  onClick={() => setCustomHarness((c) => !c)}
-                >
-                  {customHarness ? "← pick from list" : "type custom path →"}
-                </button>
+          <div>
+            <div className="card-title">Agent</div>
+            {agentCommand ? (
+              <code className="font-mono text-xs break-all">{agentCommand}</code>
+            ) : (
+              <div className="text-xs text-ink-3 dark:text-paper-3">
+                No <code className="font-mono">[agent]</code> in checkpoint.toml —
+                the run will stop and tell you how to set one.
               </div>
-              {!customHarness ? (
-                <select
-                  className="input w-full"
-                  value={harness}
-                  onChange={(e) => setHarness(e.target.value)}
-                >
-                  {agentsQ.isLoading && <option value="">Loading…</option>}
-                  {agentsQ.data && agentsQ.data.length === 0 && (
-                    <option value="">
-                      No agents discovered — add one under examples/agents/
-                    </option>
-                  )}
-                  {agentsQ.data?.map((a) => (
-                    <option key={a.id} value={a.path}>
-                      [{a.source}] {a.name} — {a.path}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className="input w-full"
-                  placeholder="examples/agents/openai-tools or path/to/your/harness"
-                  value={harness}
-                  onChange={(e) => setHarness(e.target.value)}
-                />
-              )}
-              {!customHarness && agentsQ.data?.find((a) => a.path === harness)?.description && (
-                <div className="text-xs text-ink-3 dark:text-paper-3 italic">
-                  {agentsQ.data.find((a) => a.path === harness)?.description}
-                </div>
-              )}
+            )}
+            <div className="text-xs text-ink-3 dark:text-paper-3 mt-1">
+              From checkpoint.toml.{" "}
+              <Link to="/setup?tab=config" className="underline">
+                See the config
+              </Link>
+              .
             </div>
-          )}
+          </div>
 
           {startMut.isError && <ErrorBox error={startMut.error} />}
         </div>
@@ -526,13 +472,10 @@ function RunLauncher({
           <button onClick={onClose} className="btn-outline">
             Cancel
           </button>
-          <Link to="/" className="btn-ghost text-xs">
-            Watch <span className="kbd">jobs</span>
-          </Link>
           <button
             type="button"
             className="btn-accent"
-            disabled={!scenario || startMut.isPending || (docker && !harness)}
+            disabled={!scenario || startMut.isPending}
             onClick={() => startMut.mutate()}
           >
             <Play size={14} />

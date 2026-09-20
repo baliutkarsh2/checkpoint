@@ -7,7 +7,7 @@ import { Badge, ErrorBox, PageHead } from "@/components/bits";
 
 const STARTER = `# My new scenario
 
-## Prompt
+## Task
 What the agent should do.
 
 ## Success Criteria
@@ -15,12 +15,12 @@ What the agent should do.
 - [P] The agent's final answer references the issue number
 
 ## Config
-clones: github
+twins: github
 runs: 1
 timeout: 60
 `;
 
-/** Dashboard equivalent of `checkpoint validate <scenario.md>`.
+/** Dashboard equivalent of `checkpoint check <scenario.md>`.
  *  Pass `headless` when embedding inside the Setup hub. */
 export default function Validate({ headless = false }: { headless?: boolean }) {
   const [raw, setRaw] = useState(STARTER);
@@ -40,7 +40,7 @@ export default function Validate({ headless = false }: { headless?: boolean }) {
       {!headless && (
         <PageHead
           title="Validate scenario"
-          sub="Lint + parse a scenario without running it. Same as `checkpoint validate`."
+          sub="Parse and lint a scenario without spending a run on it. Same as `checkpoint check`."
         />
       )}
 
@@ -149,12 +149,12 @@ export default function Validate({ headless = false }: { headless?: boolean }) {
                 <div className="font-medium">{r.scenario.title || "(none)"}</div>
               </div>
               <div>
-                <div className="card-title">Clones</div>
+                <div className="card-title">Twins</div>
                 <div className="flex gap-1 flex-wrap">
-                  {r.scenario.clones.length === 0 ? (
+                  {r.scenario.twins.length === 0 ? (
                     <span className="text-xs text-ink-3 dark:text-paper-3 italic">none</span>
                   ) : (
-                    r.scenario.clones.map((c) => (
+                    r.scenario.twins.map((c) => (
                       <Badge key={c} variant="info">{c}</Badge>
                     ))
                   )}

@@ -50,7 +50,8 @@ def test_empty_seed_has_no_channels(client):
     assert r.status_code == 200
     state = client.get("/_state").json()
     assert state["channels"] == {}
-    assert state["users"] == {}
+    # The credential belongs to an app, so its bot user exists in every workspace.
+    assert list(state["users"]) == [sl.BOT_USER_ID]
 
 
 def test_engineering_team_seed_shape(client):
@@ -99,6 +100,26 @@ def test_incident_active_has_messages_with_reactions(client):
                 has_reactions = True
                 break
     assert has_reactions, "incident-active should have at least one message with reactions"
+
+
+def test_seeds_are_normalized_into_full_api_records(client):
+    client.post("/_seed/engineering-team")
+    state = client.get("/_state").json()
+    general = state["channels"]["C00000001"]
+    # A seed writes a name, a topic and a member list; the twin fills in the rest.
+    assert general["is_channel"] is True
+    assert general["is_general"] is True
+    assert general["is_private"] is False
+    assert general["name_normalized"] == "general"
+    assert general["topic"]["last_set"] == 0
+    assert general["num_members"] == len(general["members"])
+    assert sl.BOT_USER_ID in general["members"]
+
+
+def test_generated_ids_continue_after_the_seed(client):
+    client.post("/_seed/engineering-team")
+    created = client.post("/api/conversations.create", headers=H, data={"name": "after-seed"})
+    assert created.json()["channel"]["id"] == "C00000007"
 
 
 def test_seed_resets_state(client):

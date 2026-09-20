@@ -1,4 +1,8 @@
-"""Linear twin REST surface — auth, CRUD, seed loading."""
+"""Linear twin REST surface — auth, CRUD, seed loading.
+
+The REST surface is the twin's own: it backs the MCP tools, which call it
+in-process. Linear's real API is GraphQL (see test_linear_graphql.py).
+"""
 from __future__ import annotations
 
 import pytest
@@ -9,9 +13,7 @@ from checkpoint.twins import linear as ln
 
 @pytest.fixture(autouse=True)
 def _reset_state():
-    ln.STATE.clear()
-    ln.STATE.update(ln._fresh_state())
-    ln.TRACE.clear()
+    ln.TWIN.reset()
     yield
 
 
@@ -31,17 +33,32 @@ def test_missing_token_returns_401(client):
     assert r.status_code == 401
 
 
-def test_wrong_token_returns_401(client):
+def test_wrong_token_returns_401_under_strict_auth(client):
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/issues", headers={"Authorization": "Bearer bad_token"})
     assert r.status_code == 401
 
 
 def test_env_override_token(monkeypatch, client):
     monkeypatch.setenv("LINEAR_BOOTSTRAP_TOKEN", "lin_api_override")
+    client.post("/_config", json={"strict_auth": True})
     r = client.get("/v1/issues", headers=H)
     assert r.status_code == 401
     r = client.get("/v1/issues", headers={"Authorization": "Bearer lin_api_override"})
     assert r.status_code == 200
+
+
+def test_missing_credentials_return_401(client):
+    assert client.get('/v1/issues').status_code == 401
+
+
+def test_bare_api_key_is_accepted_like_the_real_api(client):
+    assert client.get("/v1/issues", headers={"Authorization": TOKEN}).status_code == 200
+
+
+def test_unknown_route_returns_the_services_error_shape(client):
+    body = client.get("/v1/nope", headers=H).json()
+    assert "detail" not in body and body["error"]
 
 
 def test_introspection_bypasses_auth(client):
@@ -184,6 +201,14 @@ def test_delete_issue(client):
     assert body.get("success") is True or ln.STATE["issues"][iss["id"]].get("archivedAt")
 
 
+def test_archived_issues_drop_out_of_the_listing(client):
+    iss = client.post("/v1/issues", headers=H,
+                      json={"title": "T", "teamId": "team-engineering"}).json()
+    client.delete(f"/v1/issues/{iss['id']}", headers=H)
+    assert client.get("/v1/issues", headers=H).json()["nodes"] == []
+    assert client.get("/v1/issues?includeArchived=true", headers=H).json()["nodes"]
+
+
 # --- comments ---------------------------------------------------------------
 
 def test_add_comment_to_issue(client):
@@ -255,6 +280,22 @@ def test_seed_small_project(client):
     state = client.get("/_state").json()
     assert state["issues"]
     assert state["projects"]
+    # The seed's issue counter continues after its own identifiers.
+    created = client.post("/v1/issues", headers=H,
+                          json={"title": "Next", "teamId": "team-engineering"}).json()
+    assert created["identifier"] == "ENG-43"
+
+
+def test_seeded_issues_are_normalized(client):
+    client.post("/_seed/small-project")
+    issue = client.get("/v1/issues/ENG-1", headers=H).json()
+    # Seeds carry ids; the twin derives the rest the way the API reports it.
+    assert issue["number"] == 1
+    assert issue["priorityLabel"] == "High"
+    assert issue["state"]["name"] == "Done"
+    assert issue["labels"][0]["name"] == "Feature"
+    assert issue["assignee"]["name"] == "Alice Chen"
+    assert client.get("/v1/issues/ENG-1/comments", headers=H).json()["nodes"]
 
 
 def test_seed_sprint_planning(client):

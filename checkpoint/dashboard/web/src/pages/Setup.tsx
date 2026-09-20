@@ -11,7 +11,7 @@ import OnboardingGuide from "@/components/OnboardingGuide";
  * Setup hub — the dashboard's equivalent of "control panel". Four tabs that
  * keep environment, config, scenario linting, and getting-started guidance
  * within one URL so the top nav stays focused on the daily-driver pages
- * (Runs / Scenarios / Agents / Clones / Reports).
+ * (Runs / Gate / Scenarios / Twins / Report).
  *
  * Tabs are URL-addressable (?tab=doctor) so docs / links can deep-link.
  */
@@ -29,13 +29,13 @@ const TABS: { id: Tab; label: string; icon: typeof Rocket; sub: string }[] = [
     id: "doctor",
     label: "Doctor",
     icon: Activity,
-    sub: "Environment readiness (Docker, ports, key)",
+    sub: "Whether this machine can run a scenario",
   },
   {
     id: "config",
     label: "Config",
     icon: Settings,
-    sub: "Edit your ~/.checkpoint/config.json",
+    sub: "What this project's checkpoint.toml says",
   },
   {
     id: "validate",

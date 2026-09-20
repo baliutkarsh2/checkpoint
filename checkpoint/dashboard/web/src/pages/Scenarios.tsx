@@ -13,9 +13,9 @@ import {
 
 /**
  * Scenarios page — card grid that answers "what can I run, and how has it
- * been doing?" at a glance. Each card shows: title, prompt preview, clones
- * needed, criterion counts, run count + pass rate + last score, and a
- * one-click "Run now" that picks the first bundled agent and starts a job.
+ * been doing?" at a glance. Each card shows: title, prompt preview, the
+ * twins it needs, criterion counts, run count + pass rate + last score, and
+ * a one-click "Run now".
  */
 export default function Scenarios() {
   const [params, setParams] = useSearchParams();
@@ -39,7 +39,7 @@ export default function Scenarios() {
         (s) =>
           s.title.toLowerCase().includes(filter) ||
           s.path.toLowerCase().includes(filter) ||
-          s.clones.toLowerCase().includes(filter) ||
+          s.twins.toLowerCase().includes(filter) ||
           s.tags.toLowerCase().includes(filter),
       )
     : scenarios;
@@ -89,7 +89,7 @@ export default function Scenarios() {
             name="q"
             type="search"
             className="bg-transparent outline-hidden flex-1 text-sm"
-            placeholder="search by title, clone, or tag…"
+            placeholder="search by title, twin, or tag…"
             defaultValue={filter}
           />
         </div>
@@ -106,7 +106,7 @@ export default function Scenarios() {
           title={scenarios.length === 0 ? "No scenarios found" : "No scenarios match"}
           hint={
             scenarios.length === 0
-              ? "Pass --scenarios <dir> to checkpoint serve, or place .md files under your project."
+              ? "Point `checkpoint view --scenarios <dir>` at them, or put .md files where checkpoint.toml says."
               : "Try a different search term, or clear the filter."
           }
         />
@@ -128,7 +128,7 @@ function ScenarioCard({
   scenario: {
     title: string;
     path: string;
-    clones: string;
+    twins: string;
     tags: string;
     d_count: number;
     p_count: number;
@@ -141,16 +141,8 @@ function ScenarioCard({
   const detailUrl = `/scenarios/file?path=${encodeURIComponent(s.path)}`;
   const runsUrl = `/?scenario=${encodeURIComponent(s.title)}`;
 
-  // Auto-pick the first bundled agent for the one-click "Run now" button.
-  const agentsQ = useQuery({ queryKey: ["agents"], queryFn: api.agents, staleTime: 30_000 });
-  const defaultAgent = agentsQ.data?.find((a) => a.source === "bundled") || agentsQ.data?.[0];
-
   const startMut = useMutation({
-    mutationFn: () =>
-      api.jobs.start(s.path, {
-        docker: true,
-        harness: defaultAgent?.path,
-      }),
+    mutationFn: () => api.jobs.start(s.path),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       navigate(`/live/${job.job_id}`);
@@ -175,8 +167,8 @@ function ScenarioCard({
           type="button"
           className="btn-accent !h-8 !text-xs"
           onClick={() => startMut.mutate()}
-          disabled={startMut.isPending || !defaultAgent}
-          title={defaultAgent ? `Run with ${defaultAgent.name}` : "No agents discovered"}
+          disabled={startMut.isPending}
+          title="Run this scenario against the agent in checkpoint.toml"
         >
           <Play size={12} />
           {startMut.isPending ? "Starting…" : "Run"}
@@ -184,8 +176,8 @@ function ScenarioCard({
       </div>
 
       <div className="flex flex-wrap gap-1.5 text-[10px] font-mono uppercase tracking-wider">
-        {s.clones &&
-          s.clones.split(",").map((c) => (
+        {s.twins &&
+          s.twins.split(",").map((c) => (
             <span key={c} className="badge badge-info">
               {c.trim()}
             </span>

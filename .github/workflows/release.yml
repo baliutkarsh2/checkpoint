@@ -32,7 +32,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: checkpoint/dashboard/web/package-lock.json
 
@@ -92,8 +92,9 @@ jobs:
 
           need(lambda n: "dashboard/static/index.html" in n, "the SPA bundle")
           need(lambda n: "demo/smoke-scenario.md" in n, "the demo scenario")
-          need(lambda n: "demo/harness_fake.py" in n, "the demo harness")
-          need(lambda n: "proxy/Dockerfile" in n, "the TLS sidecar Dockerfile")
+          need(lambda n: "demo/harness_fake.py" in n, "the demo agent")
+          need(lambda n: n.endswith("twins/linear_schema.graphql"),
+               "Linear's vendored GraphQL schema")
 
           seeds = [n for n in names if "_seeds/" in n and n.endswith(".json")]
           if len(seeds) < 20:

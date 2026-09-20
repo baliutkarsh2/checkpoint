@@ -25,11 +25,18 @@ def action() -> dict:
     return yaml.safe_load(ACTION.read_text(encoding="utf-8"))
 
 
-def _gate_option_names() -> set[str]:
-    from checkpoint.cli import gate
+def _gate_command():
+    """The gate command as the CLI resolves it, not as a module import."""
+    import click
 
+    command = main.get_command(click.Context(main), "gate")
+    assert command is not None, "`checkpoint gate` is missing from the command table"
+    return command
+
+
+def _gate_option_names() -> set[str]:
     names: set[str] = set()
-    for param in gate.params:
+    for param in _gate_command().params:
         names.update(getattr(param, "opts", []) or [])
         names.update(getattr(param, "secondary_opts", []) or [])
     return names
@@ -77,6 +84,58 @@ def test_gate_accepts_the_action_invocation_shape():
     """`checkpoint gate --help` works and exposes the options the action needs."""
     result = CliRunner().invoke(main, ["gate", "--help"])
     assert result.exit_code == 0, result.output
-    for flag in ("--harness", "--pass-threshold", "--strict", "--certificate",
-                 "--judge-model", "--agent", "--no-baseline"):
+    for flag in ("--command", "--pass-threshold", "--allow-conditional", "--strict",
+                 "--certificate", "--model", "--name", "--no-baseline", "--json"):
         assert flag in result.output, f"{flag} missing from `checkpoint gate --help`"
+
+
+def test_every_action_input_reaches_the_gate_as_a_flag():
+    """A renamed action input that nothing passes on is a setting that vanishes.
+
+    Each input either names a gate flag the run step builds, or is one of the
+    few that configure the runner itself rather than the gate.
+    """
+    body = ACTION.read_text(encoding="utf-8")
+    action_inputs = set(yaml.safe_load(body)["inputs"])
+    # These set up the job, not the verdict: the scenarios to gate, which
+    # checkpoint to install, and which interpreter to install it with.
+    runner_only = {"target", "version", "python-version"}
+    for name in sorted(action_inputs - runner_only):
+        flag = f"--{name}" if name != "runs" else "-n"
+        assert flag in body, f"input '{name}' never reaches `checkpoint gate` as {flag}"
+        assert flag in _gate_option_names(), f"{flag} is not a `checkpoint gate` option"
+
+
+def test_ci_still_defines_every_check_main_requires():
+    """A renamed job silently blocks every merge to main.
+
+    Branch protection names its required checks as strings. Rename a job and
+    the check it reported simply stops existing: the pull request waits forever
+    for a status nobody will ever send, with no error anywhere to explain it.
+    This happened — `Build SPA + run pytest + verify wheel` was renamed to put
+    the steps in a truthful order, and main became unmergeable.
+
+    The names are listed here rather than fetched so the test needs no network
+    and no token. If protection changes, this list changes with it.
+    """
+    import yaml
+
+    required = {
+        "Build SPA + run pytest + verify wheel",
+        "Validate the GitHub Action",
+        "Lint (ruff)",
+    }
+    ci = yaml.safe_load((REPO_ROOT / ".github/workflows/checkpoint-ci.yml").read_text(
+        encoding="utf-8"))
+    defined = {spec.get("name", job) for job, spec in ci["jobs"].items()}
+
+    missing = sorted(required - defined)
+    assert not missing, (
+        f"branch protection on main requires these checks and CI no longer "
+        f"defines them, so no pull request can merge: {missing}")
+
+    # gitleaks is required too, and lives in its own workflow.
+    secrets = yaml.safe_load((REPO_ROOT / ".github/workflows/gitleaks.yml").read_text(
+        encoding="utf-8"))
+    assert "gitleaks" in {job for job in secrets["jobs"]}, (
+        "main requires a `gitleaks` check; the secret-scan workflow no longer has one")

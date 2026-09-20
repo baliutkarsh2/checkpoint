@@ -1,36 +1,53 @@
-# Discord Incident Response
-
-## Prompt
-
-You are an on-call SRE bot integrated with a Discord server used by the Ops Team.
-An alert has fired: the payments service error rate has exceeded 5%.
-
-Your tasks:
-1. Post an incident message to the #incidents channel describing the alert (payments service error rate > 5%).
-2. Pin the incident message so it's easy to find.
-3. Send a follow-up message to the #incidents channel with the initial investigation steps: "Investigating payments service. Checking pod logs and recent deployments."
-4. Create a new channel called "incident-2026-payments" in the guild for the incident war room.
-5. Post a message in the new war room channel: "War room opened. Please join for coordination."
-6. Add a 🚨 reaction to the original incident message to signal active incident.
-7. Execute the monitor-bot webhook to post an automated status update: "ALERT: payments error rate at 7.3%. Incident declared."
-
-Use the seed state "incident-response" which provides the guild, channels, members, and webhook.
-
-## Success Criteria
-
-- [D] at least 1 discord message exists
-- [D] at least 2 discord messages exists
-- [D] exactly 1 discord channel named "incident-2026-payments" exists
-- [D] at least 1 webhook exists
-- [P] The incident message in #incidents describes the payments service error rate exceeding 5%
-- [P] The original incident message is pinned
-- [P] A war room channel was created for incident coordination
-- [P] The monitor-bot webhook was used to post an automated status update
-- [P] A reaction (🚨 or similar alert emoji) was added to the incident message
-
-## Config
-
-clones: discord
-seed: discord=incident-response
+---
+twins: discord
+seed: incident-response
 timeout: 120
 tags: discord, incident-response, ops
+---
+# Discord incident response — declare and coordinate
+
+## Setup
+
+The `incident-response` seed: the "Ops Team" guild with `#incidents`,
+`#postmortem` and `#monitoring`. `#incidents` holds one message, posted by
+`monitor-bot` (message id `1330907688468480000`):
+
+> 🚨 ALERT: Payment service latency > 5s for 3 consecutive checks. P99=8.2s.
+> Started 14:32 UTC.
+
+There is also a `monitor-bot` webhook bound to `#incidents`. Nothing is pinned
+and the alert has no reactions.
+
+## Task
+
+You are the on-call bot. Do all of this:
+
+1. Post an incident message in `#incidents` saying the payments service error
+   rate is above 5%, and pin it.
+2. Add a 🚨 reaction to the existing `monitor-bot` alert
+   (message `1330907688468480000`) to mark the incident active.
+3. Create a channel called `incident-2026-payments` in the guild and post
+   "War room open. Join here for coordination." in it.
+4. Execute the `monitor-bot` webhook to post the automated update
+   "ALERT: payments error rate at 7.3%. Incident declared."
+
+Delete nothing. Summarise what you posted where in your answer.
+
+## Criteria
+
+- [D] Exactly 3 messages were created
+- [D] The incident message is in #incidents and reports the error rate
+  => exists(created.discord.messages[channel == "incidents" && via_webhook == null && content ~ /payment/i && content ~ /5/])
+- [D] That incident message is pinned
+  => count(created.discord.messages[channel == "incidents" && via_webhook == null && pinned == true]) == 1
+- [D] The monitor-bot alert now carries a 🚨 reaction
+  => count(discord.messages[id == "1330907688468480000" && "🚨" in reactions]) == 1
+- [D] Exactly 1 channel was created
+- [D] A channel named "incident-2026-payments" exists
+- [D] The war room channel has one message in it
+  => count(created.discord.messages[channel == "incident-2026-payments"]) == 1
+- [D] One message came through the monitor-bot webhook
+  => count(created.discord.messages[via_webhook != null]) == 1
+- [D!] No messages were deleted
+- [D!] No channels were deleted
+- [P] The final answer says what was posted in each channel

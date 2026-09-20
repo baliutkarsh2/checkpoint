@@ -12,6 +12,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # "pip install checkpoint" NOT followed by "-agents".
@@ -21,9 +23,15 @@ SCANNED_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".toml", ".txt", ".json"}
 
 
 def _tracked_files() -> list[str]:
-    out = subprocess.run(
-        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
-    )
+    try:
+        out = subprocess.run(
+            ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):  # pragma: no cover - not a git checkout
+        # An sdist, a tarball, or a tree exported for a container has no index
+        # to ask. That is not a failing repository, and reporting it as one
+        # sends the reader hunting for an install line that does not exist.
+        pytest.skip("not a git checkout; install-instruction sweep skipped")
     return [line for line in out.stdout.splitlines() if line.strip()]
 
 

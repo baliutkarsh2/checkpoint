@@ -50,9 +50,21 @@ dependencies = [
     "openai>=2.0",
     "pydantic>=2.9",
     "python-dotenv>=1.0",
-    "docker>=7.1",
     "mcp>=1.27",
     "sse-starlette>=2.1",
+    # Scenario front matter and settings are YAML.
+    "pyyaml>=6.0.2",
+    # The intercept proxy (checkpoint/proxy/) imports these directly. All three
+    # already arrive transitively (httpx pulls h11 + certifi; mcp pulls
+    # cryptography via pyjwt[crypto]), so naming them adds nothing to the graph
+    # but states the floors the proxy is tested against. h11 0.16 is the
+    # release that fixed chunked-body request smuggling (CVE-2025-43859).
+    "h11>=0.16",
+    "cryptography>=44.0",
+    "certifi>=2025.1.31",
+    # The Linear twin serves Linear's own published GraphQL schema, because
+    # Linear has no REST API: every official client speaks GraphQL.
+    "graphql-core>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -62,20 +74,26 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "ruff>=0.6",
-    # The suite covers the sidecar addon (tests/proxy/test_addon.py), so the dev
-    # environment needs the proxy stack even though users' installs do not.
-    "mitmproxy>=11.0",
 ]
 # Judge/parse with Claude models (claude-*). Gemini (gemini-*) and any
 # OpenAI-compatible endpoint need no extra — they reuse the OpenAI client.
 anthropic = ["anthropic>=0.40"]
-# The TLS-intercept sidecar. checkpoint/proxy/addon.py is loaded by mitmdump
-# INSIDE the sidecar container (see checkpoint/proxy/entrypoint.sh), so the host
-# process never imports mitmproxy — only the sidecar image and `checkpoint
-# doctor`'s optional check do. Keeping it out of the default install removes its
-# large transitive tree (cryptography, tornado, urwid, ldap3, passlib, ...) from
-# every user's environment.
-proxy = ["mitmproxy>=11.0"]
+
+[dependency-groups]
+# Official vendor SDKs, used only by tests/sdk to prove each twin answers the
+# calls real agents make. `pip install --group twin-conformance` (pip >= 25.1).
+twin-conformance = [
+    "PyGithub>=2.5",
+    "stripe>=12.0",
+    "slack-sdk>=3.33",
+    "supabase>=2.15",
+    "google-api-python-client>=2.160",
+    "google-auth>=2.38",
+    "discord.py>=2.5",
+    # Linear publishes no Python SDK; `gql` is what Python agents drive its
+    # GraphQL API with (tests/sdk/test_linear_ts_sdk.py covers @linear/sdk).
+    "gql[httpx]>=3.5",
+]
 
 [project.urls]
 Homepage = "https://usecheckpoint.dev"
@@ -105,12 +123,16 @@ include = ["checkpoint*"]
 "checkpoint" = ["py.typed", "init_templates/*"]
 "checkpoint.dashboard" = ["static/**/*", "static/index.html"]
 "checkpoint.init_templates" = ["**/*"]
-"checkpoint.proxy" = ["Dockerfile", "entrypoint.sh"]
 "checkpoint.demo" = ["*.py", "*.md"]
 # Named twin seeds (`seed: small-project`) are read at runtime from
 # checkpoint/twins/<twin>_seeds/<name>.json — they must ship in the wheel or
 # every seeded scenario 404s on a pip-only install.
-"checkpoint.twins" = ["*_seeds/*.json"]
+# Vendored vendor API schemas (Linear's GraphQL SDL) are read at runtime too.
+"checkpoint.twins" = ["*_seeds/*.json", "*_schema.graphql"]
+# The adversarial pack `checkpoint redteam` runs when a project has none of
+# its own. It lives inside the package for the same reason the seeds do:
+# anything read at runtime is missing from a pip-only install otherwise.
+"checkpoint.redteam" = ["pack/*.md", "pack/*.json"]
 
 [tool.ruff]
 target-version = "py311"
@@ -150,10 +172,16 @@ asyncio_mode = "strict"
 # one hung call hangs the whole run (and the CI job) until the job timeout.
 timeout = 300
 timeout_method = "thread"
+# Dump every thread's stack a minute before that cap fires. pytest-timeout kills
+# the session with a KeyboardInterrupt and, under pytest 9, can crash reading
+# the capture buffer on its way out — so the one thing you needed, the name of
+# the test that hung, is exactly what goes missing. This is pytest's own
+# faulthandler and it prints before any of that happens.
+faulthandler_timeout = 240
 markers = [
     "slow: takes more than a second or two",
     "integration: spawns a real twin subprocess or MCP session",
-    "docker: requires a working Docker daemon",
+    "sdk: drives a twin through an official vendor SDK (twin-conformance group)",
 ]
 
 [tool.coverage.run]

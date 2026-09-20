@@ -1,195 +1,345 @@
 # Checkpoint
 
 [![CI](https://img.shields.io/github/actions/workflow/status/baliutkarsh2/checkpoint/checkpoint-ci.yml?branch=main&label=CI)](https://github.com/baliutkarsh2/checkpoint/actions/workflows/checkpoint-ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/baliutkarsh2/checkpoint/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://github.com/baliutkarsh2/checkpoint/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 
-**The release gate for AI agents.** Run your real agent — unmodified — N times against real tools, score every run, and let a statistical verdict decide: **SHIP** or **BLOCK**. Checkpoint is the CI gate that fails the build *before* a flaky agent reaches production.
+**Prove your agent works before your customers find out it doesn't.**
 
-Agents are non-deterministic, so one green demo run is a coin flip, not a verdict. Hand-written evals miss the long tail, and production is the wrong place to learn that your agent refunds an ineligible order under social pressure. Checkpoint runs each scenario N times, scores every run 0–100 (deterministic checks + an LLM judge), and gates on the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky pass. In Docker mode your agent calls its real APIs unmodified — Checkpoint intercepts at the TLS layer and routes each call to a local stateful twin, so **the code path you ship is the code path you test**. (`checkpoint gate` runs scenarios in subprocess mode today, where your agent reads twin URLs from env; TLS-intercept for the gate is on the roadmap.)
+Checkpoint runs your real agent — unmodified — against stateful copies of the
+services it calls, checks what it actually did to those services, and repeats
+until the pass rate means something. Then it ships or blocks the build.
 
 ```bash
 pip install git+https://github.com/baliutkarsh2/checkpoint   # PyPI release pending
-checkpoint demo          # deterministic, offline, no API key — see it score in ~5s
-```
-
-**Status:** v0.1.0 · open source (Apache-2.0) · statistical gate · trajectory scoring · signed evidence
-
-## Install
-
-```bash
-pip install git+https://github.com/baliutkarsh2/checkpoint   # installs the `checkpoint` CLI
-export OPENAI_API_KEY=sk-...        # only needed for [P] LLM-judged criteria
-```
-
-**Not on PyPI yet.** The distribution will be `checkpoint-agents` once the first release is tagged; until then use the source install above. Note that the bare name `checkpoint` on PyPI is an unrelated project — always install `checkpoint-agents`, never the bare name.
-
-Requires **Python ≥ 3.11**. Docker is optional (used for full real-SDK fidelity — see *Mental model*). Nothing else to build: the dashboard bundle ships with the package, so `checkpoint serve` works straight after install.
-
-**Vendor-neutral.** The judge works with any model — pass `--model` (or set `defaults.judge_model`) to a `gpt-*`, `claude-*`, or `gemini-*` name, or point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint (local, vLLM, OpenRouter). Claude needs `pip install checkpoint-agents[anthropic]`; Gemini and compatible endpoints need nothing extra.
-
-## Quickstart
-
-**1. See it work — no Docker, no API key.**
-
-```bash
 checkpoint demo
 ```
 
-Runs a bundled deterministic scenario against a bundled agent entirely offline (the LLM judge never runs), and prints a green criterion table with `Score: 100/100` in a few seconds. This is the "does it work?" proof.
+```
+File an issue  github · no API key · no network
+  ✓ [D]  Exactly 1 issue was created
+  ✓ [D!] No issues were deleted
+  ✓ [T]  The agent made at most 10 calls
 
-**2. Test a real agent** against a stateful twin with full SDK fidelity (needs Docker + an API key):
-
-```bash
-checkpoint run scenarios/github-happy-path.md \
-    --harness-dir examples/agents/openai-tools \
-    --docker-logs
+  100/100  2 API calls · 3.3s
 ```
 
-The first Docker run builds a small TLS-sidecar image once (~1–2 min); after that a run takes seconds. You'll see the agent's stderr stream live, then a scored criterion table. No Docker? Add `--no-docker` for fast subprocess mode (your agent reads `CHECKPOINT_<CLONE>_URL` instead of hitting intercepted production URLs).
+That took three seconds, sent nothing to the internet, and called no model. A
+real agent made real HTTP calls; a real GitHub twin changed state; the criteria
+were checked against that state.
 
-**3. Open the dashboard** for the same view with history and comparison:
+## Why this exists
+
+Three things go wrong when you test an agent the usual way.
+
+**One run tells you almost nothing.** Agents are stochastic. The run you happen
+to watch is the run you believe, and an agent that works four times in five
+looks perfect until it is in front of a customer.
+
+**Asking the model whether it succeeded is asking the defendant for a verdict.**
+A judge reading the final answer scores what the agent *said*. Agents say they
+filed the ticket, issued the refund, sent the message. Checkpoint scores what
+changed in the service.
+
+**Mocks test the mock.** The moment you stub the SDK, you stop testing the code
+you ship — the retry logic, the pagination, the error branch. Checkpoint
+intercepts TLS locally and routes `https://api.github.com` into a twin that
+holds state, so the code path under test is the one that ships. No Docker, no
+recorded cassettes, no changes to your agent.
+
+## Test your agent
 
 ```bash
-checkpoint serve   # http://127.0.0.1:4001
-```
-
-## Mental model
-
-Checkpoint is a loop with four moving parts:
-
-1. **Twins** — stateful synthetic SaaS APIs (GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace) that run locally and hold real state across a multi-step run. They are **wire-shaped**: they reproduce the endpoints your scenarios exercise — the GitHub twin emits `Link` pagination headers, the Stripe twin parses the SDKs' nested/array form encoding — but not every corner of each API (Linear is REST/MCP, not the official GraphQL SDK). Fault-injection varies by twin: `rate_limit` (GitHub, Stripe, Linear, Supabase), `read_only` and `permissions_denied` (GitHub). Reach for a twin when you need to *inject faults you can't safely record*.
-2. **Harness** — your agent, referenced by a command (zero-code) or a Docker image. Checkpoint never modifies your code.
-3. **Scenario** — a markdown file: a `## Setup` seed, a `## Prompt` task, and `## Success Criteria` (`[D]` deterministic + `[P]` LLM-judged).
-4. **Gate** — run each scenario N times, score every run 0–100, and exit non-zero if the average falls below your `--pass-threshold`. That exit code is the whole point: it blocks a bad build in CI.
-
-Your agent talks to production URLs; in Docker mode a mitmproxy sidecar transparently routes those calls to the twins, so real SDKs work unmodified. In `--no-docker` mode the twins run as local processes and your agent reads their URLs from env vars.
-
-## Test your own agent
-
-The zero-code path — your agent code is never modified.
-
-```bash
-cd /your/agent/repo
+cd your-agent-repo
 checkpoint init --command "python my_agent.py"
+checkpoint run
 ```
 
-This writes `harness.json` (how to invoke your agent), `.checkpoint.json` (project defaults), and `scenarios/quickstart.md` (a starter). Checkpoint sets `CHECKPOINT_TASK=<scenario prompt>` and runs your command. Delivery modes cover any agent shape:
+`init` writes two files and touches nothing else: `checkpoint.toml` and a
+starter scenario. There is no harness, no wrapper, no adapter. Checkpoint runs
+the command that already runs your agent, puts the task in `$CHECKPOINT_TASK`,
+and reads the final answer from stdout.
 
-| Your agent reads the prompt from… | Flag |
-|---|---|
-| Env var `CHECKPOINT_TASK` (default) | _(no flag)_ |
-| A custom env var | `--task-env MY_VAR` |
-| A CLI arg | `--task-via arg --task-arg --prompt` |
-| Stdin | `--task-via stdin` |
+Your agent takes the task another way? `--task-via arg --task-arg --prompt`
+appends it to the command line; `--task-via stdin` pipes it. It is an HTTP
+service? Put `url = "http://127.0.0.1:8000/chat"` under `[agent]`. It logs to
+stdout? Write the answer to `$CHECKPOINT_ANSWER_FILE` instead.
 
-`--task-via arg` and `stdin` require `--no-docker` today (Docker mode delivers the task via env var). Your agent prints its final answer to stdout — JSON (`{"text": "..."}`) or plain text — and exits 0 on success.
+## A scenario
 
-## Writing scenarios
+One markdown file. The task, and what has to be true afterwards.
 
 ```markdown
-# Quickstart
+---
+twins: [github]
+seed: small-project
+---
+# File a bug
 
-## Setup
-Use the small-project seed.
+## Task
+File an issue in acme/webapp titled "Login broken".
 
-## Prompt
-File a GitHub issue in `acme/webapp` titled "Login broken" with the symptom.
-
-## Success Criteria
-- [D] An issue titled "Login broken" exists
-- [D] The issue is in the open state
-- [T] no redundant calls
-- [P] The agent's final answer references the new issue number
-
-## Config
-clones: github
+## Criteria
+- [D] Exactly 1 issue was created
+- [D!] No issues were deleted
+- [T] The agent made at most 6 calls
+- [P] The final answer quotes the issue number
 ```
 
-`[D]` checks final twin state, `[P]` is LLM-judged, and **`[T]` scores the agent's trajectory** — the actual sequence of API calls, deterministically and for free (`at most N calls`, `no failed calls`, `no redundant calls`, `did not call DELETE`). Output-only checks miss the agent that reaches the right end state through a wasteful or unsafe path. Lint with `checkpoint validate scenarios/my-test.md`.
+`[D]` checks the state the agent left behind, `[T]` the calls it made, `[P]`
+what it said — and only `[P]` costs a model call. `!` marks a criterion that
+must pass whatever the rest score.
 
-## Use it from your coding agent (MCP)
+Each criterion becomes an assertion over the run. `checkpoint check` shows you
+which one before you spend a single run on it:
 
-`checkpoint mcp` runs Checkpoint as an MCP server over stdio, exposing `list_scenarios`, `run_scenario`, and `gate` as tools. Register it with Claude Code / Cursor (command `checkpoint`, args `["mcp"]`) and the agent can test — and gate — the very agent it's writing, inline, without leaving the editor.
-
-## The dashboard
-
-`checkpoint serve` boots a local web UI at `http://127.0.0.1:4001`:
-
-- **Failure-first run inspection** — failed runs lead with each failed criterion, the judge's reasoning, and the agent's final answer.
-- **Live run streaming** over Server-Sent Events; **two-up comparison**; **live twin management** (start/stop/seed/reset, list MCP tools); **anonymized download** (emails, PATs, and keys regex-redacted).
-
-**Running it safely:** the dashboard binds to `127.0.0.1` and needs no auth there. If you bind it anywhere else you must set `CHECKPOINT_DASHBOARD_API_KEY` (it refuses to start on a non-loopback bind without one). `POST /api/jobs` runs agent harnesses — only point it at code you trust, and use `CHECKPOINT_DASHBOARD_READ_ONLY=1` for viewer-only instances.
-
-## The gate
-
-Agents are non-deterministic, so a single green run is a coin flip, not a verdict. `checkpoint gate` runs each scenario N times and decides from the **distribution** of outcomes — a Wilson confidence interval on the pass rate — not one lucky run:
-
-```bash
-checkpoint gate scenarios/ --harness "python my_agent.py" -n 20
+```
+[D]   Exactly 1 issue was created      pattern: count(created.github.issues) == 1
+[D!]  No issues were deleted           pattern: count(deleted.github.issues) == 0
+[T]   The agent made at most 6 calls   pattern: count(trace) <= 6
+[P]   The final answer quotes ...      judged: the judge model reads the final answer
 ```
 
-Each scenario is classified `stable_pass` / `flaky` / `stable_fail` / `regression`, and the run gets one verdict: **SHIP** (every scenario confidently passes), **BLOCK** (any confident failure/regression — exit 1), or **CONDITIONAL** (something's flaky; exit 0, or 1 with `--strict`). Tune with `--ship-min` / `--block-max` / `--pass-threshold`. Pass rates are remembered per scenario, so a build that *used* to pass and now fails reads as a **regression**, not just a failure (`--no-baseline` to disable).
+Write your own when you want no ambiguity and no model in the loop:
 
-Add `--certificate cert.json` to issue a **signed Trust Certificate** — the verdict, the per-scenario statistical evidence, and the agent/commit/model it was tested against, sealed with Ed25519. `checkpoint cert verify cert.json` proves it wasn't altered.
+```markdown
+- [D] The issue is still open  =>  count(github.issues[title == "Login broken" && state == "open"]) == 1
+```
 
-`checkpoint compliance --certificate cert.json --redteam redteam.json --out report.md` rolls the gate certificate and red-team results into an **Agent Assurance Report** — a graded APPROVED / CONDITIONAL / REJECTED verdict with the statistical evidence and OWASP Agentic / NIST AI RMF / EU AI Act cross-references — the document a compliance reviewer or a customer's vendor-review team actually asks for.
+**The rule that matters:** a criterion must fail for an agent that did nothing.
+"An issue exists" can already be true of the seed. "Exactly one issue was
+created" cannot. `checkpoint check` is where a vacuous criterion shows itself.
 
-## Red-teaming
+## The verdict
 
-`checkpoint redteam --harness "python my_agent.py"` runs an adversarial pack where a passing agent is one that *resists* (refuses the destructive instruction, ignores the injected command, declines to exfiltrate), and reports which attack categories your agent is vulnerable to. Exit 1 if any attack lands. The catalog maps scenarios to the full **OWASP Agentic Top 10** (ASI01–ASI10), but the *bundled* pack currently ships a single ASI04 (tool-misuse) probe — bring your own tagged scenarios or generate them with `gen-attacks` for broader coverage. Tag your own adversarial scenarios with `owasp: ASI04` in `## Config` to include them, or generate new ones: `checkpoint gen-attacks <base-scenario> --out scenarios/redteam` asks a model to invent adversarial variations across OWASP categories (review them before gating — generated attacks are candidates, not verdicts).
+`checkpoint run` is the loop you stay in while building. `checkpoint gate` is
+what CI reads.
 
-## Simulated users
+```
+ Scenario             Pass   Rate     95% CI      pass^8   Reading
+───────────────────────────────────────────────────────────────────
+ file-a-bug.md       16/16   100%   [81%, 100%]     100%   stable pass
+ refund-flow.md      12/16    75%   [51%, 90%]       10%   flaky
 
-A single prompt tests a single exchange; real users push back, clarify, and get impatient. `checkpoint simulate <scenario> --harness "..." --goal "..."` drives an LLM **persona** through a multi-turn conversation with your agent against stateful twins (state accumulates turn over turn), then scores whether the goal was met. Because simulated users are imperfect proxies for humans, every run reports a **plausibility signal** — a transparent heuristic on the conversation's shape (turns taken, whether the persona gave up), so the score is never mistaken for ground truth. Use `--persona`, `--tone`, `--patience`, and `--adversarial` to shape the user.
+┌─── gate ───┐
+│ BLOCK      │
+└────────────┘
+```
 
-## CI integration
+The gate runs every scenario N times and decides from the distribution — a
+Wilson confidence interval on the pass rate, not one lucky run. `pass^8` is the
+number that tends to land: an agent that passes 75% of the time completes eight
+steps in a row about a tenth of the time.
 
-Drop the GitHub Action into your workflow:
+| Verdict | Exit | Meaning |
+|---|---|---|
+| SHIP | 0 | every scenario confidently passes |
+| BLOCK | 1 | a confident failure, a regression, or a scenario that failed every run |
+| CONDITIONAL | 2 | enough runs to decide, results genuinely mixed |
+| INCONCLUSIVE | 3 | too few runs for SHIP to be reachable; the output says how many it needs |
+| ERROR | 4 | the sandbox, judge or scenarios broke — no verdict is possible, and none is invented |
+
+Two things that are easy to get wrong and this gets right. A perfect run of
+fewer than 16 scenarios cannot clear the default bar, so it reports
+INCONCLUSIVE rather than a green build. And broken plumbing is never a verdict:
+a missing API key, a sandbox that would not start, a criterion that could not be
+evaluated — each is an ERROR, not a failing agent.
+
+Pass rates are remembered per scenario and updated **only on a SHIP**, so a
+build that used to pass and now fails reads as a regression instead of quietly
+resetting the bar.
+
+## In CI
 
 ```yaml
 - uses: baliutkarsh2/checkpoint@main
   with:
-    target: scenarios/
-    harness: "python my_agent.py"
-    runs: "20"
+    command: python my_agent.py
+    runs: "16"
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Or call the CLI directly: `checkpoint gate scenarios/ --harness "python my_agent.py" -n 20`. Either way, exit code 1 blocks the pipeline on BLOCK (add `strict: true` / `--strict` to also block on CONDITIONAL). The gate reports **pass^k** — the unbiased estimate that k independent runs all pass — so a 90%-pass agent reads honestly as pass^10 ≈ 35%, not a reassuring "90%". Run records land in `.checkpoint/cache/runs/*.json`.
+Or `checkpoint gate` directly — the exit code is the whole product.
+`checkpoint init --ci` writes a workflow that gates every pull request and keeps
+the evidence as a build artifact.
 
-## Reference
+## What you get to test against
 
-Full guides live in **[docs/](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/)** — [integrate your agent](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/integrate-your-agent.md), [architecture](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/architecture.md), [self-hosting](https://github.com/baliutkarsh2/checkpoint/blob/main/docs/self-hosting.md). Run `checkpoint <command> --help` for full options.
+Seven services, running locally, holding state across a multi-step run:
+**GitHub, Slack, Stripe, Linear, Supabase, Discord, Google Workspace**. Each one
+answers the calls the vendor's own SDK makes — PyGithub, `slack_sdk`, `stripe`,
+`@linear/sdk`, `supabase-py`, `discord.py`, `google-api-python-client` — which is
+checked in CI against those SDKs on every commit, so a twin bug cannot quietly
+fail a correct agent. Each exposes a REST surface and an MCP server.
 
-| Command | Purpose |
-|---|---|
-| `checkpoint init --command "..."` | Scaffold integration in the current repo (zero-code) |
-| `checkpoint run <scenario.md>` | Run a scenario, print the score |
-| `checkpoint gate <dir/> --harness "..." -n 20` | Statistical release gate — SHIP/CONDITIONAL/BLOCK from N-run pass-rate CIs |
-| `checkpoint gate ... --certificate cert.json` / `checkpoint cert verify cert.json` | Issue / verify a signed Trust Certificate |
-| `checkpoint redteam --harness "..."` | Run the adversarial pack (OWASP-Agentic catalog; one ASI04 probe bundled); report vulnerabilities |
-| `checkpoint simulate <scenario> --harness "..."` | Multi-turn simulated-user conversation with a calibration confidence |
-| `checkpoint run <dir/> -n 3 --pass-threshold 80` | Simpler mean-based CI gate |
-| `checkpoint serve` | Start the web dashboard |
-| `checkpoint mcp` | Run Checkpoint as an MCP server so a coding agent can test the agent it's building |
-| `checkpoint redteam-mcp` | Serve a poisoned MCP server (tool-poisoning / injection techniques from the OWASP MCP Top 10) to test MCP-attack resistance |
-| `checkpoint validate <scenario.md>` | Lint a scenario |
-| `checkpoint clone start \| stop \| seed \| reset <id>` | Manage long-lived twin sessions |
-| `checkpoint compare <run_a> <run_b>` | Criterion-level diff between two runs |
-| `checkpoint db migrate` / `checkpoint db list` | Import run records into the SQLite store and query them |
-| `checkpoint otel <trace.json>` | Summarize an agent's trajectory from an OpenTelemetry GenAI trace |
-| `checkpoint doctor` | Verify environment (Python, Docker, sidecar image, API key) |
+`checkpoint twins list` shows them and the datasets they ship with.
 
-## Roadmap
+They also misbehave on request, which is the part you cannot rehearse against a
+real API: rate limits, permission denials, read-only mode, latency, a seeded
+error rate, or a targeted failure on one specific call.
 
-Statistical gating (N-run confidence intervals, flake vs. regression), vendor-neutral judging, signed Trust Certificates, the OWASP-Agentic red-team catalog with automated adversarial generation, trajectory-level `[T]` scoring, and a SQLite run store all ship today. Next: **TLS-intercept (Docker) mode for `checkpoint gate`** so the gate tests the exact shipped code path, **broader bundled red-team coverage** across the remaining ASI categories, **record/replay cassettes** (capture your agent's real API traffic once, replay it deterministically — twins become the fault-injection layer), **judge calibration** against a human gold set with `pass^k` reliability reporting, persona calibration against real transcripts, and organization-rooted certificate signing. Follow along or contribute — see [CONTRIBUTING](https://github.com/baliutkarsh2/checkpoint/blob/main/CONTRIBUTING.md).
+```bash
+checkpoint run --rate-limit 5         # the API starts refusing after 5 calls
+checkpoint run --read-only            # every write is refused, and attempting one fails the run
+checkpoint run --egress none          # the agent cannot reach anything but the twins
+```
 
-## Contact
+Testing something we do not ship? Point Checkpoint at an ASGI app of your own
+and it becomes a twin like any other:
 
-[usecheckpoint.dev](https://usecheckpoint.dev) · hello@usecheckpoint.dev
+```toml
+[twins.billing]
+app = "mycompany.testing.billing_twin:app"
+domains = ["api.billing.internal"]
+```
 
+## Agents that edit a repository
+
+Not every agent calls an API. Point a scenario at a fixture directory and your
+agent runs inside a throwaway copy of it, with the diff it leaves behind as the
+thing you score:
+
+```yaml
 ---
+workspace: fixtures/small-repo
+---
+```
 
-Apache-2.0 — see [LICENSE](https://github.com/baliutkarsh2/checkpoint/blob/main/LICENSE). [Contributing](https://github.com/baliutkarsh2/checkpoint/blob/main/CONTRIBUTING.md) · [Code of Conduct](https://github.com/baliutkarsh2/checkpoint/blob/main/CODE_OF_CONDUCT.md) · [Security](https://github.com/baliutkarsh2/checkpoint/blob/main/SECURITY.md) · [Changelog](https://github.com/baliutkarsh2/checkpoint/blob/main/CHANGELOG.md). Hosted and cloud components are separate and not covered by this license.
+```
+- [D] Exactly 1 file was created  =>  count(created.workspace.files) == 1
+- [D!] poetry.lock was not modified
+- [D] src/app.py defines main  =>  count(workspace.files[path == "src/app.py" && content ~ /def main/]) == 1
+```
+
+Your agent needs no changes: its working directory *is* the tree. The fixture
+is never written to, and every run starts from a fresh copy, so sixteen gate
+runs are sixteen independent attempts. A workspace is a disposable tree and a
+diff, not a jail — see [the docs](docs/scenarios.md) for what that does and
+does not protect you from.
+
+## Beyond the happy path
+
+```bash
+checkpoint redteam            # adversarial scenarios, mapped to OWASP Agentic categories
+checkpoint simulate refund.md # a simulated user who argues, escalates and changes their mind
+checkpoint gate --certificate release.json   # a signed, verifiable record of the verdict
+checkpoint report --certificate release.json # the assurance document a reviewer asks for
+```
+
+`checkpoint redteam` reports which *class* of attack lands — a prompt injection
+hidden in tool output, a destructive instruction, an exfiltration attempt — and
+keeps three outcomes apart that are easy to blur into one: "resisted", "nothing
+landed, but the runs cannot prove it", and "the runs could not be scored at
+all". Only the first is a pass, and none of them is invented from an absence.
+
+The bundled pack ships inside the package and covers all ten OWASP Agentic
+categories, one scenario each, across all seven twins. Every one of them pairs
+its attack with a legitimate task the agent is expected to finish, so an agent
+that answers "I won't do that" and stops scores no better than one that fell
+for it.
+
+## How it works
+
+```
+checkpoint.toml → Agent          the command that already runs your agent
+                  Sandbox        twins + a TLS intercept proxy + an egress policy
+                  criteria       compiled to assertions over what changed
+                  judge          only for [P], only when one is needed
+                  verdict        a pass rate with a confidence interval
+```
+
+The intercept proxy is Checkpoint's own: it mints a local CA, serves per-host
+certificates, and hands your agent the environment every major HTTP client
+respects. Your agent's own calls to OpenAI or Anthropic pass through untouched;
+everything else is subject to the egress policy and reported when blocked.
+
+Everything the CLI does is importable:
+
+```python
+from checkpoint import Agent, parse_file, run_scenario
+
+result = run_scenario(parse_file("scenarios/refund.md"), Agent(command="python my_agent.py"))
+print(result.score, [c.text for c in result.criteria if not c.passed])
+```
+
+There is a pytest plugin too, so a scenario can be an ordinary test:
+
+```python
+def test_refund_flow(checkpoint_run):
+    result = checkpoint_run("scenarios/refund.md")
+    assert result.score == 100, [c.text for c in result.criteria if not c.passed]
+```
+
+## Install
+
+```bash
+pip install git+https://github.com/baliutkarsh2/checkpoint
+export OPENAI_API_KEY=sk-...     # only for [P] criteria; assertion-only scenarios need nothing
+```
+
+Python 3.11 or newer. Nothing to build, nothing to run alongside it. Check the
+machine with `checkpoint doctor`, which starts a twin and self-tests the proxy
+rather than taking your word for it.
+
+**Not on PyPI yet.** The distribution will be `checkpoint-agents`; the bare name
+`checkpoint` on PyPI is an unrelated project.
+
+**Any judge model.** Pass `--model` a `gpt-*`, `claude-*` or `gemini-*` name, or
+set it once under `[judge]` in `checkpoint.toml`. For a local or self-hosted
+model, point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint. Claude
+needs the `anthropic` extra (`pip install "checkpoint-agents[anthropic] @ git+https://github.com/baliutkarsh2/checkpoint"` until the PyPI release); the rest
+need nothing extra.
+
+## Where it is honest about itself
+
+- The twins reproduce the endpoints scenarios exercise, not every corner of
+  every API. `checkpoint twins list` is the inventory, and the conformance
+  suites in `tests/sdk/` are the evidence.
+- A `[P]` criterion is a model's opinion. It is scored separately, its reasoning
+  is recorded, and it can answer "unknown" rather than guess.
+- `checkpoint redteam generate` writes attack *candidates*. A model that writes
+  the test is not also the authority on whether you passed it.
+- A run that could not be scored is never counted as a pass or a failure.
+
+## Commands
+
+```
+checkpoint init      point Checkpoint at your agent
+checkpoint demo      see it work — offline, no API key
+checkpoint run       run scenarios against your agent
+checkpoint gate      decide whether this build ships
+checkpoint redteam   run adversarial scenarios
+checkpoint simulate  hold a conversation as a simulated user
+checkpoint new       write a new scenario
+checkpoint check     check scenarios before you run them
+checkpoint twins     the services scenarios run against
+checkpoint cert      issue and verify signed verdicts
+checkpoint report    build an assurance report
+checkpoint runs      past runs: list, show, compare, export
+checkpoint view      open the dashboard
+checkpoint mcp       serve Checkpoint over MCP
+checkpoint doctor    check this machine
+```
+
+`checkpoint mcp` puts all of this inside your coding agent: any MCP client can
+list scenarios, run one, and gate the build while it writes the very agent under
+test.
+
+## Documentation
+
+[Getting started](docs/getting-started.md) ·
+[Scenarios](docs/scenarios.md) ·
+[Twins](docs/twins.md) ·
+[The gate](docs/gate.md) ·
+[Architecture](docs/architecture.md) ·
+[Self-hosting](docs/self-hosting.md)
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Read the evaluator before you trust the verdict — the assertion language is
+documented and tested in `checkpoint/eval/expr.py`, and every criterion's
+assertion is stored with the run.
+
+Apache-2.0. See [LICENSE](LICENSE) and [SECURITY.md](SECURITY.md).

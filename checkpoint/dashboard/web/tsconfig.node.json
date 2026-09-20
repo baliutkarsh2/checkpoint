@@ -1,6 +1,11 @@
 {
   "compilerOptions": {
     "composite": true,
+    // A composite project has to emit. Without these it writes vite.config.js
+    // and vite.config.d.ts next to the source it compiles, which then need
+    // hiding in .gitignore — so send them somewhere already disposable.
+    "outDir": "node_modules/.tmp/node",
+    "tsBuildInfoFile": "node_modules/.tmp/node/tsconfig.node.tsbuildinfo",
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",

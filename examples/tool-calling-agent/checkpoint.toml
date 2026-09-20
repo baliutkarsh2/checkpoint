@@ -1,0 +1,21 @@
+# How Checkpoint runs and tests this agent.
+
+[agent]
+# The command that already runs the agent. Checkpoint sets $CHECKPOINT_TASK to
+# the scenario's task and reads the final answer from stdout.
+command = "python agent.py"
+
+[judge]
+# Used only for the [P] criterion, which is a matter of judgement rather than a
+# state check. Every other criterion in this example is a pinned assertion.
+model = "gpt-5.6-luna"
+
+[sandbox]
+# Route calls to api.github.com and slack.com into the twins, so the SDK code
+# path under test is the one that ships.
+intercept = true
+# The agent still has to reach its model provider, so "llm" rather than "none".
+egress = "llm"
+
+[gate]
+runs = 16

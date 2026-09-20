@@ -90,7 +90,13 @@ def test_changelog_exists_and_is_linked():
 
 
 def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
-    """The pytest11 entry point loads in every environment that installs us."""
+    """The pytest11 entry point loads in every environment that installs us.
+
+    Nothing here may cost real import time, because the price is paid by every
+    pytest run in every project that has checkpoint-agents installed — including
+    the ones that never write a Checkpoint test. The fixtures import what they
+    need inside their own bodies instead.
+    """
     import ast
 
     src = (REPO_ROOT / "checkpoint" / "pytest_plugin.py").read_text(encoding="utf-8")
@@ -99,25 +105,32 @@ def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
         if isinstance(node, ast.Import):
             top += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
+            # `if TYPE_CHECKING:` imports never run, so they are free.
             top.append(node.module or "")
-    for heavy in ("httpx", "checkpoint.clone_manager"):
-        assert heavy not in top, (
-            f"{heavy} is imported at module scope; it would be imported on every "
-            "pytest run in any project that installs checkpoint-agents"
-        )
-
-
-def test_mitmproxy_is_not_a_core_dependency():
-    """The TLS sidecar's dependency must not be forced on every install.
-
-    checkpoint/proxy/addon.py is loaded by mitmdump inside the sidecar
-    container, so the host process never imports mitmproxy. Shipping it as a
-    core dependency put its large transitive tree (cryptography, tornado,
-    urwid, ldap3, passlib, ...) into every environment and made a clean install
-    slow enough that pip gave up with `resolution-too-deep`.
-    """
-    core = " ".join(PYPROJECT["project"]["dependencies"])
-    assert "mitmproxy" not in core, "mitmproxy belongs in the `proxy` extra"
-    assert "mitmproxy" in " ".join(
-        PYPROJECT["project"]["optional-dependencies"]["proxy"]
+    heavy = ("httpx", "uvicorn", "fastapi", "openai",
+             "checkpoint", "checkpoint.engine", "checkpoint.twins", "checkpoint.twins.sessions")
+    offenders = [name for name in heavy if name in top]
+    assert not offenders, (
+        f"{offenders} imported at module scope; that cost lands on every pytest "
+        "run in any project that installs checkpoint-agents"
     )
+
+
+def test_mitmproxy_is_not_a_dependency_anywhere():
+    """TLS interception is done by checkpoint/proxy, not mitmproxy.
+
+    mitmproxy pins exact h11/h2 versions and caps typing-extensions, so merely
+    co-installing it (even as an extra, even in dev) silently downgraded other
+    packages — mcp was forced back to 1.x. It must not come back through any
+    dependency group.
+    """
+    groups = {"dependencies": PYPROJECT["project"]["dependencies"],
+              **PYPROJECT["project"].get("optional-dependencies", {})}
+    offenders = [name for name, deps in groups.items() if "mitmproxy" in " ".join(deps)]
+    assert not offenders, f"mitmproxy is back in: {offenders}"
+
+
+def test_intercept_proxy_dependencies_are_declared():
+    """checkpoint/proxy imports these directly, so they must not rely on being transitive."""
+    core = {d.split(">=")[0] for d in PYPROJECT["project"]["dependencies"]}
+    assert {"h11", "cryptography", "certifi", "httpx"} <= core

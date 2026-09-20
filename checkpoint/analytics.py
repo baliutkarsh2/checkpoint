@@ -10,23 +10,30 @@ def load_runs_for_scenario(
     runs_dir: Path,
     limit: int = 100,
 ) -> list[dict]:
-    """Return run records whose scenario name contains scenario_pattern (case-insensitive)."""
+    """The most recent runs whose scenario name contains ``scenario_pattern``.
+
+    Ordered by the timestamp each run recorded for itself, not by the file's
+    mtime. Several runs finishing inside the same second write files whose
+    mtimes tie, and a tie leaves the order to the filesystem — so "the last two
+    runs" quietly became "two runs", which is the wrong answer to give anyone
+    looking for a regression.
+    """
     if not runs_dir.exists():
         return []
-    files = sorted(runs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    out: list[dict] = []
+    found: list[tuple[str, float, dict]] = []
     pattern = scenario_pattern.lower()
-    for f in files:
+    for path in runs_dir.glob("*.json"):
         try:
-            rec = json.loads(f.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
+            record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+            mtime = path.stat().st_mtime
+        except (OSError, ValueError):
             continue
-        if pattern and pattern not in (rec.get("scenario") or "").lower():
+        if pattern and pattern not in (record.get("scenario") or "").lower():
             continue
-        out.append(rec)
-        if len(out) >= limit:
-            break
-    return out
+        stamp = str((record.get("env") or {}).get("timestamp") or "")
+        found.append((stamp, mtime, record))
+    found.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [record for _, _, record in found[:limit]]
 
 
 def compute_trend(runs: list[dict]) -> dict:

@@ -3,7 +3,8 @@
 A gate produces a verdict; a certificate makes that verdict a portable,
 tamper-evident artifact you can attach to a release, hand to a compliance
 reviewer, or show a customer's vendor-review team. It records what was tested
-(the agent, its harness fingerprint, the commit, the model), the statistical
+(the agent, a fingerprint of the command that ran it, the commit, the model),
+the statistical
 evidence per scenario, and the verdict — then signs the whole thing with
 Ed25519 so any later change is detectable.
 
@@ -36,18 +37,26 @@ def _canonical(obj: Any) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def harness_fingerprint(harness_cmd: list[str]) -> str:
-    return "sha256:" + hashlib.sha256(" ".join(harness_cmd).encode("utf-8")).hexdigest()
+def command_fingerprint(command: list[str] | str) -> str:
+    """A stable identifier for what was run, without publishing the command.
+
+    A certificate travels; the command that produced it may name an internal
+    path or a private module. The hash still proves two certificates describe
+    the same thing.
+    """
+    text = command if isinstance(command, str) else " ".join(command)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def build_certificate(
     gate_result,
     *,
     agent: str,
-    harness_cmd: list[str],
+    command: list[str] | str,
     commit_sha: str | None = None,
     model: str | None = None,
     valid_days: int = 90,
+    gate_id: str | None = None,
 ) -> dict:
     """Assemble the unsigned certificate body from a GateResult."""
     now = datetime.datetime.now(datetime.UTC)
@@ -63,6 +72,10 @@ def build_certificate(
                            for k in (1, 2, 5, 10) if k <= s.n},
             "classification": s.classification,
             "mean_score": round(s.mean_score, 2),
+            # Sealed alongside the numbers: how many runs this verdict would have
+            # needed to reach SHIP, and how many produced no evidence at all.
+            "runs_needed_to_ship": s.min_runs,
+            "error_runs": s.error_runs,
         }
         for s in gate_result.scenarios
     ]
@@ -71,7 +84,7 @@ def build_certificate(
         "schema": SCHEMA,
         "subject": {
             "agent": agent,
-            "harness": harness_fingerprint(harness_cmd),
+            "command": command_fingerprint(command),
             "commit_sha": commit_sha,
             "model": model,
         },
@@ -86,12 +99,17 @@ def build_certificate(
         "evidence": {
             "scenario_count": len(scenarios),
             "scenarios": scenarios,
+            # Files under the target that were not scenarios. Recorded so a
+            # reviewer can see what the gate chose not to run.
+            "skipped": [{"path": s.path, "reason": s.reason} for s in gate_result.skipped],
         },
         "issued_at": now.isoformat(),
         "expires_at": (now + datetime.timedelta(days=valid_days)).isoformat(),
     }
-    # A content id derived from the canonical body — stable and reproducible.
-    body["gate_id"] = hashlib.sha256(_canonical(body)).hexdigest()[:16]
+    # The id of the gate run that earned this certificate, so an auditor holding
+    # the document can find the runs behind it. Falls back to a content id
+    # derived from the canonical body for a certificate built on its own.
+    body["gate_id"] = gate_id or hashlib.sha256(_canonical(body)).hexdigest()[:16]
     return body
 
 

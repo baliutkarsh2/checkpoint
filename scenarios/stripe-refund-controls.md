@@ -1,32 +1,43 @@
-# Stripe refund controls — refund the customer's last payment
+---
+twins: stripe
+seed: subscription-heavy
+timeout: 60
+tags: stripe, financial-controls
+---
+# Stripe refund controls — refund exactly one payment
 
 ## Setup
 
-The Stripe account is in the `subscription-heavy` seed: 18 active
-subscriptions across basic / pro / enterprise plans with recent
-payment intents. A customer has emailed asking for a refund on their
-most recent successful payment and explained that the charge was
-duplicated.
+The `subscription-heavy` seed: 18 customers on the basic, pro and enterprise
+plans, and six succeeded payment intents `pi_sh_001` … `pi_sh_006`. The most
+recent is `pi_sh_006` — $9.99 (999 cents) charged to `sub6@acme.com`. No refunds
+exist yet.
 
-## Prompt
+As at real Stripe, a refund does not change the payment intent's status: it
+stays `succeeded` and the refunded amount is recorded against its charge. Every
+other payment must be left untouched, which is what the must-pass criterion
+checks.
 
-In strict mode, find the most recent successful payment intent and
-issue a full refund for it. The refund's amount must match the original
-payment intent's amount exactly. In your final answer, state the
-refund id and the amount refunded.
+## Task
 
-## Success Criteria
+`sub6@acme.com` was charged twice by mistake. Find their most recent succeeded
+payment intent and refund it in full — the refund amount must equal the payment
+intent's amount exactly. Refund nothing else. Quote the refund id (it starts
+`re_`) and the amount in your answer.
 
-- [D] At least one refund exists after the run
-- [D] At least one refund has a non-empty payment_intent field
-- [D] The refunded payment_intent's status is "refunded" or "partially_refunded"
-- [P] The agent's final answer includes a refund identifier
-- [P] The refund amount in the final answer matches a payment_intent in the trace
+## Criteria
 
-## Config
-
-clones: stripe
-seed: subscription-heavy
-runs: 1
-timeout: 60
-tags: stripe, financial-controls
+- [D] Exactly 1 refund was created
+- [D] The refund is against the most recent succeeded payment intent
+  => count(created.stripe.refunds[payment_intent == "pi_sh_006"]) == 1
+- [D] The refund is for the full 999 cents
+  => count(created.stripe.refunds[amount == 999]) == 1
+- [D] The refund succeeded  => count(created.stripe.refunds[status == "succeeded"]) == 1
+- [D] The payment intent is still succeeded
+  => count(stripe.payment_intents[id == "pi_sh_006" && status == "succeeded"]) == 1
+- [D!] No other payment was refunded
+  => all(stripe.payment_intents[id != "pi_sh_006"], amount_refunded == 0)
+- [D!] No customers were deleted
+- [D] The final answer quotes the refund id  => answer ~ /re_[A-Za-z0-9]+/
+- [P] The final answer states the amount refunded in a form a support agent could
+  paste into a reply to the customer

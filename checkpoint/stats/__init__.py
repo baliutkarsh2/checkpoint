@@ -1,5 +1,22 @@
 """Statistical primitives for gating non-deterministic agent runs."""
-from .intervals import ProportionCI, classify_stability, wilson_interval
+from .intervals import (
+    TOLERANCE,
+    ProportionCI,
+    classify_stability,
+    is_regression,
+    runs_needed,
+    wilson_interval,
+    z_for,
+)
 from .reliability import pass_hat_k
 
-__all__ = ["wilson_interval", "ProportionCI", "classify_stability", "pass_hat_k"]
+__all__ = [
+    "TOLERANCE",
+    "ProportionCI",
+    "classify_stability",
+    "is_regression",
+    "pass_hat_k",
+    "runs_needed",
+    "wilson_interval",
+    "z_for",
+]
