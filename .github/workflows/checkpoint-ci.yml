@@ -197,18 +197,25 @@ jobs:
           npm run build
 
       # The built bundle is committed so `pip install` from git (and any source
-      # checkout) has a working dashboard without needing Node. That only stays
-      # true if it matches the source, so rebuild and compare byte-for-byte.
+      # checkout) has a working dashboard without needing Node. Diffing the
+      # rebuilt output against it does not work — the bundler is not
+      # byte-reproducible across operating systems and Node majors, so a correct
+      # bundle built on a laptop fails on this runner. What has to be true is
+      # narrower: nobody changed the SPA source and forgot to rebuild. The build
+      # stamps a hash of its inputs beside the output; recompute and compare.
       - name: Verify the committed SPA bundle is current
+        working-directory: checkpoint/dashboard/web
         run: |
-          if ! git diff --quiet -- checkpoint/dashboard/static/; then
-            echo "::error::checkpoint/dashboard/static/ is stale."
+          committed=$(cat ../static/.source-hash)
+          npm run --silent stamp
+          rebuilt=$(cat ../static/.source-hash)
+          if [ "$committed" != "$rebuilt" ]; then
+            echo "::error::The SPA source changed but checkpoint/dashboard/static/ was not rebuilt."
             echo "Rebuild and commit it:"
             echo "  cd checkpoint/dashboard/web && npm ci && npm run build"
-            git diff --stat -- checkpoint/dashboard/static/
             exit 1
           fi
-          echo "OK: committed bundle matches a fresh build"
+          echo "OK: the committed bundle was built from this source"
 
       # 1b. Render smoke test: serve the freshly built bundle headlessly and
       # assert it mounts, routes, and is styled by Tailwind. This is the

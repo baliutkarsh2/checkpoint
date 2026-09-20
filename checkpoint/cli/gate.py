@@ -28,6 +28,7 @@ from ._shared import (
     resolve_agent,
     resolve_options,
     sandbox_options,
+    short_path,
     verdict_color,
 )
 
@@ -186,10 +187,10 @@ def _target(proj, target) -> Path:
     paths = proj.scenario_paths()
     if len(paths) > 1:
         fail("this project declares several scenario paths; gate one at a time",
-             hint="  " + "\n  ".join(f"checkpoint gate {p}" for p in paths))
+             hint="  " + "\n  ".join(f"checkpoint gate {short_path(p)}" for p in paths))
     root = paths[0]
     if not root.exists():
-        fail(f"no scenarios to gate: {root} does not exist",
+        fail(f"no scenarios to gate: {short_path(root)} does not exist",
              hint="Run `checkpoint init` to set the project up, or name a target.")
     return root
 
