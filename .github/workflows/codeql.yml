@@ -4,7 +4,6 @@ on:
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, master]
   schedule:
     - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
 
