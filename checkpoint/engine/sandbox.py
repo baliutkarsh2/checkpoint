@@ -35,7 +35,7 @@ from checkpoint.twins import registry
 from checkpoint.workspace import NAMESPACE as WORKSPACE
 from checkpoint.workspace import Workspace, WorkspaceError
 
-from .agent import kill_tree
+from .agent import kill_tree, own_process_group
 
 Egress = Literal["open", "llm", "none"]
 """What the agent may reach outside the sandbox: anything, only LLM providers
@@ -156,6 +156,7 @@ class Sandbox:
                  *(f"{name}={port}" for name, port in self._ports.items())],
                 stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8",
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                **own_process_group(),
             )
         finally:
             log.close()
