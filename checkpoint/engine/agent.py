@@ -117,6 +117,26 @@ class Agent:
             return split_command(self.command)
         return list(self.command)
 
+    @property
+    def command_text(self) -> str:
+        """The command as a single string, for records and for re-running by hand.
+
+        ``command`` accepts either spelling, and the gate builds agents from an
+        argv list. Storing that list and formatting it later produced a rerun
+        line containing a Python list repr, which is not a command anyone can
+        paste. Joining here means the record always holds one shape.
+        """
+        if isinstance(self.command, str):
+            return self.command
+        if not self.command:
+            return self.url or ""
+        # list2cmdline on Windows, shlex.join elsewhere: shlex quotes every
+        # backslash-bearing Windows path, so a joined argv came back wrapped in
+        # single quotes that Windows would pass through literally.
+        if os.name == "nt":
+            return subprocess.list2cmdline(list(self.command))
+        return shlex.join(self.command)
+
     # -- one-shot command agents -------------------------------------------------
 
     def invoke(

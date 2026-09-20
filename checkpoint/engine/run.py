@@ -168,7 +168,7 @@ def run_scenario(
         stdout=output.stdout,
         run_id=run_id,
         agent=agent.display_name,
-        agent_command=agent.command or agent.url or "",
+        agent_command=agent.command_text,
         twins=list(twins),
         seed_views=seed_views,
         views=final_views,
@@ -280,7 +280,7 @@ def _apply_faults(setups: dict[str, TwinSetup], scenario: Scenario, opts: RunOpt
 
 def _setup_failure(result_cls: Any, run_id: str, agent: Agent, message: str, started: float) -> RunResult:
     result = result_cls("", "", -1, [], {}, run_id=run_id, agent=agent.display_name,
-                        agent_command=agent.command or agent.url or "",
+                        agent_command=agent.command_text,
                         duration_s=round(time.perf_counter() - started, 3))
     result.error = f"sandbox setup failed: {message}"
     result.setup_error = True
