@@ -8,10 +8,16 @@ the statistical
 evidence per scenario, and the verdict — then signs the whole thing with
 Ed25519 so any later change is detectable.
 
-The OSS build self-signs: the public key travels inside the certificate and
-`verify()` checks the signature against it. That proves integrity (the evidence
-wasn't altered after issuance). Binding a certificate to an organization's trust
-root — so a third party can confirm *who* issued it — is a hosted feature.
+Certificates are self-signed: the public key travels inside the certificate and
+`verify()` checks the signature against it.
+
+Be precise about what that proves. It proves **integrity** — the evidence has
+not been altered since it was issued. It does not prove **provenance**: anyone
+can mint a key and issue a certificate, so a self-signed one says nothing about
+*who* issued it. Establishing that would need the certificate chained to a trust
+root the verifier already trusts, and Checkpoint ships no such root. Treat a
+certificate as tamper-evident evidence from a source you have independently
+decided to trust, not as proof of origin.
 """
 from __future__ import annotations
 

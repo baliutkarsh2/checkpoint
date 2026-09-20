@@ -49,19 +49,27 @@ any tracked file tells someone to install it.
    exist yet.
 3. Optionally dry-run against TestPyPI first with a `v*rc*` tag.
 
-4. After the first successful release, switch the two install lines that still
-   route around PyPI because the name did not resolve yet:
-   `checkpoint/init_templates/ci/checkpoint.yml` (the workflow every
-   `checkpoint init --ci` writes) and the quickstart in `README.md` and
-   `docs/getting-started.md`. `tests/test_install_instructions.py` already
-   guards the distribution name; nothing guards *where* it is installed from,
-   because until the release there is only one right answer.
+### After the first release
 
-Once a release is on PyPI, switch the documented install from git to the
-distribution: both `pip install git+https://github.com/baliutkarsh2/checkpoint`
-lines in `README.md`, and the "PyPI release pending" note beside them. The
-GitHub Action already prefers the published distribution and falls back to a
-source install, so it needs no change.
+Until the name resolves, several tracked files route their installs through git.
+`tests/test_install_instructions.py` guards the distribution *name*; nothing
+guards *where* it is installed from, because until the release there is only one
+right answer. Switch each of these once a release is on PyPI:
+
+- `README.md` — all three `git+https://github.com/baliutkarsh2/checkpoint`
+  installs (the quickstart, the Install section, and the `anthropic` extra), and
+  the "PyPI release pending" note beside the first.
+- `docs/getting-started.md` — the install line and the same note.
+- `checkpoint/init_templates/ci/checkpoint.yml` — the workflow every
+  `checkpoint init --ci` writes.
+- `packages/checkpoint-vitest` — the install block in `README.md`, the same
+  instruction in the error text of `index.js`, and the doc comment in
+  `index.d.ts`. The npm package's version tracks the Python package's, so it is
+  published from the same tag and its `package.json` moves in the same commit.
+- `action.yml` — delete the source-install fallback in the *Install checkpoint*
+  step. The action already prefers the published distribution, so it keeps
+  working either way; the fallback exists only because the name does not
+  resolve yet.
 
 ## One-time: going public
 

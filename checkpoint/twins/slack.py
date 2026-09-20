@@ -1823,6 +1823,6 @@ async def _slack_shaped_http_error(request: Request, exc: StarletteHTTPException
 # Mount the Slack MCP server at /mcp on this same FastAPI app so REST and
 # MCP share the same STATE dict.
 
-from checkpoint.mcp_servers.slack_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.slack_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)

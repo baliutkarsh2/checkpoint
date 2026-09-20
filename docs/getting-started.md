@@ -58,8 +58,9 @@ so your coding agent can drive Checkpoint; `--ci`/`--no-ci` and
 
 By default Checkpoint puts the scenario's task in `$CHECKPOINT_TASK` and reads
 the final answer from whatever the process printed to stdout — plain text, or
-JSON with a `text`, `answer`, `output` or `content` key. For most agents that
-is two lines at the bottom of a file you already have:
+JSON with a `text`, `answer`, `output`, `final_answer`, `response`, `content` or
+`result` key, whichever comes first in that order. For most agents that is two
+lines at the bottom of a file you already have:
 
 ```python
 if __name__ == "__main__":
@@ -89,12 +90,18 @@ the calls the agent made to the twins are recorded either way, by the twins.
 
 ### What your agent finds in its environment
 
-Before starting the command, Checkpoint overwrites every credential belonging
-to a service in the run with a fake one — `GITHUB_TOKEN`, `SLACK_BOT_TOKEN`,
-`STRIPE_API_KEY` and so on. A real token in your shell therefore never reaches
-the agent under test, and cannot reach a real API through it. The twins'
-direct URLs are in `CHECKPOINT_<TWIN>_URL`, though most agents never need them:
-calls to `https://api.github.com` are routed into the GitHub twin already.
+The agent inherits your environment — it still needs its PATH, its virtualenv
+and its own model key — with one class of exception: before starting the
+command, Checkpoint overwrites the credential of every twin *in this run* with
+a fake one only the twins accept, so a real `GITHUB_TOKEN` cannot reach real
+GitHub through an agent whose run declares the `github` twin. A credential for
+a service this scenario does not twin is passed through untouched and does
+reach the process; what stops it leaving is the egress policy, which by default
+(`llm`) allows the model providers and nothing else. `egress = "open"` removes
+that, so run an untrusted agent from a shell that holds no production
+credentials. The twins' direct URLs are in `CHECKPOINT_<TWIN>_URL`, though most
+agents never need them: calls to `https://api.github.com` are routed into the
+GitHub twin already.
 
 ### If your agent edits files instead of calling APIs
 
@@ -118,6 +125,31 @@ in [`examples/coding-agent`](../examples/coding-agent/).
 
 ## First run
 
+Before running anything, see how each criterion will be decided:
+
+```bash
+checkpoint check
+```
+
+```
+Starter scenario: file an issue  quickstart.md · github
+        Criterion                                   Decided by
+───────────────────────────────────────────────────────────────────────────────────────────────
+[D]     Exactly 1 issue was created                 pattern: count(created.github.issues) == 1
+[D]     An issue titled "Add login button" exists   pattern: exists(github.issues[title == "Add
+                                                    login button"])
+[D!]    No issues were deleted                      pattern: count(deleted.github.issues) == 0
+[T]     The agent made at most 10 calls             pattern: count(trace) <= 10
+  ready, every check deterministic.
+```
+
+Every criterion the starter scenario ships is an assertion, which is why it
+scores with no model at all. A criterion with no assertion behind it is compiled
+by the judge model at run time instead, and the last line counts those — see
+[Scenarios](scenarios.md#pinned-assertions) for how to write your own.
+
+Then run it:
+
 ```bash
 checkpoint run
 ```
@@ -131,33 +163,11 @@ checkpoint run -n 5 --tag github         # only scenarios whose `tags:` list it
 checkpoint run -v                        # stream the agent's own output
 ```
 
-Before the first run, see how each criterion will be decided:
-
-```bash
-checkpoint check
-```
-
-```
-Starter scenario: file an issue  quickstart.md · github
-        Criterion                                   Decided by
-──────────────────────────────────────────────────────────────────────────────────────
-[D]     Exactly 1 issue was created                 pattern: count(created.github.issues) == 1
-[D]     An issue titled "Add login button" exists   pattern: exists(github.issues[title == "Add
-                                                    login button"])
-[D!]    No issues were deleted                      pattern: count(deleted.github.issues) == 0
-[T]     The agent made at most 10 calls             pattern: count(trace) <= 10
-[P]     The final answer quotes the number of the   judged: the judge model reads the final
-        issue it created                            answer
-  ready, 1 judged by a model.
-```
-
-A criterion with no assertion behind it is compiled by the judge model at run
-time instead, and `check` warns about each one — see
-[Scenarios](scenarios.md#pinned-assertions) for how to write your own.
-
-`checkpoint run` exits 1 if any run failed a criterion and 2 if the sandbox
-could not be set up. It is a development command; it is not the thing to put in
-CI.
+`checkpoint run` exits 1 when a run failed a criterion, and 2 when a run
+produced no verdict at all — a sandbox that would not start, a judge that could
+not be reached, or a criterion the evaluator could not decide. Exit 2 is a
+broken setup rather than a failing agent. It is a development command; it is not
+the thing to put in CI.
 
 ## First gate
 

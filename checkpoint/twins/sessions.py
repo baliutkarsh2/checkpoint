@@ -82,7 +82,7 @@ def _wait_healthy(port: int, host: str = "127.0.0.1", timeout: float = 15.0) -> 
         try:
             if httpx.get(f"http://{host}:{port}/_health", timeout=1.0).status_code == 200:
                 return True
-        except Exception:  # noqa: BLE001 — not up yet is the expected case
+        except Exception:  # noqa: BLE001, S110 — not up yet is the expected case
             pass
         time.sleep(0.15)
     return False
@@ -169,7 +169,7 @@ def start(
         except Exception:  # noqa: BLE001
             try:
                 process.kill()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
         raise RuntimeError(f"the {spec.name} twin did not come up on port {chosen}")
 

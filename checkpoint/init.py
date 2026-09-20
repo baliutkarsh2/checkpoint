@@ -16,7 +16,6 @@ Nothing is ever overwritten. Running init twice is a no-op that tells you so.
 """
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -114,14 +113,3 @@ def _append_gitignore(result: InitResult) -> None:
             fh.write("\n")
         fh.write(f"\n# Checkpoint run records and cache\n{GITIGNORE_ENTRY}\n")
     result.created.append(".gitignore" if not existing else ".gitignore (one line added)")
-
-
-def copy_ci_workflow(target_dir: Path | str) -> Path | None:
-    """Write just the CI workflow. Returns the path, or None if it existed."""
-    target = Path(target_dir).resolve()
-    dest = target / CI_WORKFLOW
-    if dest.exists():
-        return None
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(TEMPLATES_DIR / "ci/checkpoint.yml", dest)
-    return dest

@@ -27,7 +27,7 @@ checkpoint twins list
 
 A domain covers its subdomains, so `supabase.co` catches
 `<project>.supabase.co`. `gmail` and `google` are accepted as names for
-`google-workspace`.
+`google-workspace`, and `gh` for `github`.
 
 What each one models:
 
@@ -56,7 +56,9 @@ What each one models:
   without which a service account would refresh its token against real Google.
 
 Every twin also serves its operations over MCP, at `/mcp/` under its base URL.
-`checkpoint twins tools github` lists them.
+`checkpoint twins tools github` lists them by asking the twin itself, so it
+needs one already running — `checkpoint twins start github` — and exits 1
+otherwise.
 
 ## Seeds
 

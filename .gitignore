@@ -1,47 +1,42 @@
+# Python
 __pycache__/
 *.pyc
-.venv/
-.venv-new/
 *.egg-info/
 build/
 dist/
-.trace.json
-.checkpoint/
-.gstack/
+.venv/
+
+# Test and coverage output
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Secrets — never commit real credentials. .env.example is the only tracked env file.
 .env
 .env.*
 !.env.example
 
-# macOS Finder metadata
-.DS_Store
+# Checkpoint's own run store and traces, written wherever it is invoked.
+.checkpoint/
+.trace.json
 
-# Syncthing / Nextcloud conflict files
-*.sync-conflict-*
-
-# Dashboard SPA dev — node_modules and any local Vite/tsc build artifacts.
-# The committed bundle lives at checkpoint/dashboard/static/ (shipped in the wheel).
+# Dashboard SPA development. The committed bundle lives at
+# checkpoint/dashboard/static/ and IS tracked — it ships in the wheel so a
+# pip install gives a working dashboard with no Node toolchain.
 checkpoint/dashboard/web/node_modules/
 checkpoint/dashboard/web/dist/
-
-# Local pytest output dumps from this session
-pytest-out.txt
-dash-test.txt
-dash2.txt
-sse-test.txt
-fullsuite.txt
-
-
-# Playwright (dashboard render smoke test) artifacts
+checkpoint/dashboard/web/*.tsbuildinfo
 checkpoint/dashboard/web/test-results/
 checkpoint/dashboard/web/playwright-report/
 checkpoint/dashboard/web/blob-report/
 checkpoint/dashboard/web/playwright/.cache/
 
-# Coverage data and the local project cache.
-.coverage
-.coverage.*
-
-# Scratch worktrees created by local tooling.
-.claude/worktrees/
+# Editor, agent and OS droppings
+.claude/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.sync-conflict-*

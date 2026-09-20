@@ -25,7 +25,8 @@ function _runCli(args, { timeoutMs = 60_000 } = {}) {
   if (out.error) {
     throw new Error(
       `the checkpoint CLI is not runnable (${DEFAULT_CLI}): ${out.error.message}. ` +
-        "Install it with `pip install checkpoint-agents`, or set CHECKPOINT_CLI."
+        "Install it with `pip install git+https://github.com/baliutkarsh2/checkpoint`, " +
+        "or set CHECKPOINT_CLI."
     );
   }
   if (out.status !== 0) {

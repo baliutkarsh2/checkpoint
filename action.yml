@@ -39,7 +39,7 @@ inputs:
     required: false
     default: ""
   name:
-    description: "Agent name recorded in the Trust Certificate. Defaults to the target path's stem."
+    description: "Agent name recorded in the Trust Certificate. Defaults to the name of the project directory the gate runs in, falling back to the target path's stem."
     required: false
     default: ""
   version:
@@ -86,7 +86,7 @@ runs:
           # Pin the fallback to the ref the caller pinned the action to, so a
           # consumer never silently installs whatever is on trunk. Falls back to
           # a released tag rather than HEAD. Remove this branch entirely once the
-          # distribution is on PyPI (docs/releasing.md step 7).
+          # distribution is on PyPI (docs/releasing.md, "One-time: PyPI").
           python -m pip install --upgrade "git+https://github.com/baliutkarsh2/checkpoint@${GITHUB_ACTION_REF:-v0.1.0}"
         fi
 
@@ -113,8 +113,10 @@ runs:
         if [ -n "$COMMAND" ]; then args+=(--command "$COMMAND"); fi
         # Baselines live in .checkpoint/baselines.json, keyed by the target's
         # path relative to the workspace — restore that file with actions/cache
-        # (or commit it) to get regression detection in CI. Left off here because
-        # a fresh runner has no history to compare against.
+        # to get regression detection in CI. `checkpoint init` gitignores
+        # .checkpoint/, so keeping it in git instead takes an explicit un-ignore
+        # (see docs/gate.md). Left off here because a fresh runner has no
+        # history to compare against.
         args+=(--no-baseline)
         if [ "$ALLOW_CONDITIONAL" = "true" ]; then args+=(--allow-conditional); fi
         if [ "$STRICT" = "true" ]; then args+=(--strict); fi

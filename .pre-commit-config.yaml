@@ -16,4 +16,18 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]
+        # checkpoint/twins/linear_schema.graphql is ~1292 KB, over the ceiling
+        # above, and already committed. It is Linear's own published GraphQL
+        # SDL, vendored so the Linear twin can answer the same queries the real
+        # API does — Linear ships no REST API, so every official client speaks
+        # GraphQL and the twin has to serve the real schema to be worth
+        # anything. This hook only inspects files being ADDED, so it passes
+        # today while the tree contradicts the limit it states.
+        #
+        # Named exclusion rather than a higher --maxkb: raising the ceiling to
+        # fit this one reviewed file would silently license every future 1.3 MB
+        # blob, which is the accident the hook exists to catch. Excluding the
+        # exact path keeps 1024 KB binding on everything else and leaves the
+        # exception written down where the next person can find it.
+        exclude: ^checkpoint/twins/linear_schema\.graphql$
       - id: detect-private-key

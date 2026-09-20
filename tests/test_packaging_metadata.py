@@ -116,18 +116,30 @@ def test_pytest_plugin_does_not_import_heavy_modules_at_startup():
     )
 
 
-def test_mitmproxy_is_not_a_dependency_anywhere():
-    """TLS interception is done by checkpoint/proxy, not mitmproxy.
+# Packages that must never enter the dependency graph, and the reason each one
+# is barred. These are not rivals or alternatives — they are libraries whose
+# own pins reach back into our graph and move versions out from under us, which
+# is a packaging fact, not an opinion about the library.
+BARRED_DEPENDENCIES = {
+    # Pins exact h11/h2 versions and caps typing-extensions, so merely
+    # co-installing it (even as an extra, even in dev) silently downgraded
+    # other packages — mcp was forced back to 1.x, hiding a real TypeError.
+    # TLS interception is checkpoint/proxy's job anyway.
+    "mitmproxy": "pins h11/h2 exactly and caps typing-extensions",
+}
 
-    mitmproxy pins exact h11/h2 versions and caps typing-extensions, so merely
-    co-installing it (even as an extra, even in dev) silently downgraded other
-    packages — mcp was forced back to 1.x. It must not come back through any
-    dependency group.
-    """
+
+def test_barred_packages_are_not_dependencies_anywhere():
+    """A package barred for pinning our graph must not return through any group."""
     groups = {"dependencies": PYPROJECT["project"]["dependencies"],
               **PYPROJECT["project"].get("optional-dependencies", {})}
-    offenders = [name for name, deps in groups.items() if "mitmproxy" in " ".join(deps)]
-    assert not offenders, f"mitmproxy is back in: {offenders}"
+    offenders = [
+        f"{package} in [{group}] ({reason})"
+        for package, reason in BARRED_DEPENDENCIES.items()
+        for group, deps in groups.items()
+        if package in " ".join(deps)
+    ]
+    assert not offenders, "barred dependencies are back: " + "; ".join(offenders)
 
 
 def test_intercept_proxy_dependencies_are_declared():

@@ -346,8 +346,20 @@ def run_process(
     except FileNotFoundError:
         return AgentOutput("", "", "", None, 0.0,
                            error=f"agent command not found: {argv[0]!r} (is it installed and on PATH?)")
+    except PermissionError:
+        return AgentOutput("", "", "", None, 0.0,
+                           error=f"not allowed to run {argv[0]!r} "
+                                 "(check the file's permissions, and that it is not a directory)")
     except OSError as e:
-        return AgentOutput("", "", "", None, 0.0, error=f"could not start agent: {e}")
+        # Windows raises WinError 193 for a file that is not an executable —
+        # most often a script named on its own, without its interpreter. The
+        # raw text ("[WinError 193] %1 is not a valid Win32 application") says
+        # nothing a reader can act on, so say what it usually means.
+        hint = ""
+        if getattr(e, "winerror", None) == 193:
+            hint = (f" — {argv[0]!r} is not an executable. If it is a script, "
+                    f'name the interpreter too: --command "python {argv[0]}".')
+        return AgentOutput("", "", "", None, 0.0, error=f"could not start agent: {e}{hint}")
 
     out = _Collector("stdout", proc.stdout, on_line)
     err = _Collector("stderr", proc.stderr, on_line)

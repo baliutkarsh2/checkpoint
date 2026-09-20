@@ -242,7 +242,7 @@ def _draft(proj, description: str, twins: list[str], seed: str | None, model: st
 
     try:
         return generate(description, twins=twins, seed=seed, model=proj.judge_model(model))
-    except Exception as e:  # noqa: BLE001 — a drafting failure is a message, not a stack
+    except Exception as e:
         fail(f"could not draft the scenario: {e}",
              hint="Write it by hand instead: drop --draft and edit the template.")
         raise

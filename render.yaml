@@ -4,8 +4,10 @@
 #   1. Push this repo to GitHub.
 #   2. Go to https://render.com/deploy and select your repo (or use the
 #      "Deploy to Render" button in docs/self-hosting.md).
-#   3. Set OPENAI_API_KEY and (recommended) CHECKPOINT_DASHBOARD_API_KEY
-#      in the dashboard's Environment tab.
+#   3. CHECKPOINT_DASHBOARD_API_KEY is generated for you below. It is
+#      required, not advisory: this service binds 0.0.0.0 and `checkpoint
+#      view` refuses to start off loopback without it. Set OPENAI_API_KEY in
+#      the Environment tab only if you judge [P] criteria here.
 #
 # What you get: a Render web service backed by a 1 GB persistent disk,
 # auto-deployed on every push to main.

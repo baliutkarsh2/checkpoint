@@ -1,0 +1,41 @@
+# Code owners for this repository.
+#
+# GitHub requests a review from the owner of every path a pull request touches.
+# Rules are gitignore-style patterns; the LAST matching rule wins, so the
+# catch-all comes first and the narrower rules below only re-state it.
+#
+# There is one maintainer today, so every rule names the same person. They are
+# written out anyway: these are the paths where a missing review is expensive
+# (they can publish a release, mint a token, or change what the gate lets
+# through), so if ownership is ever widened, widening it has to be a deliberate
+# edit to the catch-all rather than something these paths inherit silently.
+
+# Everything, unless a later rule says otherwise.
+*                                    @baliutkarsh2
+
+# CI, release automation, the published composite Action, and the images. A
+# change here can run arbitrary code with the repository's credentials.
+/.github/                            @baliutkarsh2
+/action.yml                          @baliutkarsh2
+/Dockerfile                          @baliutkarsh2
+/docker-compose.yml                  @baliutkarsh2
+
+# Supply chain: what gets built, what gets installed, and what ships in the
+# wheel. A wrong line here reaches every user through PyPI.
+/pyproject.toml                      @baliutkarsh2
+/MANIFEST.in                         @baliutkarsh2
+/.pre-commit-config.yaml             @baliutkarsh2
+
+# Security-relevant surfaces: the disclosure policy, the secret scanner config,
+# the synthetic-credential fixtures, the TLS-terminating intercept proxy, and
+# the dashboard's auth middleware.
+/SECURITY.md                         @baliutkarsh2
+/.gitleaks.toml                      @baliutkarsh2
+/checkpoint/fake_credentials.py      @baliutkarsh2
+/checkpoint/proxy/                   @baliutkarsh2
+/checkpoint/dashboard/middleware.py  @baliutkarsh2
+
+# Licensing: Apache-2.0 plus the NOTICE file the licence obliges downstream
+# redistributors to carry.
+/LICENSE                             @baliutkarsh2
+/NOTICE                              @baliutkarsh2

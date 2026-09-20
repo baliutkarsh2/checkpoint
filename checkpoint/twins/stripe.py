@@ -2937,6 +2937,6 @@ async def unrecognized_v1(rest: str, request: Request):
 # The Stripe MCP server mounts at /mcp on this same app, so its tools and the
 # REST surface share one STATE dict.
 
-from checkpoint.mcp_servers.stripe_mcp import mount_on as _mount_mcp  # noqa: E402
+from checkpoint.mcp_servers.stripe_mcp import mount_on as _mount_mcp
 
 _mount_mcp(app)

@@ -1,0 +1,102 @@
+# EditorConfig: https://editorconfig.org
+#
+# This file is the editor-side half of .gitattributes. Git normalises line
+# endings on commit; .editorconfig stops the editor from writing the wrong ones
+# in the first place, so the two MUST agree. If you change one, change both.
+#
+# CI runs on Linux, macOS and Windows. Shell scripts and Dockerfiles break
+# inside Linux containers if they arrive with CRLF, which is why .gitattributes
+# pins `eol=lf` on them and why LF is the default here rather than a preference.
+
+root = true
+
+# Defaults for every text file. `* text=auto` in .gitattributes normalises the
+# whole tree to LF in the repository, so LF is what these files actually are.
+#
+# max_line_length is deliberately `off`. ruff's line-length is 100
+# (pyproject.toml) but E501 is NOT in the selected rules: this codebase uses
+# long explanatory comment lines on purpose, and reflowing them would churn
+# every file for no correctness gain. An editor ruler that hard-wraps at 100
+# would quietly re-impose the rule the lint config declined.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+max_line_length = off
+
+# Python. 4 spaces, matching PEP 8 and every module in checkpoint/ and tests/.
+[*.py]
+indent_size = 4
+
+# Markdown. The repo has no hard line breaks written as two trailing spaces,
+# and the `trailing-whitespace` pre-commit hook runs unconfigured, so it strips
+# them from .md as well — exempting Markdown from the global trim would set the
+# editor against the repo's own hook.
+[*.md]
+indent_size = 2
+
+# YAML: significant indentation, 2 spaces throughout (.github/workflows,
+# action.yml, docker-compose.yml, scenario front matter).
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.json]
+indent_size = 2
+
+# The dashboard SPA (checkpoint/dashboard/web/src) and the vitest package.
+[*.{ts,tsx,js,mjs}]
+indent_size = 2
+
+[*.{css,html}]
+indent_size = 2
+
+# Linear's vendored GraphQL SDL, as Linear publishes it.
+[*.graphql]
+indent_size = 2
+
+# Continuation lines in the two build stages are indented 4.
+[Dockerfile]
+indent_size = 4
+
+# No shell script is tracked today; .gitattributes still pins `*.sh eol=lf`
+# because one arriving with CRLF fails inside the container with a
+# `\r: not found` that names no cause. This keeps that true at the editor.
+[*.sh]
+indent_size = 2
+
+# TOML carries no semantic indentation and this repo is genuinely mixed:
+# pyproject.toml is 4, fly.toml and .gitleaks.toml are 2. Both are recorded
+# rather than picking one and reflowing the other.
+[*.toml]
+indent_size = 2
+
+[pyproject.toml]
+indent_size = 4
+
+# --- files .gitattributes excludes from text handling ----------------------
+
+# Binary assets: `*.png *.ico *.woff *.woff2 *.ttf binary`. Nothing here may be
+# re-encoded, newline-normalised or given a trailing newline.
+[*.{png,ico,woff,woff2,ttf}]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+max_line_length = unset
+
+# The committed SPA bundle, marked `-text` in .gitattributes. It is generated
+# output verified by a hash of its sources (tests/test_spa_bundle.py), not by
+# its own bytes, and an editor that reformats or re-newlines it invalidates
+# that check while looking like a harmless save. Overrides the *.{js,css,html,
+# svg} rules above because it appears later.
+[checkpoint/dashboard/static/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+max_line_length = unset

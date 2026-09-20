@@ -168,6 +168,7 @@ def run_scenario(
         stdout=output.stdout,
         run_id=run_id,
         agent=agent.display_name,
+        agent_command=agent.command or agent.url or "",
         twins=list(twins),
         seed_views=seed_views,
         views=final_views,
@@ -200,14 +201,28 @@ def run_scenario(
         result.error = f"agent exited with code {output.exit_code}"
         return result
     if opts.evaluate:
-        from checkpoint.runner import _evaluate
-
-        # A scenario may pin the judge it needs. An explicit --model or
-        # CHECKPOINT_JUDGE_MODEL still wins: flag > scenario > project file.
-        model = opts.judge_model if opts.judge_model_pinned else (
-            scenario.judge_model or opts.judge_model)
-        _evaluate(scenario, result, model, samples=opts.judge_samples)
+        evaluate_with(scenario, result, opts)
     return result
+
+
+def evaluate_with(scenario: Scenario, result: RunResult, opts: RunOptions) -> None:
+    """Score ``result`` under the judge policy ``opts`` describes.
+
+    Every path that scores a run goes through here — the single-run path above
+    and the multi-turn simulated-user path — because they must agree on both
+    halves of that policy, and a second call site that reconstructed it by hand
+    is exactly how they came apart before: `simulate` passed neither the sample
+    count nor the scenario's pinned model, so `[judge] samples = 3` silently
+    scored with one sample there while `run` and `gate` used three, and the two
+    commands could reach different verdicts on the same scenario.
+    """
+    from checkpoint.runner import _evaluate
+
+    # A scenario may pin the judge it needs. An explicit --model or
+    # CHECKPOINT_JUDGE_MODEL still wins: flag > scenario > project file.
+    model = opts.judge_model if opts.judge_model_pinned else (
+        scenario.judge_model or opts.judge_model)
+    _evaluate(scenario, result, model, samples=opts.judge_samples)
 
 
 def run_state(sandbox_state: Mapping[str, dict]) -> dict:
@@ -265,6 +280,7 @@ def _apply_faults(setups: dict[str, TwinSetup], scenario: Scenario, opts: RunOpt
 
 def _setup_failure(result_cls: Any, run_id: str, agent: Agent, message: str, started: float) -> RunResult:
     result = result_cls("", "", -1, [], {}, run_id=run_id, agent=agent.display_name,
+                        agent_command=agent.command or agent.url or "",
                         duration_s=round(time.perf_counter() - started, 3))
     result.error = f"sandbox setup failed: {message}"
     result.setup_error = True

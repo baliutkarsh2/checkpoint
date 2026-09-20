@@ -1,7 +1,7 @@
-"""Phase 6 Plan 02: Stripe MCP server end-to-end through the official client.
+"""Stripe MCP server, end to end through the official MCP client.
 
 Boots the Stripe twin via uvicorn, opens an MCP client at /mcp, verifies
-the 28-tool surface from SCOPE §3.5 strict-mode list, and calls a
+the twin's 28-tool strict-mode surface, and calls a
 representative subset against the empty seed — confirming each
 mutation is visible in /_state.
 """

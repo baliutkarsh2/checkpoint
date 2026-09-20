@@ -45,7 +45,14 @@ changed in the service.
 you ship — the retry logic, the pagination, the error branch. Checkpoint
 intercepts TLS locally and routes `https://api.github.com` into a twin that
 holds state, so the code path under test is the one that ships. No Docker, no
-recorded cassettes, no changes to your agent.
+changes to your agent.
+
+Recordings have a sharper problem than staleness: a recording is a *sequence*,
+and it replays correctly only if the calls come back in the order they were
+taped. An agent decides what to call next while it runs. Retry once, poll twice,
+take the other branch, and the tape no longer lines up. A twin has no order to
+get wrong — it holds state and answers whatever is asked, in whatever order, as
+many times as you like. That is the property a non-deterministic caller needs.
 
 ## Test your agent
 
@@ -55,15 +62,36 @@ checkpoint init --command "python my_agent.py"
 checkpoint run
 ```
 
-`init` writes two files and touches nothing else: `checkpoint.toml` and a
-starter scenario. There is no harness, no wrapper, no adapter. Checkpoint runs
-the command that already runs your agent, puts the task in `$CHECKPOINT_TASK`,
-and reads the final answer from stdout.
+`init` writes three files and touches nothing that already exists:
+`checkpoint.toml`, a starter scenario, and a `.gitignore` line. The starter
+scenario is all assertions, so that `run` scores 100/100 with no API key —
+the same as the demo. There is no harness, no wrapper, no adapter: Checkpoint
+runs the command that already runs your agent, puts the task in
+`$CHECKPOINT_TASK`, and reads the final answer from stdout.
 
 Your agent takes the task another way? `--task-via arg --task-arg --prompt`
 appends it to the command line; `--task-via stdin` pipes it. It is an HTTP
 service? Put `url = "http://127.0.0.1:8000/chat"` under `[agent]`. It logs to
 stdout? Write the answer to `$CHECKPOINT_ANSWER_FILE` instead.
+
+**Your agent does not have to be Python.** Checkpoint starts a command and
+intercepts the network underneath it, and neither of those cares what the
+process is written in:
+
+```bash
+checkpoint init --command "node agent.js"       # or: go run ., cargo run,
+checkpoint run                                  # bun start, deno task, ./agent
+```
+
+The proxy hands the agent the environment each runtime actually reads —
+`HTTPS_PROXY` in both spellings, `SSL_CERT_FILE` for OpenSSL stacks,
+`REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `HTTPLIB2_CA_CERTS`,
+`NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`, `DENO_CERT`, `CARGO_HTTP_CAINFO` and
+`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` — so an unmodified client reaches the twins
+whatever it is written in. Python, Node and curl are covered end to end by the
+test suite; the rest are configured the way each runtime documents. Only the
+judge for `[P]` criteria and the library API are Python; the thing under test is
+a process.
 
 ## A scenario
 
@@ -87,8 +115,13 @@ File an issue in acme/webapp titled "Login broken".
 ```
 
 `[D]` checks the state the agent left behind, `[T]` the calls it made, `[P]`
-what it said — and only `[P]` costs a model call. `!` marks a criterion that
-must pass whatever the rest score.
+what it said. `!` marks a criterion that must pass whatever the rest score.
+
+Only `[P]` is judged by a model on *every* run. A `[D]` or `[T]` is an assertion,
+and most are recognised by pattern and cost nothing; one phrased so that no
+pattern matches is translated into an assertion by a model **once**, then cached
+and re-used. Pin it yourself with `=>` and even that first call goes away —
+`checkpoint check` tells you which of the three you have before you run anything.
 
 Each criterion becomes an assertion over the run. `checkpoint check` shows you
 which one before you spend a single run on it:
@@ -119,17 +152,18 @@ what CI reads.
  Scenario             Pass   Rate     95% CI      pass^8   Reading
 ───────────────────────────────────────────────────────────────────
  file-a-bug.md       16/16   100%   [81%, 100%]     100%   stable pass
- refund-flow.md      12/16    75%   [51%, 90%]       10%   flaky
+ refund-flow.md      12/16    75%   [51%, 90%]        4%   flaky
 
-┌─── gate ───┐
-│ BLOCK      │
-└────────────┘
+┌─── gate ──────┐
+│ CONDITIONAL   │
+└───────────────┘
 ```
 
 The gate runs every scenario N times and decides from the distribution — a
 Wilson confidence interval on the pass rate, not one lucky run. `pass^8` is the
-number that tends to land: an agent that passes 75% of the time completes eight
-steps in a row about a tenth of the time.
+number that tends to land: of the sixteen runs actually observed, the chance
+that eight of them drawn at random all passed is 4%. That is the question a
+release asks, and it is far bleaker than the 75% above it.
 
 | Verdict | Exit | Meaning |
 |---|---|---|
@@ -140,8 +174,9 @@ steps in a row about a tenth of the time.
 | ERROR | 4 | the sandbox, judge or scenarios broke — no verdict is possible, and none is invented |
 
 Two things that are easy to get wrong and this gets right. A perfect run of
-fewer than 16 scenarios cannot clear the default bar, so it reports
-INCONCLUSIVE rather than a green build. And broken plumbing is never a verdict:
+fewer than 16 *runs* cannot clear the default bar, so it reports INCONCLUSIVE
+rather than a green build — 5/5 is not a weak pass, it is not yet evidence.
+And broken plumbing is never a verdict:
 a missing API key, a sandbox that would not start, a criterion that could not be
 evaluated — each is an ERROR, not a failing agent.
 
@@ -164,6 +199,12 @@ Or `checkpoint gate` directly — the exit code is the whole product.
 `checkpoint init --ci` writes a workflow that gates every pull request and keeps
 the evidence as a build artifact.
 
+Adding this to a project that already exists? `checkpoint gate --report-only`
+prints the same verdict and exits 0, so you can see what it says before it can
+fail a build. It is louder than the `|| true` you would otherwise write, and
+unlike `|| true` it does not also swallow the ERROR that means Checkpoint itself
+broke.
+
 ## What you get to test against
 
 Seven services, running locally, holding state across a multi-step run:
@@ -174,6 +215,27 @@ checked in CI against those SDKs on every commit, so a twin bug cannot quietly
 fail a correct agent. Each exposes a REST surface and an MCP server.
 
 `checkpoint twins list` shows them and the datasets they ship with.
+
+**A scenario can run against several of them at once, and assert across all of
+them.** This is where agents actually fail — the work spans two systems, the
+first half lands, the second does not, and the agent reports success anyway:
+
+```markdown
+---
+twins: slack, stripe
+seed: slack=engineering-team, stripe=subscription-heavy
+---
+- [D]  The refund is for the full 999 cents
+  =>   count(created.stripe.refunds[amount == 999]) == 1
+- [D!] No other payment was refunded
+  =>   all(stripe.payment_intents[id != "pi_sh_006"], amount_refunded == 0)
+- [D]  It quotes the refund id in #engineering
+  =>   count(created.slack.messages[text ~ /re_[A-Za-z0-9]+/]) == 1
+```
+
+One run, both services, one verdict over the state each was left in. A refund
+issued and never announced fails. So does an announcement of a refund that was
+never issued.
 
 They also misbehave on request, which is the part you cannot rehearse against a
 real API: rate limits, permission denials, read-only mode, latency, a seeded
@@ -314,7 +376,7 @@ checkpoint simulate  hold a conversation as a simulated user
 checkpoint new       write a new scenario
 checkpoint check     check scenarios before you run them
 checkpoint twins     the services scenarios run against
-checkpoint cert      issue and verify signed verdicts
+checkpoint cert      verify and read signed verdicts
 checkpoint report    build an assurance report
 checkpoint runs      past runs: list, show, compare, export
 checkpoint view      open the dashboard
@@ -332,6 +394,7 @@ test.
 [Scenarios](docs/scenarios.md) ·
 [Twins](docs/twins.md) ·
 [The gate](docs/gate.md) ·
+[Troubleshooting](docs/troubleshooting.md) ·
 [Architecture](docs/architecture.md) ·
 [Self-hosting](docs/self-hosting.md)
 

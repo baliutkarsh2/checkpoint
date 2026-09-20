@@ -50,8 +50,16 @@ for a scenario with a `workspace:`.
 | `model` | `gpt-5.6-luna` | Any `gpt-*`, `claude-*` or `gemini-*` name. Set `CHECKPOINT_LLM_BASE_URL` to use any OpenAI-compatible endpoint instead. |
 | `samples` | `1` | How many times to ask about each criterion. More than one costs more and disagrees less; a judge that flips between samples reports `unknown` rather than guessing. |
 
-Only `[P]` criteria reach a model. A scenario whose criteria are all assertions
-needs no key at all, which is why `checkpoint demo` works offline.
+Only `[P]` criteria reach a model on every run. `[D]` and `[T]` are assertions:
+one the compiler recognises by pattern, or one you pinned with `=>`, never calls
+a model at all. A `[D]`/`[T]` phrased so that no pattern matches is translated
+into an assertion by the judge model **once** and then cached, so it costs one
+call the first time and nothing afterwards.
+
+`checkpoint check` prints which of the three each criterion is, so you can see
+what a suite will cost before running it. A scenario whose criteria all show as
+`pattern:` or `pinned:` needs no key at all — which is why `checkpoint demo`
+works offline.
 
 ## `[sandbox]` — the world the agent runs in
 
@@ -73,7 +81,7 @@ needs no key at all, which is why `checkpoint demo` works offline.
 | `regression_drop` | `0.20` | A fall of this much against the stored baseline reads as a regression. |
 | `allow_conditional` | `false` | Exit 0 on CONDITIONAL. Off by default: only SHIP is a green build. |
 | `strict` | `false` | Refuse CONDITIONAL even when `allow_conditional` is set. |
-| `concurrency` | `1` | Scenarios to run at once. Each gets its own sandbox. |
+| `concurrency` | `4` | Runs of one scenario to execute at once, each in its own sandbox. Scenarios still run one after another; this splits the N runs of each. The default is capped at the CPU count, because a worker holds a whole sandbox open and the ceiling is memory rather than cores. |
 
 ## `[scenarios]` — where the tests are
 
@@ -120,9 +128,15 @@ this file:
 |---|---|
 | `CHECKPOINT_JUDGE_MODEL` | Overrides `[judge] model`. |
 | `CHECKPOINT_LLM_BASE_URL` | Sends every model call to an OpenAI-compatible endpoint. |
-| `CHECKPOINT_HOME` | Where the signing key and shared state live. Defaults to `~/.checkpoint`. |
+| `CHECKPOINT_HOME` | One directory for the signing key *and* the project's state, which otherwise default to different places: the key lives in `~/.checkpoint/keys`, while baselines and the run database are `.checkpoint/` in the working directory (the project root, for `checkpoint view`). |
 | `CHECKPOINT_PORT` | Port for `checkpoint view`. |
 | `CHECKPOINT_DASHBOARD_API_KEY` | Required before the dashboard will bind off loopback. |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | Provider keys, read by the judge only when it needs one. |
 
-`checkpoint doctor` reports which of these are set and which a run would need.
+`checkpoint doctor` checks the machine and the project — Python version, TLS
+interception, twins, `checkpoint.toml`, the agent command, scenarios and the
+judge model — not this table. The only variables it reflects are the judge's:
+the model it resolved, which `CHECKPOINT_JUDGE_MODEL` overrides; whether that
+provider's key is set; and `CHECKPOINT_LLM_BASE_URL` when that is supplying the
+endpoint. `CHECKPOINT_HOME`, `CHECKPOINT_PORT` and `CHECKPOINT_DASHBOARD_API_KEY`
+are read where they are used and reported nowhere.

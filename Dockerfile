@@ -8,7 +8,11 @@
 #      and runs uvicorn as a non-root user with a healthcheck.
 #
 # Build:    docker build -t checkpoint:latest .
-# Run:      docker run -p 4001:4001 -v ck-runs:/data/runs -e CHECKPOINT_HOME=/data checkpoint:latest
+# Run:      docker run -p 4001:4001 -v ck-data:/data -e CHECKPOINT_DASHBOARD_API_KEY=$(openssl rand -hex 32) checkpoint:latest
+#           The image sets CHECKPOINT_HOME=/data/config itself, so one volume at
+#           /data covers the runs, the database and the signing key. The API key
+#           is required rather than advisable: the container serves on 0.0.0.0,
+#           and `checkpoint view` refuses to bind off loopback without one.
 # Compose:  docker compose up      (see docker-compose.yml)
 # Cloud:    flyctl deploy          (see fly.toml)
 

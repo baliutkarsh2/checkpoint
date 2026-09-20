@@ -10,10 +10,10 @@ from __future__ import annotations
 import pytest
 
 gql_pkg = pytest.importorskip("gql")
-from gql import Client  # noqa: E402
-from gql import gql as parse_query  # noqa: E402
-from gql.transport.exceptions import TransportQueryError  # noqa: E402
-from gql.transport.httpx import HTTPXTransport  # noqa: E402
+from gql import Client
+from gql import gql as parse_query
+from gql.transport.exceptions import TransportQueryError
+from gql.transport.httpx import HTTPXTransport
 
 TWIN = "linear"
 

@@ -1,14 +1,17 @@
 # Self-host stack for the checkpoint dashboard.
 #
 # Usage:
-#   1. cp .env.example .env  &&  edit .env (set OPENAI_API_KEY at minimum)
+#   1. cp .env.example .env  &&  edit .env. This stack serves on 0.0.0.0, so
+#      CHECKPOINT_DASHBOARD_API_KEY is required — `checkpoint view` refuses to
+#      bind off loopback without it. OPENAI_API_KEY is needed only by judged
+#      [P] criteria; a suite of assertions is scored without any model.
 #   2. docker compose up -d
 #   3. open http://127.0.0.1:4001
 #
 # What this gives you:
 #   - The dashboard at :4001
 #   - Persistent volume `checkpoint-data` for runs, config, scenarios
-#   - Optional bearer-token auth (set CHECKPOINT_DASHBOARD_API_KEY in .env)
+#   - Bearer-token auth on every /api/* write, from CHECKPOINT_DASHBOARD_API_KEY
 #   - Healthcheck so `docker compose ps` shows green
 #
 # What this does NOT give you (deliberately):

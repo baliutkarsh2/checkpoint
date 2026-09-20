@@ -41,9 +41,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      # The dashboard SPA bundle is NOT committed (it is gitignored). Build it
-      # here from source so `python -m build` picks it up as package-data; the
-      # wheel check below fails the release if the bundle is missing.
+      # The dashboard SPA bundle IS committed, at checkpoint/dashboard/static/,
+      # so a pip install needs no Node. It is rebuilt here anyway, so the
+      # published wheel carries a bundle built from the tagged source rather than
+      # whatever was last committed, and `python -m build` picks it up as
+      # package-data. tests/test_spa_bundle.py hashes the bundle's inputs to catch
+      # a source change that was never rebuilt; the wheel check below fails the
+      # release if the bundle is missing.
       - name: Build dashboard SPA
         working-directory: checkpoint/dashboard/web
         run: |

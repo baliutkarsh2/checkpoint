@@ -1,4 +1,4 @@
-"""Phase 2 Plan 04: seeds + rate-limit + permissions-denied."""
+"""GitHub twin: seeds, rate limiting and permission denials."""
 from __future__ import annotations
 
 import time

@@ -1,16 +1,23 @@
 # Example agents
 
-Two agents, each a complete program you could have written yourself and each
-runnable on its own with real credentials against the real services. Neither
-imports Checkpoint. What makes them testable is not in the code:
+Three agents, each a complete program you could have written yourself, and none
+of them imports Checkpoint. What makes them testable is not in the code:
 
+- [`coding-agent/`](coding-agent/) — edits a repository instead of calling a
+  service: the standard library, no model, and a scenario made entirely of
+  assertions over the diff it left, so it runs with no API key and no
+  dependencies.
 - [`tool-calling-agent/`](tool-calling-agent/) — a model with three tools, each
   a thin wrapper over a vendor SDK (PyGithub, `slack_sdk`) pointed at
   `api.github.com` and `slack.com`.
 - [`mcp-agent/`](mcp-agent/) — an MCP client that declares no tools at all and
   uses whatever the server offers.
 
-There used to be four, one per framework. Three of them differed only in which
+The two that call services run as they stand against the real APIs with real
+credentials. Both need `OPENAI_API_KEY`: the agent's own model reads it, and so
+does the judge, for the single `[P]` criterion in each of their scenarios.
+
+There used to be four of those, one per framework. Three differed only in which
 SDK spelled the same tool-calling loop, which taught the reader nothing about
 Checkpoint and gave this repository three copies of one file to keep working.
 The MCP agent stayed because its tool layer is genuinely a different mechanism.
@@ -33,8 +40,12 @@ stdout writes its answer to `$CHECKPOINT_ANSWER_FILE` instead. See
 Calls to the services' production hostnames are routed into the twins, so the
 code path under test is the one that ships — no container, no vendored client,
 no test mode inside the agent. The credentials the SDKs read are replaced with
-fakes that only the twins accept, so a real token in your shell cannot reach a
-real API through the agent under test.
+fakes that only the twins accept, so a real `GITHUB_TOKEN` cannot reach real
+GitHub through an agent whose run declares the `github` twin. Everything else in
+the environment is inherited as it is — the agent still needs its PATH and its
+own model key — so a credential for a service this run does not replace does
+reach the process, and it is the egress policy, not the environment, that keeps
+it from leaving.
 
 ## Running one
 
@@ -44,10 +55,18 @@ project in its own right:
 ```bash
 cd examples/tool-calling-agent
 pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...     # the agent's model, and the judge for its [P] criterion
 checkpoint run
 checkpoint gate
 ```
 
-To see the machinery work with no API key and no dependencies at all, run
-`checkpoint demo` from anywhere.
+`coding-agent` needs neither of those two lines:
+
+```bash
+cd examples/coding-agent
+checkpoint check
+checkpoint run
+```
+
+To see the machinery work from anywhere, with no project and no API key, run
+`checkpoint demo`.

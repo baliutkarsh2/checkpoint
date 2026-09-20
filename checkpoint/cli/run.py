@@ -237,6 +237,12 @@ def _print_result(r: RunResult) -> None:
                 if r.criteria else "[dim]nothing scored[/dim]")
     facts = [f"{len(r.trace)} API call{'s' if len(r.trace) != 1 else ''}",
              f"{r.duration_s:.1f}s"]
+    # The score is over the criteria that could be scored, so say out loud when
+    # that is not all of them. Without this the run reads as a clean pass and
+    # then exits 2, and the terminal and the exit code tell different stories.
+    unscored = [c for c in r.criteria if c.status == "error"]
+    if unscored:
+        facts.append(f"[yellow]{len(unscored)} not scored[/yellow]")
     if r.timed_out:
         facts.append("[red]timed out[/red]")
     elif not r.complete and not r.error:
@@ -348,7 +354,7 @@ def _persist(r: RunResult, scenario: Scenario, judge_model: str, *,
         error=r.error,
         exit_code=r.exit_code,
         failure_analysis=analysis or None,
-        agent={"name": r.agent or "agent", "cmd": r.agent},
+        agent={"name": r.agent or "agent", "cmd": r.agent_command or r.agent},
         agent_trace=r.agent_trace or None,
         duration_ms=round(duration_ms, 1),
         run_id=r.run_id or None,

@@ -32,4 +32,12 @@ what you changed in a `CHANGELOG.md` at the top of the repository.
 - [D] src/util.py was not modified
 - [D!] pyproject.toml was not modified
 - [D!] No files were deleted
-- [P] The final answer names the module it documented
+
+<!--
+  Every criterion here is an assertion over the diff the agent left behind, so
+  this example runs with no API key and no model at all — which is the point of
+  it. Add a judged criterion and you are adding a judge key as a requirement:
+
+  - [P] The final answer names the module it documented
+-->
+

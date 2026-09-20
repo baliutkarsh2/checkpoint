@@ -6,7 +6,10 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
-authors = [{ name = "Checkpoint Labs", email = "hello@usecheckpoint.dev" }]
+authors = [
+    { name = "Utkarsh Bali", email = "hello@usecheckpoint.dev" },
+    { name = "Aaditya Gaur", email = "hello@usecheckpoint.dev" },
+]
 keywords = ["ai", "agents", "testing", "evaluation", "llm", "red-teaming", "ci", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -98,7 +101,7 @@ twin-conformance = [
 [project.urls]
 Homepage = "https://usecheckpoint.dev"
 Repository = "https://github.com/baliutkarsh2/checkpoint"
-Documentation = "https://usecheckpoint.dev/docs"
+Documentation = "https://github.com/baliutkarsh2/checkpoint/tree/main/docs"
 Issues = "https://github.com/baliutkarsh2/checkpoint/issues"
 Changelog = "https://github.com/baliutkarsh2/checkpoint/blob/main/CHANGELOG.md"
 
@@ -145,7 +148,14 @@ extend-exclude = ["checkpoint/dashboard/web", "packages"]
 # of pycodestyle. E501 (line length) is deliberately NOT selected — this
 # codebase uses long explanatory lines and reflowing them would churn every file
 # for no correctness gain.
-select = ["F", "I", "B", "UP", "E4", "E7", "E9"]
+# BLE001/S110/S112 are here because this codebase makes a *claim* about blind
+# excepts — 27 sites carry a written justification for catching broadly, mostly
+# "an outage of ours is an error, not a failed agent". Until these were selected,
+# ruff never checked the rule, every one of those annotations was inert, and a
+# new `except Exception: pass` in the scoring path would have linted clean.
+# RUF100 is what keeps that honest: an annotation that no longer suppresses
+# anything becomes an error instead of decoration.
+select = ["F", "I", "B", "UP", "E4", "E7", "E9", "BLE", "S110", "S112", "S324", "RUF100"]
 ignore = [
     # Deliberate: several modules import after runtime setup (e.g. lazy/optional
     # imports inside the CLI) rather than at the top.
@@ -157,8 +167,14 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests deliberately shadow and re-import fixtures.
-"tests/**" = ["B011"]
+# Tests deliberately shadow and re-import fixtures. They also tear down twin
+# subprocesses and MCP sessions in `finally:` blocks, where a failure to clean
+# up must not mask the assertion that actually failed — so a broad catch there
+# is the correct shape, not an oversight.
+"tests/**" = ["B011", "BLE001", "S110"]
+# The example agents are deliberately minimal, single-file programs a reader is
+# meant to copy: an error taxonomy would obscure the twenty lines that matter.
+"examples/**" = ["BLE001"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

@@ -40,8 +40,8 @@ export interface CheckpointSession {
  * Start the requested Checkpoint twins and return their URLs and credentials.
  *
  * Runs `checkpoint twins start --json`, so the Checkpoint CLI must be on PATH
- * (`pip install checkpoint-agents`); set `CHECKPOINT_CLI` to point at another
- * one.
+ * (`pip install git+https://github.com/baliutkarsh2/checkpoint` until the PyPI
+ * release); set `CHECKPOINT_CLI` to point at another one.
  */
 export function withCheckpoint(
   config: WithCheckpointConfig

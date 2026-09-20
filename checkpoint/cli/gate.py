@@ -57,13 +57,17 @@ _CLASS_COLOR = {
                    "[default: 0.20]")
 @click.option("--allow-conditional", is_flag=True, default=False,
               help="Exit 0 on CONDITIONAL as well. Never covers BLOCK, INCONCLUSIVE or ERROR.")
+@click.option("--report-only", is_flag=True, default=False,
+              help="Print the verdict and exit 0 whatever it was. For adopting the "
+                   "gate on an existing project before it blocks anything.")
 @click.option("--strict", is_flag=True, default=False,
               help="Refuse CONDITIONAL even if checkpoint.toml allows it. Already the "
                    "default; use it to tighten a shared config from the command line.")
 @click.option("--no-baseline", is_flag=True, default=False,
               help="Neither compare against nor update the stored pass rates.")
 @click.option("--concurrency", "-j", type=int, default=None, metavar="N",
-              help="Scenarios to gate in parallel. [default: 1]")
+              help="Runs of a scenario to execute at once, each in its own "
+                   "sandbox. [default: 4, or the CPU count if lower]")
 @click.option("--model", default=None, metavar="MODEL",
               help="Judge model for [P] criteria.")
 @click.option("--timeout", type=float, default=None, metavar="SECONDS",
@@ -76,7 +80,7 @@ _CLASS_COLOR = {
               help="Print one JSON object and nothing else.")
 def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egress,
          allow_hosts, rate_limit, read_only, runs, pass_threshold, ship_min, block_max,
-         confidence, regression_drop, allow_conditional, strict, no_baseline,
+         confidence, regression_drop, allow_conditional, report_only, strict, no_baseline,
          concurrency, model, timeout, name, cert_path, as_json):
     """Run every scenario N times and decide whether this build ships.
 
@@ -97,7 +101,7 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
     updated only on a SHIP, so a build that used to pass and now fails reads as
     a regression instead of quietly resetting the bar.
     """
-    from checkpoint.gate import GatePolicy, baseline, run_gate
+    from checkpoint.gate import GatePolicy, baseline, default_concurrency, run_gate
 
     proj = project()
     root = _target(proj, target)
@@ -132,7 +136,7 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
         agent=agent, options=options, judge_model=options.judge_model,
         progress=None if as_json else _progress(policy.pass_threshold),
         baselines=baselines,
-        concurrency=int(proj.gate_setting("concurrency", concurrency, 1)),
+        concurrency=int(proj.gate_setting("concurrency", concurrency, default_concurrency())),
         on_result=_recorder(gate_id, options.judge_model),
     )
 
@@ -163,10 +167,26 @@ def gate(target, command, url, task_via, task_env, task_arg, cwd, intercept, egr
     record = _as_dict(result, policy, updated, certificate)
     record["gate_id"] = _record_verdict(record, target=str(root), gate_id=gate_id)
 
+    record["report_only"] = report_only
     if as_json:
         click.echo(json.dumps(record, indent=2, default=str))
     else:
         _render(result, policy, updated, certificate)
+    if report_only and result.exit_code != 0:
+        # A gate that always exits 0 is indistinguishable from a passing one, so
+        # the only safe version of this is the one that announces itself — every
+        # time, and never settable from checkpoint.toml. It exists because the
+        # alternative teams reach for is `|| true` in CI, which also swallows
+        # ERROR: the case that means the gate itself broke.
+        #
+        # Not printed under --json, which promises one object and nothing else.
+        # The record carries `report_only` and the true `exit_code` instead, so
+        # nothing is hidden either way.
+        if not as_json:
+            console.print(
+                f"[yellow]report-only:[/yellow] exiting 0. Without this flag, "
+                f"{result.verdict} would exit {result.exit_code}.")
+        sys.exit(0)
     sys.exit(result.exit_code)
 
 
@@ -199,7 +219,7 @@ def _recorder(gate_id: str, judge_model: str):
                 error=result.error,
                 exit_code=result.exit_code,
                 run_id=result.run_id or None,
-                agent={"name": result.agent or "agent", "cmd": result.agent},
+                agent={"name": result.agent or "agent", "cmd": result.agent_command or result.agent},
                 agent_trace=result.agent_trace or None,
                 duration_ms=round(result.duration_s * 1000, 1),
                 warnings=result.warnings,
@@ -208,8 +228,8 @@ def _recorder(gate_id: str, judge_model: str):
                 gate_id=gate_id,
             )
             write_record(entry, pointer=False)
-        except Exception:  # noqa: BLE001 — evidence is a bonus, the verdict is not
-            pass
+        except Exception as e:  # noqa: BLE001 — evidence is a bonus, the verdict is not
+            console.print(f"[dim]could not save this run's evidence: {plain(e)}[/dim]")
 
     return keep
 

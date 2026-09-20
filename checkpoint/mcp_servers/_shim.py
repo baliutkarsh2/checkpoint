@@ -82,7 +82,7 @@ def make_shim(
 
         try:
             body = resp.json()
-        except Exception:
+        except ValueError:  # not JSON — hand the caller what actually arrived
             body = {"_raw": resp.text}
         if resp.status_code >= 400 and isinstance(body, dict):
             body = {**body, "_status": resp.status_code}

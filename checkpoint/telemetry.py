@@ -8,6 +8,7 @@ the chat and tool fragments it recognizes without discarding the raw payload.
 """
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,9 +135,11 @@ def _cli_commands(record: dict) -> dict:
     }
     rerun = ["checkpoint", "run", scenario_path]
     # A recorded command is only worth repeating when it is not the one
-    # checkpoint.toml would supply anyway.
+    # checkpoint.toml would supply anyway. It is quoted because a real one has
+    # a space in it — `python my_agent.py` — and the unquoted line ran
+    # `--command python` with `my_agent.py` as a stray target.
     if agent.get("cmd"):
-        rerun.extend(["--command", str(agent["cmd"])])
+        rerun.extend(["--command", shlex.quote(str(agent["cmd"]))])
     commands["rerun"] = " ".join(rerun)
     return commands
 

@@ -17,6 +17,10 @@ from typing import Any
 CACHE_ROOT = Path(".checkpoint/cache")
 RUNS_DIR = CACHE_ROOT / "runs"
 LAST_RUN_POINTER = CACHE_ROOT / "last-run.json"
+# The functions below take a `root` override, so they cannot reuse these paths
+# whole — only the names under it. Reading the name off the constant is what
+# keeps a caller that passes `root` writing the pointer where `checkpoint runs`
+# and the dashboard, which use the defaults, go looking for it.
 
 
 def _utc_iso() -> str:
@@ -139,13 +143,13 @@ def write_record(record: dict, *, root: Path | None = None, pointer: bool = True
     Returns the absolute path of the written record.
     """
     cache_root = (root or CACHE_ROOT).resolve()
-    runs_dir = cache_root / "runs"
+    runs_dir = cache_root / RUNS_DIR.name
     runs_dir.mkdir(parents=True, exist_ok=True)
     rid = record["run_id"]
     path = runs_dir / f"{rid}.json"
     path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
     if pointer:
-        last = cache_root / "last-run.json"
+        last = cache_root / LAST_RUN_POINTER.name
         last.write_text(json.dumps({"run_id": rid, "path": str(path)}, indent=2),
                         encoding="utf-8")
     return path
@@ -153,7 +157,7 @@ def write_record(record: dict, *, root: Path | None = None, pointer: bool = True
 
 def load_last_run(root: Path | None = None) -> dict | None:
     cache_root = (root or CACHE_ROOT).resolve()
-    pointer = cache_root / "last-run.json"
+    pointer = cache_root / LAST_RUN_POINTER.name
     if not pointer.exists():
         return None
     try:
@@ -163,7 +167,7 @@ def load_last_run(root: Path | None = None) -> dict | None:
     rid = ptr.get("run_id")
     if not rid:
         return None
-    record_path = cache_root / "runs" / f"{rid}.json"
+    record_path = cache_root / RUNS_DIR.name / f"{rid}.json"
     if not record_path.exists():
         return None
     try:

@@ -75,8 +75,11 @@ checkpoint view                                           # serves the fresh bun
 ## Adding a twin or scenario
 
 - **Twins** live in `checkpoint/twins/` with a matching MCP wrapper in
-  `checkpoint/mcp_servers/`. Keep the wire shape faithful to the real SDK and add
-  seeds + tests under `tests/twins/`.
+  `checkpoint/mcp_servers/`. Keep the wire shape faithful to the real SDK. Seeds
+  are JSON beside the twin, in `checkpoint/twins/<name>_seeds/`; behaviour tests
+  go under `tests/twins/`; and the suite that drives the twin with the vendor's
+  own SDK over real HTTP goes under `tests/sdk/`, which is the one that catches a
+  response a correct agent would trip over.
 - **Scenarios** are markdown under `scenarios/`: front matter, `## Task`,
   `## Criteria`. Run `checkpoint check` before submitting — it prints the
   assertion behind every criterion, which is where a criterion that an idle

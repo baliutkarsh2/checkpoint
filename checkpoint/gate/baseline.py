@@ -19,11 +19,14 @@ Where the file lives: ``.checkpoint/baselines.json`` under the working
 directory, or ``$CHECKPOINT_HOME/baselines.json`` when that is set. The section
 key is the gate target's path *relative to the working directory*, so a CI
 checkout at a different absolute path still finds its own baselines — the old
-scheme hashed the absolute path and therefore never matched in CI. Commit the
-file, or restore it with your CI cache; without it every run is a first run.
+scheme hashed the absolute path and therefore never matched in CI. Restore it
+from your CI cache between builds; without it every run is a first run, and a
+regression cannot be seen. Keeping it in git takes an explicit un-ignore, since
+`checkpoint init` writes `.checkpoint/` into `.gitignore`.
 
-This is deliberately a flat file behind a tiny interface. A hosted, multi-tenant
-store is a drop-in replacement for `load`/`save` later.
+This is deliberately a flat file behind a tiny interface: `load` and `save` are
+the whole contract, so a different store can replace them without the gate
+knowing.
 """
 from __future__ import annotations
 

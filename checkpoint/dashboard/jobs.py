@@ -215,7 +215,7 @@ class JobManager:
                         job.process.terminate()
                 job.status = "cancelled"
                 raise
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("job %s crashed", job.job_id)
                 await self._broadcast_log(job, f"[harness error] {e}")
                 job.status = "failed"

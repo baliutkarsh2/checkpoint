@@ -489,9 +489,15 @@ def test_client_env(proxy, ca):
     for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
         assert env[key] == url
     assert env["NO_PROXY"] == env["no_proxy"] == "localhost,127.0.0.1,::1"
-    for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTPLIB2_CA_CERTS"):
-        assert env[key] == str(ca.bundle_path)
-    assert env["NODE_EXTRA_CA_CERTS"] == str(ca.cert_path)
+    # Every runtime that reads a CA *bundle* file. The bundle, not the bare CA,
+    # so non-intercepted HTTPS keeps verifying against the real public roots.
+    for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+                "HTTPLIB2_CA_CERTS", "GIT_SSL_CAINFO", "CARGO_HTTP_CAINFO",
+                "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"):
+        assert env[key] == str(ca.bundle_path), f"{key} must point at the bundle"
+    # These two append to a built-in root set, so they take the CA alone.
+    for key in ("NODE_EXTRA_CA_CERTS", "DENO_CERT"):
+        assert env[key] == str(ca.cert_path), f"{key} must point at the CA"
     assert env["NODE_USE_ENV_PROXY"] == "1"
 
 

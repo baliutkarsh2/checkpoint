@@ -1,4 +1,4 @@
-"""Phase 3 Plan 02: Slack seed loading + content shape."""
+"""Slack twin: seed loading and the shape of what a seed contains."""
 from __future__ import annotations
 
 import json
