@@ -155,6 +155,18 @@ class Project:
         return (flag or os.environ.get("CHECKPOINT_JUDGE_MODEL")
                 or self.judge.get("model") or DEFAULT_MODEL)
 
+    def judge_samples(self, flag: int | None = None) -> int:
+        """How many times to ask the judge about each criterion.
+
+        More than one costs more and disagrees less: the samples have to agree
+        before a criterion passes, and a judge that flips between them reports
+        `unknown` rather than picking a side.
+        """
+        if flag is not None:
+            return flag
+        value = self.judge.get("samples")
+        return int(value) if value is not None else 1
+
     def agent_timeout(self, flag: float | None = None) -> float | None:
         return flag if flag is not None else self.agent.get("timeout")
 

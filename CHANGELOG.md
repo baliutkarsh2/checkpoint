@@ -117,6 +117,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **`[judge] samples` was accepted and then dropped.** The loader allowed the
+  key, so writing it raised no error, and the judge has supported asking the
+  same question several times and requiring the answers to agree all along — but
+  nothing ever carried the value from the file to the call. Setting it did
+  nothing, silently. That is the exact failure `checkpoint.toml` was built to
+  remove, shipped inside the rewrite that removed it. It is wired through now,
+  and a test walks every section asking whether a key that parses is a key
+  something reads.
 - **Every MCP server advertised an empty version.** A client shows it beside
   the server name, and "which Checkpoint is this agent talking to?" is the first
   question when a tool behaves differently from its description. All eight now

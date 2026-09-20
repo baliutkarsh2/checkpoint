@@ -28,6 +28,8 @@ class RunOptions:
     """Per-run knobs that are not part of the scenario file."""
 
     judge_model: str = DEFAULT_MODEL
+    judge_samples: int = 1
+    """Times to ask the judge about each criterion. Samples must agree to pass."""
     timeout: float | None = None
     """Seconds before the agent is killed; defaults to the scenario's ``timeout``."""
     intercept: bool = True
@@ -198,7 +200,7 @@ def run_scenario(
     if opts.evaluate:
         from checkpoint.runner import _evaluate
 
-        _evaluate(scenario, result, opts.judge_model)
+        _evaluate(scenario, result, opts.judge_model, samples=opts.judge_samples)
     return result
 
 

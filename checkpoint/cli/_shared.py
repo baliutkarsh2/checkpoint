@@ -147,6 +147,7 @@ def resolve_options(
     hosts = tuple(allow_hosts) or tuple(proj.sandbox.get("allow_hosts") or ())
     return RunOptions(
         judge_model=proj.judge_model(judge_model),
+        judge_samples=proj.judge_samples(),
         timeout=proj.agent_timeout(timeout),
         intercept=bool(proj.sandbox_setting("intercept", intercept, True)),
         egress=proj.sandbox_setting("egress", egress, "llm"),
