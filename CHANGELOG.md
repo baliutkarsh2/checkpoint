@@ -110,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time — the plain-English compiler, the LLM compiler's prompt, the scenario
   generator, the docs and the `init` templates — and a test holds every bundled
   scenario to it.
+- **Every MCP server advertised an empty version.** A client shows it beside
+  the server name, and "which Checkpoint is this agent talking to?" is the first
+  question when a tool behaves differently from its description. All eight now
+  report the package version. Found by connecting over stdio from a clean
+  install: the repository's own test built the server in-process, which proves
+  the tools exist but never exercises the handshake that carries this.
 - **The dashboard's Twin column was empty for every run.** A trace event says
   which twin served the call; the engine writes that under `twin`, and records
   made before the rename carry `_clone`. The dashboard and the telemetry report
