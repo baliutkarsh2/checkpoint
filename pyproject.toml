@@ -168,6 +168,12 @@ asyncio_mode = "strict"
 # one hung call hangs the whole run (and the CI job) until the job timeout.
 timeout = 300
 timeout_method = "thread"
+# Dump every thread's stack a minute before that cap fires. pytest-timeout kills
+# the session with a KeyboardInterrupt and, under pytest 9, can crash reading
+# the capture buffer on its way out — so the one thing you needed, the name of
+# the test that hung, is exactly what goes missing. This is pytest's own
+# faulthandler and it prints before any of that happens.
+faulthandler_timeout = 240
 markers = [
     "slow: takes more than a second or two",
     "integration: spawns a real twin subprocess or MCP session",
