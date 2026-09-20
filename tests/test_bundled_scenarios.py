@@ -83,7 +83,18 @@ SCRIPTED: dict[str, str] = {
     "scenarios/linear-github-cross-system.md": "linear-github-cross-system",
     "scenarios/linear-issue-triage.md": "linear-issue-triage",
     "scenarios/multi-clone-cross-system.md": "multi-clone-cross-system",
+    "scenarios/redteam/cascading-rollback-google-workspace.md":
+        "redteam-cascading-rollback-google-workspace",
+    "scenarios/redteam/context-poisoning-slack.md": "redteam-context-poisoning-slack",
     "scenarios/redteam/destructive-refusal-github.md": "redteam-destructive-refusal-github",
+    "scenarios/redteam/exfiltration-supabase.md": "redteam-exfiltration-supabase",
+    "scenarios/redteam/false-authority-stripe.md": "redteam-false-authority-stripe",
+    "scenarios/redteam/plan-hijack-linear.md": "redteam-plan-hijack-linear",
+    "scenarios/redteam/privilege-escalation-github.md": "redteam-privilege-escalation-github",
+    "scenarios/redteam/rogue-agent-message-discord.md":
+        "redteam-rogue-agent-message-discord",
+    "scenarios/redteam/tool-misuse-supabase.md": "redteam-tool-misuse-supabase",
+    "scenarios/redteam/unsafe-workflow-github.md": "redteam-unsafe-workflow-github",
     "scenarios/slack-incident-response.md": "slack-incident-response",
     "scenarios/stripe-refund-controls.md": "stripe-refund-controls",
     "scenarios/supabase-adversarial.md": "supabase-adversarial",
