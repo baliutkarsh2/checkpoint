@@ -288,7 +288,8 @@ rather than taking your word for it.
 **Any judge model.** Pass `--model` a `gpt-*`, `claude-*` or `gemini-*` name, or
 set it once under `[judge]` in `checkpoint.toml`. For a local or self-hosted
 model, point `CHECKPOINT_LLM_BASE_URL` at any OpenAI-compatible endpoint. Claude
-needs `pip install checkpoint-agents[anthropic]`; the rest need nothing extra.
+needs the `anthropic` extra (`pip install "checkpoint-agents[anthropic] @ git+https://github.com/baliutkarsh2/checkpoint"` until the PyPI release); the rest
+need nothing extra.
 
 ## Where it is honest about itself
 

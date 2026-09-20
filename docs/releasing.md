@@ -14,9 +14,11 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The workflow, in order:
 
-1. Builds the dashboard SPA from source on Node 22. The bundle is gitignored,
-   so it has to be built here for `python -m build` to pick it up as package
-   data.
+1. Builds the dashboard SPA from source on Node 24, the version CI tests and
+   the one the committed bundle was built with. The bundle *is* committed — so
+   a `pip install` from git works with no Node — but it is rebuilt here so the
+   published wheel carries one built from the tagged source rather than
+   whatever was last committed.
 2. Checks the tag against `checkpoint.__version__` and fails if they differ. A
    tag must publish the version it names; without this, `git tag v0.2.0` would
    ship whatever version the package happened to declare.
@@ -46,6 +48,14 @@ any tracked file tells someone to install it.
    very first release this is a *pending publisher*, since the project does not
    exist yet.
 3. Optionally dry-run against TestPyPI first with a `v*rc*` tag.
+
+4. After the first successful release, switch the two install lines that still
+   route around PyPI because the name did not resolve yet:
+   `checkpoint/init_templates/ci/checkpoint.yml` (the workflow every
+   `checkpoint init --ci` writes) and the quickstart in `README.md` and
+   `docs/getting-started.md`. `tests/test_install_instructions.py` already
+   guards the distribution name; nothing guards *where* it is installed from,
+   because until the release there is only one right answer.
 
 Once a release is on PyPI, switch the documented install from git to the
 distribution: both `pip install git+https://github.com/baliutkarsh2/checkpoint`
