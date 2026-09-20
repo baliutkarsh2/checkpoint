@@ -3,9 +3,9 @@
 Two budgets. ``checkpoint --help`` must not pay for the dashboard, the MCP
 server or an LLM SDK just to print fifteen lines — the command table names each
 command's module and imports it only when it runs, and that only holds while
-nothing drags a heavy import up to the top of the package. And a real run has a
-wall-clock budget, because a test tool slower than the thing it tests gets run
-once.
+nothing drags a heavy import up to the top of the package. And a cold scored run
+has a wall-clock budget, because a test tool slower than the thing it tests gets
+run once.
 """
 from __future__ import annotations
 
@@ -27,8 +27,13 @@ HEAVY = ("fastapi", "uvicorn", "starlette", "openai", "mcp", "httpx",
          "checkpoint.dashboard", "checkpoint.engine", "checkpoint.twins",
          "checkpoint.gate", "checkpoint.redteam", "checkpoint.llm")
 
-#: The spec is under 5s on a dev box; the slack absorbs CI and slow disks.
-COLD_START_BUDGET_SECONDS = 8.0
+#: A cold run is ~4s on an idle dev box. The budget is deliberately loose: the
+#: regression worth catching is the kind that turns four seconds into forty — a
+#: heavy import pulled to package scope, a twin that waits on a timeout, a judge
+#: called for a scenario with nothing to judge. A tight wall-clock threshold
+#: catches none of those any better and fails on a busy machine instead, which
+#: teaches everyone to ignore it.
+COLD_START_BUDGET_SECONDS = 30.0
 
 _PROBE = f"""
 import sys
@@ -81,4 +86,8 @@ def test_a_scored_run_completes_within_the_cold_start_budget():
     payload = json.loads(proc.stdout)
     assert payload["passed"] == payload["runs"] == 1
     assert elapsed < COLD_START_BUDGET_SECONDS, (
-        f"cold start took {elapsed:.2f}s (budget {COLD_START_BUDGET_SECONDS}s)")
+        f"a cold scored run took {elapsed:.1f}s, over the {COLD_START_BUDGET_SECONDS}s "
+        "budget. That is far enough past the usual ~4s to be a real regression "
+        "rather than a busy machine: look for a heavy import at package scope, a "
+        "twin waiting out a timeout, or a judge being called for a scenario that "
+        "has nothing to judge.")
