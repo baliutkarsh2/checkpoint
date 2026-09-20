@@ -127,7 +127,7 @@ def simulate(
         state=run_state(final_state),
         run_id=session_id,
         agent=agent.display_name,
-        agent_command=agent.command or agent.url or "",
+        agent_command=agent.command_text,
         twins=list(twins),
         seed_views=seed_views,
         views=final_views,

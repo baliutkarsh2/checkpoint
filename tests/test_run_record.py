@@ -125,3 +125,25 @@ def test_writes_under_runs_directory(tmp_path: Path):
     parts = list(rel.parts)
     assert parts[0] == "runs"
     assert parts[1].endswith(".json")
+
+
+def test_the_recorded_command_is_one_a_person_can_paste():
+    """The dashboard offers a rerun line built from this; it has to be a command.
+
+    `Agent.command` takes a string or an argv list, and the gate builds agents
+    from a list. Storing that list produced a rerun line carrying a Python list
+    repr -- `--command "['python', 'C:\...\agent.py']"` -- which fails the
+    moment anyone copies it.
+    """
+    import shlex
+
+    from checkpoint.engine import Agent
+
+    assert Agent(command="python my_agent.py").command_text == "python my_agent.py"
+
+    listed = Agent(command=["python", "my agent.py"]).command_text
+    assert "[" not in listed and "'python'," not in listed
+    # It round-trips: what we recorded parses back to the argv we started from.
+    assert shlex.split(listed) == ["python", "my agent.py"]
+
+    assert Agent(url="http://127.0.0.1:8000/chat").command_text == "http://127.0.0.1:8000/chat"

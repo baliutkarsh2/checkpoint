@@ -316,10 +316,12 @@ function IdentityStrip({ report: t }: { report: TelemetryReport }) {
   );
 }
 
-/** Single-quote a value for a POSIX shell, matching Python's shlex.quote. */
+/** Quote so a shell passes this as one argument. Mirrors telemetry._as_one_argument.
+ *  Double quotes, not single: a Windows path is full of backslashes, and single
+ *  quotes are not stripped there, so the pasted line kept them. */
 function shellQuote(value: string): string {
-  if (value && /^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
-  return "'" + value.replace(/'/g, "'\''") + "'";
+  if (!value || !/[\s"']/.test(value)) return value;
+  return '"' + value.replace(/"/g, '\\"') + '"';
 }
 
 /** The same commands `checkpoint.telemetry._cli_commands` emits, for the case

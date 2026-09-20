@@ -8,7 +8,6 @@ the chat and tool fragments it recognizes without discarding the raw payload.
 """
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -117,6 +116,20 @@ def _summary(
     }
 
 
+def _as_one_argument(value: str) -> str:
+    """Quote so a shell passes `value` as a single argument, readably.
+
+    Double quotes rather than shlex.quote: the recorded command is already a
+    command string, and shlex wraps anything containing a backslash in single
+    quotes -- which Windows does not strip, so the pasted line ran an agent
+    whose name still carried the quotes.
+    """
+    needs_quoting = any(ch.isspace() or ch in "\"'" for ch in value)
+    if not value or not needs_quoting:
+        return value
+    return '"' + value.replace('"', '\\"') + '"'
+
+
 def _cli_commands(record: dict) -> dict:
     """The commands that take a reader from this record to the next question.
 
@@ -139,7 +152,7 @@ def _cli_commands(record: dict) -> dict:
     # a space in it — `python my_agent.py` — and the unquoted line ran
     # `--command python` with `my_agent.py` as a stray target.
     if agent.get("cmd"):
-        rerun.extend(["--command", shlex.quote(str(agent["cmd"]))])
+        rerun.extend(["--command", _as_one_argument(str(agent["cmd"]))])
     commands["rerun"] = " ".join(rerun)
     return commands
 
