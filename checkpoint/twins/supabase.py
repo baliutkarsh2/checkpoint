@@ -662,6 +662,14 @@ def _auth_user_json(user: dict) -> dict:
 
 
 def _password_hash(password: str) -> str:
+    """Hash a twin user's password.
+
+    A plain digest, deliberately, and **not** a pattern to copy. This is a test
+    double: every password it ever sees is a synthetic fixture from a seed
+    file, never a real credential, and the twin exists so an agent's sign-in
+    path can be exercised offline. A real service must use a slow, salted KDF
+    (bcrypt, scrypt, argon2) -- a single SHA-256 is trivially brute-forced.
+    """
     return hashlib.sha256(password.encode()).hexdigest()
 
 

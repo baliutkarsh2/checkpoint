@@ -24,6 +24,7 @@ and answer with text or JSON. OpenAI-compatible chat responses
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shlex
@@ -384,11 +385,11 @@ def run_process(
     out = _Collector("stdout", proc.stdout, on_line)
     err = _Collector("stderr", proc.stderr, on_line)
     if stdin is not None and proc.stdin is not None:
-        try:
+        # An agent that exited before reading its task closes the pipe; that
+        # is its own failure and is reported from the exit code, not from here.
+        with contextlib.suppress(BrokenPipeError, OSError):
             proc.stdin.write(stdin.encode("utf-8"))
             proc.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass
     timed_out = False
     try:
         proc.wait(timeout=timeout)
@@ -457,10 +458,10 @@ def kill_tree(proc: subprocess.Popen) -> None:
                 os.killpg(group, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
         proc.kill()
-    try:
+    # Already killed; this is the reap. A process that will not be reaped in
+    # ten seconds is the OS's problem, not something to fail the run over.
+    with contextlib.suppress(subprocess.TimeoutExpired):
         proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass
 
 
 class _Collector:
